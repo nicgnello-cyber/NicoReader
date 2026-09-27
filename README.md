@@ -1,118 +1,127 @@
 # NicoReader
 
-Un lettore di fumetti, manga e webtoon: la galleria nera, dove esiste solo la
-tavola. Le pagine si rimpiccioliscono in luce lineare (i retini restano del
-loro tono, senza moiré), si girano in un millisecondo e si riaprono dove le si
-era lasciate.
+*English · [Italiano](README.it.md)*
 
-Legge cartelle, CBZ/ZIP, CBR/RAR (anche solidi), CB7/7Z, CBT/TAR e PDF; pagine
-JPEG, PNG, WebP, GIF, BMP, AVIF e JPEG XL. Ha la libreria con le serie,
-miniature, segnalibri, doppia pagina, nastro per i webtoon (riconosciuti da
-soli), zoom, lente, luminosità/contrasto/gamma, tasti personalizzabili, e un
-ingrandimento AI facoltativo (Real-ESRGAN, scaricato al primo uso). In
-italiano e in inglese.
+A reader for comics, manga and webtoons: a black gallery where only the page
+exists. Pages are downscaled in linear light (screentones keep their tone, no
+moiré), turn in a millisecond, and reopen where you left off.
 
-## Scarica
+It reads folders, CBZ/ZIP, CBR/RAR (solid archives too), CB7/7Z, CBT/TAR and
+PDF, with JPEG, PNG, WebP, GIF, BMP, AVIF and JPEG XL pages. It has a library
+organized by series, thumbnails, bookmarks, two-page spreads, a vertical strip
+for webtoons (detected automatically), zoom, a magnifier,
+brightness/contrast/gamma, customizable keys, and optional AI upscaling
+(Real-ESRGAN, downloaded on first use). The interface is in English and
+Italian.
 
-| Sistema | Installer |
+## Download
+
+| System | Installer |
 |---|---|
-| **Windows** (quasi tutti i PC) | [NicoReader-windows-x64-setup.exe](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-windows-x64-setup.exe) |
-| **Windows su ARM** (Snapdragon X, Surface Pro 11) | [NicoReader-windows-arm64-setup.exe](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-windows-arm64-setup.exe) |
-| **macOS** 10.15 o piu' recente, Intel e Apple Silicon | [NicoReader-macos.dmg](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-macos.dmg) |
+| **Windows** (most PCs) | [NicoReader-windows-x64-setup.exe](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-windows-x64-setup.exe) |
+| **Windows on ARM** (Snapdragon X, Surface Pro 11) | [NicoReader-windows-arm64-setup.exe](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-windows-arm64-setup.exe) |
+| **macOS** 10.15 or later, Intel and Apple Silicon | [NicoReader-macos.dmg](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-macos.dmg) |
 | **Linux**: Ubuntu, Debian, Mint | [NicoReader-linux-x64.deb](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-linux-x64.deb) |
-| **Linux**: le altre distribuzioni | [NicoReader-linux-x64.tar.gz](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-linux-x64.tar.gz) |
+| **Linux**: other distributions | [NicoReader-linux-x64.tar.gz](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-linux-x64.tar.gz) |
 
-Senza installare niente, su Windows: [zip x64](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-windows-x64.zip),
-[zip ARM64](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-windows-arm64.zip). Le versioni precedenti e le
-novita' di ognuna: [Releases](https://github.com/nicgnello-cyber/NicoReader/releases).
+To use it on Windows without installing anything:
+[zip x64](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-windows-x64.zip),
+[zip ARM64](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-windows-arm64.zip).
+Earlier versions and what changed in each: [Releases](https://github.com/nicgnello-cyber/NicoReader/releases).
 
-## Installarlo
+## Installing
 
-**Windows.** Si apre il `-setup.exe`. Non e' firmato, quindi la prima volta
-Windows SmartScreen avvisa: "Ulteriori informazioni" -> "Esegui comunque".
-Installa per l'utente, senza chiedere di essere amministratore (si puo'
-scegliere "per tutti"): menu Start, icona sul desktop se la si vuole, doppio
-clic sui CBZ, CBR, CB7 e CBT (solo se nessun altro programma li apre gia'),
-NicoReader in "Apri con" anche per i PDF. Si disinstalla da Impostazioni -> App.
+**Windows.** Run the `-setup.exe`. It isn't signed, so the first time Windows
+SmartScreen shows a warning: click "More info", then "Run anyway". It
+installs for the current user without asking for administrator rights (you
+can choose "for all users" instead). It adds a Start menu entry, a desktop
+icon if you want one, double-click opening for CBZ, CBR, CB7 and CBT files
+(only if no other program opens them already), and NicoReader under "Open
+with" for PDFs too. Uninstall it from Settings → Apps.
 
-**macOS.** Si apre il dmg e si trascina NicoReader in Applicazioni. Non e'
-firmato con un account sviluppatore Apple, quindi la prima volta macOS lo
-blocca: si apre da Impostazioni di Sistema -> Privacy e sicurezza -> "Apri
-comunque" (una volta sola), oppure da Terminale con
-`xattr -dr com.apple.quarantine /Applications/NicoReader.app`. I volumi si
-aprono dall'app (Cmd+O, la libreria), non ancora con doppio clic dal Finder.
+**macOS.** Open the dmg and drag NicoReader into Applications. It isn't
+signed with an Apple developer account, so macOS blocks it the first time:
+open it from System Settings → Privacy & Security → "Open Anyway" (only
+once), or from Terminal with
+`xattr -dr com.apple.quarantine /Applications/NicoReader.app`. Open volumes
+from within the app (Cmd+O, or the library); double-clicking files in the
+Finder doesn't work yet.
 
-**Linux.** Il `.deb` si installa con un doppio clic o con
-`sudo apt install ./NicoReader-linux-x64.deb`: NicoReader finisce nel menu delle
-applicazioni e c'e' il comando `nicoreader`. Con il tar.gz: si scompatta dove
-si vuole e `./installa.sh` mette NicoReader nel menu e tra i programmi per aprire
-CBZ, CBR, CB7, CBT e PDF (solo per l'utente, senza sudo); `./installa.sh
---rimuovi` lo toglie. Servono i driver Vulkan (Mesa, o quelli NVIDIA) e
-libxkbcommon-x11, che ogni desktop ha gia'.
+**Linux.** Install the `.deb` with a double click or with
+`sudo apt install ./NicoReader-linux-x64.deb`: NicoReader appears in the
+application menu, and the `nicoreader` command is available. With the
+tar.gz: extract it wherever you like, then `./installa.sh` adds NicoReader to
+the menu and to the programs that open CBZ, CBR, CB7, CBT and PDF files (for
+the current user only, no sudo needed); `./installa.sh --rimuovi` removes it
+again. You need Vulkan drivers (Mesa or NVIDIA's) and libxkbcommon-x11, which
+every desktop already has.
 
-Il codice e' pronto anche per Linux ARM64, ma per lui non si fanno ancora
-pacchetti.
+The code also builds for Linux ARM64, but there are no packages for it yet.
 
-## Usarlo
+## Using it
 
-Si apre un volume dal menu (tasto destro), con Ctrl+O (Cmd+O sul Mac), dalla
-libreria o con doppio clic sul file. Senza volume riprende l'ultimo letto.
-Ctrl+, apre le impostazioni (anche i tasti).
+Open a volume from the menu (right click), with Ctrl+O (Cmd+O on a Mac), from
+the library, or by double-clicking the file. With no volume, it resumes the
+last one you read. Ctrl+, opens the settings (keys included).
 
-Da riga di comando, dopo averlo compilato:
+From the command line, after building it:
 
     rust\target\release\fumetto.exe [volume]      (Windows)
     rust/target/release/fumetto [volume]            (Linux, macOS)
 
-## Compilarlo
+## Building
 
-Nella cartella `rust`, con Rust (rustup) e nasm (su ARM64 nasm non serve;
-sul Mac servono anche gli strumenti di Xcode, `xcode-select --install`):
+In the `rust` folder, with Rust (rustup) and nasm (not needed on ARM64; on a
+Mac you also need the Xcode command line tools, `xcode-select --install`):
 
     cargo build --release
     cargo test --workspace
 
-Su Linux e macOS le prove dei PDF vogliono pdfium in `vendor/pdfium/`: lo
-scaricano `pacchetto.sh` e `pacchetto-mac.sh` la prima volta.
+On Linux and macOS the PDF tests need pdfium in `vendor/pdfium/`:
+`pacchetto.sh` and `pacchetto-mac.sh` download it the first time they run.
 
-I pacchetti da distribuire (eseguibile, pdfium, licenze; lo zip e l'installer
-per Windows, il tar.gz e il .deb per Linux, il dmg per macOS):
+The packages to distribute (executable, pdfium, licenses; the zip and the
+installer for Windows, the tar.gz and the .deb for Linux, the dmg for macOS):
 
     powershell -ExecutionPolicy Bypass -File pacchetto.ps1               (Windows x64)
     powershell -ExecutionPolicy Bypass -File pacchetto.ps1 -Arch arm64   (Windows ARM64)
     ./pacchetto.sh                                                       (Linux)
     ./pacchetto-mac.sh                                                   (macOS)
 
-L'installer per Windows vuole Inno Setup 6 (`winget install
-JRSoftware.InnoSetup`); senza, `pacchetto.ps1` lo dice e fa solo lo zip. Il
-.deb vuole `dpkg-deb`, che c'e' su Debian e Ubuntu.
+The Windows installer needs Inno Setup 6 (`winget install
+JRSoftware.InnoSetup`); without it, `pacchetto.ps1` says so and builds only
+the zip. The .deb needs `dpkg-deb`, which Debian and Ubuntu have.
 
-Gli stessi li fa GitHub Actions (`.github/workflows/pacchetti.yml`): a mano da
-Actions -> Pacchetti -> Run workflow (scegliendo i sistemi), per ogni tag `v*`,
-e per le pull request che toccano il codice (queste senza macOS, i cui minuti
-costano dieci volte tanto).
+GitHub Actions builds the same packages (`.github/workflows/pacchetti.yml`):
+manually from Actions → Pacchetti → Run workflow (choosing the systems), for
+every `v*` tag, and for pull requests that touch the code.
 
-Una nuova versione, con i link di "Scarica" che la seguono da soli: si alza
-`version` in `rust/Cargo.toml`, e dopo il merge
+To publish a new version, with the Download links following it
+automatically: raise `version` in `rust/Cargo.toml`, merge, then create the
+tag, either from the GitHub website (Releases → Draft a new release → tag
+`v0.2.0`, create on publish → Publish release) or with
 
     git tag v0.2.0
     git push origin v0.2.0
 
-Actions fa i pacchetti di tutti i sistemi e li pubblica nella Release `v0.2.0`,
-con i nomi senza versione dei link (se il tag non e' la versione di
-Cargo.toml si ferma).
+Actions builds the packages for every system and publishes them in the
+`v0.2.0` Release, under the version-less names the links use (it stops if the
+tag doesn't match the version in Cargo.toml), with the notes from
+`.github/note-release.md` if the Release has none. To rewrite only the notes
+of the current version: Run workflow with "note" checked.
 
-## Licenza
+## License
 
-NicoReader e' distribuito con licenza MIT o Apache-2.0, a scelta
-([LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE)). Le librerie
-che contiene hanno le loro licenze, raccolte nei pacchetti nella cartella
-`licenze`.
+NicoReader is licensed under either MIT or Apache-2.0, at your option
+([LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE)). The libraries
+it includes have their own licenses, collected in the `licenze` folder of
+each package.
 
-Il programma prima si chiamava Fumetto: nel codice le cartelle e i moduli
-(`rust/crates/fumetto`, ...) hanno ancora quel nome.
+The program used to be called Fumetto: folders and modules in the code
+(`rust/crates/fumetto`, ...) still carry that name, and the code comments and
+the project notes are in Italian.
 
-## Dove sta il resto
+## Where the rest is
 
-Lo stato del progetto, le decisioni, le misure e i prossimi passi sono in
-`LAVORO_E_PROSSIMI_PASSI.txt`. Le pagine di prova in `scan per prove`.
+The project status, decisions, measurements and next steps are in
+`LAVORO_E_PROSSIMI_PASSI.txt` (in Italian).

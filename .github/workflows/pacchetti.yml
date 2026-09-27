@@ -21,6 +21,10 @@ on:
         type: choice
         options: [tutti, windows, linux, macos]
         default: tutti
+      note:
+        description: "Solo le note della Release dell'ultima versione (niente pacchetti)"
+        type: boolean
+        default: false
   push:
     tags: ["v*"]
   pull_request:
@@ -31,7 +35,7 @@ on:
 jobs:
   windows:
     name: Windows ${{ matrix.arch }}
-    if: github.event_name != 'workflow_dispatch' || inputs.sistemi == 'tutti' || inputs.sistemi == 'windows'
+    if: (github.event_name != 'workflow_dispatch' || inputs.sistemi == 'tutti' || inputs.sistemi == 'windows') && !inputs.note
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -74,7 +78,7 @@ jobs:
 
   linux:
     name: Linux x64
-    if: github.event_name != 'workflow_dispatch' || inputs.sistemi == 'tutti' || inputs.sistemi == 'linux'
+    if: (github.event_name != 'workflow_dispatch' || inputs.sistemi == 'tutti' || inputs.sistemi == 'linux') && !inputs.note
     # la glibc piu' vecchia fra quelle disponibili: l'eseguibile gira anche
     # sulle distribuzioni meno recenti
     runs-on: ubuntu-22.04
@@ -99,7 +103,7 @@ jobs:
 
   macos:
     name: macOS
-    if: github.event_name != 'workflow_dispatch' || inputs.sistemi == 'tutti' || inputs.sistemi == 'macos'
+    if: (github.event_name != 'workflow_dispatch' || inputs.sistemi == 'tutti' || inputs.sistemi == 'macos') && !inputs.note
     # Apple Silicon: le prove girano qui, la parte Intel si compila accanto
     runs-on: macos-latest
     steps:
@@ -157,25 +161,34 @@ jobs:
           mv "NicoReader-$versione-macos.dmg" ../uscita/NicoReader-macos.dmg
           ls -l ../uscita
 
+      # le note sono in .github/note-release.md; una Release creata dal sito
+      # (che crea anche il tag) con la descrizione vuota le riceve qui
       - name: Pubblica
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cat > note.md <<'FINE'
-          **Quale scaricare**
-
-          | Sistema | File |
-          |---|---|
-          | Windows (quasi tutti i PC) | `NicoReader-windows-x64-setup.exe` |
-          | Windows su ARM (Snapdragon X, Surface Pro 11) | `NicoReader-windows-arm64-setup.exe` |
-          | macOS 10.15 o piu' recente (Intel e Apple Silicon) | `NicoReader-macos.dmg` |
-          | Linux: Ubuntu, Debian, Mint | `NicoReader-linux-x64.deb` |
-          | Linux: le altre distribuzioni | `NicoReader-linux-x64.tar.gz` |
-
-          Chi non vuole installare niente su Windows usa lo zip. Le istruzioni per il primo avvio (Windows SmartScreen, macOS) sono nel README.
-          FINE
           if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" uscita/* --clobber
+            if [ -z "$(gh release view "$GITHUB_REF_NAME" --json body -q .body)" ]; then
+              gh release edit "$GITHUB_REF_NAME" --notes-file .github/note-release.md
+            fi
           else
-            gh release create "$GITHUB_REF_NAME" uscita/* --title "NicoReader ${GITHUB_REF_NAME#v}" --notes-file note.md
+            gh release create "$GITHUB_REF_NAME" uscita/* --title "NicoReader ${GITHUB_REF_NAME#v}" --notes-file .github/note-release.md
           fi
+
+  # a mano, con "note": riscrive le note della Release della versione in
+  # rust/Cargo.toml da .github/note-release.md, senza rifare i pacchetti
+  note:
+    name: Note della Release
+    if: github.event_name == 'workflow_dispatch' && inputs.note
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          versione=$(sed -n 's/^version = "\(.*\)"/\1/p' rust/Cargo.toml | head -n 1)
+          gh release edit "v$versione" --notes-file .github/note-release.md
