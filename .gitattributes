@@ -1,0 +1,16 @@
+# i file di testo si tengono con fine riga LF nel repository (su Windows git
+# li restituisce come preferisce il sistema): niente differenze fantasma
+* text=auto
+# gli script di bash con CRLF non partono: LF anche su Windows
+*.sh text eol=lf
+
+# binari: mai toccati
+*.dll binary
+*.so binary
+*.ico binary
+*.icns binary
+*.dylib binary
+*.png binary
+*.ttf binary
+*.avif binary
+*.jxl binary

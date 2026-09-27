@@ -1,0 +1,11 @@
+[package]
+name = "fumetto-render"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+bytemuck = { version = "1.25.2", features = ["derive"] }
+fumetto-core = { version = "0.1.0", path = "../fumetto-core" }
+glyphon = "0.12"
+wgpu = "30.0.1"

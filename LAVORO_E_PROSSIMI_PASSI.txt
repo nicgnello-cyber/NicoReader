@@ -1,0 +1,848 @@
+NICOREADER (prima: Fumetto) - lettore di fumetti, manga e webtoon
+Stato del progetto al 27 settembre 2026
+=====================================================================
+
+Dal 27 settembre il programma si chiama NicoReader e il progetto e'
+pubblico: https://github.com/nicgnello-cyber/NicoReader. Qui sotto, dove
+si parla del programma, "Fumetto" e' il nome di prima; le cartelle e i
+moduli del codice (rust/crates/fumetto...) lo tengono ancora.
+
+IN BREVE
+--------
+Fumetto e' nato in Python (fumetto.py) come alternativa a CDisplayEx.
+Il 23-24 settembre si e' deciso di rifarlo in Rust, con un obiettivo
+preciso: deve essere un'opera d'arte, non solo un programma che funziona.
+
+La versione Rust (cartella rust\) oggi legge davvero: pagina singola,
+doppia pagina, nastro per i webtoon, zoom con i suoi livelli, tutti i
+formati (anche PDF), e riapre ogni volume dove lo si era lasciato. Ha la
+sua interfaccia (barra in alto, didascalia, vai a pagina, menu, galleria
+degli ultimi letti) e la libreria con le copertine. Si usa senza
+terminale, in italiano e in inglese. E' piu' veloce e piu' fedele della
+versione Python, e dal 25 settembre ne ha anche tutte le funzioni:
+miniature, segnalibri, rotazione, rifilo, presentazione, salva e copia
+pagina, doppio clic, riconoscimento dei webtoon e ingrandimento AI (questi
+ultimi due si accendono e spengono dalle impostazioni), AVIF e JPEG XL, e
+lo script per il pacchetto da distribuire. Dal 25 settembre anche cio' che
+aveva CDisplayEx e mancava: luminosita', contrasto e gamma, la lente
+d'ingrandimento, i tasti personalizzabili e un foglio delle impostazioni.
+Manca solo cio' che arriva con l'installer (jump list, associazione dei
+file).
+
+Quasi tutto il lavoro degli ultimi due giorni e' stato verificato con test,
+con scatti fuori schermo e con gli strumenti di prova, non ancora a mano
+nella finestra vera: la lista delle cose da provare e' al capitolo 4, punto 1.
+
+La versione Python e' stata tolta il 25 settembre (nel Cestino di Windows,
+da cui si recupera): la versione Rust fa tutto cio' che faceva, e meglio.
+Il capitolo 7 ne tiene la memoria e i numeri.
+
+
+=====================================================================
+1. LE DECISIONI (da non rimettere in discussione)
+=====================================================================
+  - Si riscrive in Rust. Per ogni parte si usa il linguaggio migliore:
+    Rust per l'ossatura, C/C++ dove una libreria di riferimento esiste
+    gia' (libwebp, UnRAR, pdfium), WGSL per i programmi della scheda video.
+  - Estetica: galleria silenziosa nera. Esiste la tavola; l'interfaccia e'
+    sottile e si puo' nascondere (barra in alto: H). Caratteri Instrument
+    Serif (tondo) e Instrument Sans, avorio caldo invece del bianco, un solo
+    accento rosso lacca; niente corsivo. Le pagine non sono mai coperte
+    dalla barra: le si riserva lo spazio.
+  - Il testo dell'interfaccia lo disegniamo noi sulla scheda video
+    (glyphon), non Slint: +2,0 MB invece di +7,3, e nessun conflitto con il
+    disegno delle pagine. Le finestre di sistema (aprire, avvisi, conferme)
+    restano quelle del sistema.
+  - Windows, macOS e Linux fin dal primo giorno. Pacchetti per Windows
+    x64, Windows ARM64, Linux x64 e macOS (dal 26 settembre, vedi
+    capitolo 5).
+  - Nessuna animazione di cambio pagina: resta istantaneo. Ma nemmeno
+    lampi neri: se la pagina nuova non e' pronta resta quella di prima.
+    (L'interfaccia invece compare e svanisce con una breve dissolvenza.)
+  - Le pagine si rimpiccioliscono in luce lineare (vedi 2.4): i retini
+    dei manga restano del loro tono, senza moire'. Lo stesso per icona e
+    copertine.
+  - Si accetta che la versione Rust resti per un po' indietro sulle
+    funzioni, in cambio di fondamenta solide.
+  - Ingrandimento AI opzionale, scaricato al primo uso, solo quando serve.
+  - Interfaccia in italiano e inglese, scelta automatica.
+  - Distribuzione: installer + GitHub Releases.
+  - Git: nessun repository e nessun commit finche' non lo chiedi tu.
+
+
+=====================================================================
+2. LA VERSIONE RUST (cartella rust\)
+=====================================================================
+
+2.1 Come si usa
+---------------
+  Eseguibile:  rust\target\release\fumetto.exe  (20,9 MB, un file solo;
+               per i PDF serve pdfium.dll, vedi 2.2). Il pacchetto da
+               distribuire lo fa rust\pacchetto.ps1 (vedi 5).
+
+    fumetto.exe <volume>            apre un archivio, un PDF, una cartella
+                                    o un'immagine (sfoglia tutta la cartella)
+    fumetto.exe                     riprende l'ultimo volume letto; se non
+                                    ce n'e' uno: la libreria, o la galleria
+                                    vuota (la prima volta chiede cosa aprire)
+    fumetto.exe <volume> --prova    legge da solo per mezzo minuto (giri di
+                                    pagina, doppia pagina, zoom, nastro) e
+                                    stampa le misure
+  Si puo' anche trascinare un volume sulla finestra. Nessuna console: le
+  misure di --prova arrivano nel terminale da cui lo si lancia (da
+  PowerShell il prompt torna subito e le misure compaiono dopo; con
+  "> misure.txt" vanno in un file).
+
+  Tasti (su macOS Cmd al posto di Ctrl). Sono quelli di serie: si cambiano
+  nelle impostazioni (Ctrl+,, sezione Tasti), e il menu, la barra e la
+  galleria mostrano sempre quelli che valgono.
+    frecce, spazio, pagina su/giu',     sfogliare (in modalita' manga le
+    clic nel terzo sinistro/destro      frecce e i clic si invertono)
+    Inizio / Fine                       prima e ultima pagina
+    D                                   doppia pagina
+    O                                   copertina da sola (doppia pagina)
+    V                                   nastro verticale per i webtoon
+    [ e ]                               larghezza del nastro
+    M                                   manga, da destra a sinistra
+    + e -, Ctrl + rotella               zoom (con la rotella: sul puntatore);
+                                        nel nastro allargano la striscia
+    0, 1, 2                             pagina intera, larga quanto la
+                                        finestra, 100% (pixel reali)
+    frecce o trascinamento              spostarsi nella pagina ingrandita
+    F o F11                             schermo intero
+    G                                   luce lineare / gamma (per confronto)
+    H                                   mostra o nasconde la barra in alto
+    Ctrl+O, Ctrl+Maiusc+O               apre un volume, una cartella (con la
+                                        finestra di sistema, nella cartella
+                                        del volume aperto)
+    Ctrl+W                              chiude il volume (il file si libera):
+                                        resta la libreria, o la galleria vuota
+                                        con gli ultimi letti
+    Ctrl+G                              vai a pagina (cifre, frecce, rotella,
+                                        clic sul righello; Invio / Esc)
+    Ctrl+L                              la libreria, e di nuovo il volume
+    T                                   le miniature di tutte le pagine
+                                        (frecce, Invio o clic per andarci;
+                                        T o Esc per tornare)
+    R, Maiusc+R                         gira le pagine a destra, a sinistra
+                                        (si ricorda per ogni volume)
+    C                                   rifila i margini bianchi o neri
+                                        (non nel nastro: il bianco fra le
+                                        vignette di un webtoon e' disegno)
+    S                                   presentazione: una pagina ogni 5 s
+                                        (girando a mano si riparte da 5);
+                                        si ferma alla fine del volume
+    U                                   migliora con l'AI le scansioni
+                                        mostrate piu' grandi dei loro pixel
+                                        (la prima volta chiede di scaricare
+                                        Real-ESRGAN, 44 MB)
+    Ctrl+B                              segna la pagina, o toglie il segno
+    Ctrl+S, Ctrl+C                      salva la pagina (i byte originali se
+                                        l'estensione e' la stessa), la copia
+                                        negli appunti (come la si vede)
+    doppio clic al centro               schermo intero (ai lati il clic gira
+                                        pagina; nel nastro ovunque)
+    L                                   la lente: segue il mouse e mostra la
+                                        pagina ai suoi pixel veri; la rotella
+                                        cambia l'ingrandimento (1,5-6x); Esc
+                                        o L la spengono
+    Ctrl+,                              le impostazioni: un foglio a destra,
+                                        le pagine restano visibili
+    tasto destro (o il tasto Menu)      il menu, in due colonne: a sinistra
+                                        apri, libreria, recenti, vai a
+                                        pagina, miniature, segnalibri; a
+                                        destra modi, rotazione, rifilo,
+                                        lente, presentazione, salva e
+                                        copia, schermo intero, barra,
+                                        impostazioni e chiudi
+    muovere il mouse                    senza barra, la didascalia: titolo e
+                                        modi a sinistra, pagina a destra
+    Esc                                 esce (o lascia lo schermo intero)
+
+  Le impostazioni (Ctrl+, o dal menu), in quattro sezioni:
+    Immagine   luminosita', contrasto, gamma (-100..100): si vedono subito
+               sulle pagine accanto; "Ripristina" le rimette a zero. Le
+               applica la scheda video dopo il rimpicciolimento in luce
+               lineare (nei primi 600 ms, dal processore, la stessa formula
+               in una tabella: il passaggio non si vede).
+    Lettura    riconoscere i webtoon, rifilare i margini, l'AI, la barra in
+               alto, i secondi della presentazione.
+    Lente      ingrandimento e grandezza.
+    Tasti      ogni comando con i suoi tasti: clic sul comando, poi il
+               tasto nuovo (Esc lascia com'era, Backspace lo toglie). Un
+               tasto dato a un comando si toglie a quello che l'aveva, e lo
+               si dice. "Tutti i tasti di serie" rimette tutto.
+  Si naviga anche con la tastiera: frecce, Invio, Pag su/giu' per le
+  sezioni, Esc per chiudere; un clic sulle pagine lo chiude.
+
+  La barra in alto: apri, libreria, miniature e titolo; al centro inizio,
+  indietro, la pagina (clic: vai a pagina), avanti, fine; a destra il
+  segnalibro, pagina singola, doppia, nastro, direzione, zoom (- percentuale
+  +; clic sulla percentuale: i livelli), schermo intero, nascondi. Sopra ogni tasto compare il suo
+  nome con la scorciatoia. La percentuale e' quella vera: 100% = un pixel
+  della pagina per un pixel dello schermo. Cambiando modo, una riga in
+  basso a destra dice cosa e' cambiato (serve a schermo intero).
+  Una pagina segnata ha un nastrino rosso lacca: accanto al numero nella
+  didascalia, sul righello di "vai a pagina", sulle miniature.
+
+  I webtoon si riconoscono all'apertura di un volume mai letto: si
+  misurano 7 pagine sparse dalle intestazioni (10-50 ms), e se la mediana
+  e' almeno 2,2 volte piu' alta che larga il volume si apre a nastro, largo
+  al massimo 1,5 volte le strisce e il 60% della finestra (anche premendo V
+  o 0 nel nastro vale questa larghezza). Si spegne nelle impostazioni
+  (Lettura). Nella prova automatica e' sempre spento, per misure confrontabili.
+
+  La libreria (Ctrl+L)
+    - Le cartelle si aggiungono dalla galleria vuota ("Aggiungi una
+      cartella alla libreria") o dall'icona in alto a destra, dove si
+      tolgono anche (i file restano dove sono).
+    - In cima "Continua a leggere", poi tutta la libreria; le serie sono
+      pile, un clic le apre ("< Libreria" o Esc per uscire).
+    - Filtri: tutti, in lettura, da leggere, letti. Per cercare basta
+      scrivere; Esc svuota la ricerca. Frecce e Invio scelgono.
+    - Tasto destro su una copertina: leggi, segna come letto o da leggere,
+      mostra nella cartella, sposta nel cestino (chiede conferma; dal
+      cestino si recupera).
+
+  File dell'utente
+    %APPDATA%\Fumetto\progressi.json      dove si e' arrivati in ogni volume
+                                          (e quindi anche i "recenti")
+    %APPDATA%\Fumetto\impostazioni.json   barra si'/no, cartelle della
+                                          libreria, webtoon, rifilo, AI,
+                                          secondi della presentazione,
+                                          luminosita'/contrasto/gamma, lente,
+                                          e i tasti scelti ("keys": solo i
+                                          comandi cambiati, per nome stabile:
+                                          "lente": ["Z"])
+    %LOCALAPPDATA%\Fumetto\copertine\     copertine in cache (WebP 320x480,
+                                          si possono cancellare: si rifanno)
+    %LOCALAPPDATA%\Fumetto\upscaler\      l'ingranditore AI, se scaricato
+                                          (9 MB; e' quello che aveva
+                                          scaricato la versione Python)
+  I progressi di ogni volume ricordano anche la rotazione e i segnalibri;
+  "segna come da leggere" toglie la posizione ma non i segnalibri.
+  Variabili: FUMETTO_DATI (un'altra cartella per tutti e tre),
+             FUMETTO_GPU=dedicata (usa la NVIDIA invece dell'integrata),
+             WGPU_BACKEND=vulkan (su Windows di serie si usa DX12),
+             FUMETTO_PDFIUM (dove trovare pdfium.dll),
+             FUMETTO_LANG=it o en (la lingua; di serie quella di Windows).
+
+  Compilare e provare (nella cartella rust\):
+    cargo build --release          compila tutto
+    cargo test --workspace         108 test
+    cargo clippy --workspace       controllo di qualita' (oggi 0 avvisi)
+  Rust e' installato con rustup (versione 1.98.1). Per AVIF serve anche
+  nasm (c'e', in C:\mingw64\bin): rav1d compila le sue routine SIMD.
+  La compilazione release da zero e' piu' lunga di prima (rav1d e
+  jxl-oxide sono grandi, e LTO li ottimizza insieme al resto); rifatta
+  dopo una modifica all'app, 3 minuti circa.
+
+2.2 Come e' fatta
+-----------------
+  Quattro parti (crate), ognuna con un compito:
+    fumetto-core     il nucleo, senza grafica: aprire i volumi, decodificare
+                     (AVIF in avif.rs), rifilare e girare (adjust.rs),
+                     rimpicciolire, lettura anticipata, progressi,
+                     impostazioni, PDF, lingua; la libreria (library.rs:
+                     scansione e serie), le copertine (covers.rs) e
+                     l'ingranditore AI (upscale.rs)
+    fumetto-render   il disegno sulla scheda video: le pagine (lib.rs) e
+                     l'interfaccia, testi e forme (overlay.rs); programmi
+                     in WGSL
+    fumetto          l'app: finestra, tasti, finestre di sistema; e, provati
+                     da soli senza finestra, lo stato del lettore (reader.rs),
+                     l'interfaccia (ui.rs), la libreria (shelf.rs), le
+                     miniature (thumbs.rs), le impostazioni (prefs.rs) e la
+                     mappa dei tasti (keys.rs)
+    fumetto-probe    lo strumento di misura e di scatto (vedi 2.7)
+
+  Il principio: reader.rs, ui.rs, shelf.rs e thumbs.rs decidono cosa sta
+  dove e cosa fanno tasti e clic, senza grafica ne' winit; producono una "scena"
+  (rettangoli e testi) e i riquadri di pagine e copertine. app.rs li
+  collega alla finestra; fumetto-render disegna. Cosi' tutto si prova con
+  i test e si fotografa con il probe.
+
+  Linguaggi e librerie, e perche'
+    - Rust: tutto l'impianto.
+    - libwebp (C, compilata dentro): il 90% delle pagine di prova e' WebP,
+      la libreria di riferimento e' la scelta giusta. Serve anche a
+      salvare le copertine in cache.
+    - UnRAR (C++ di RARLab, compilato dentro): CBR senza DLL e senza
+      7-Zip/WinRAR installati, anche su macOS e Linux.
+    - pdfium (C++, la libreria dei PDF di Chrome, versione chromium/8066):
+      in rust\vendor\pdfium\win-x64 (pdfium.dll 7 MB + licenze). Il
+      collegamento e' scritto in Rust sulla sua interfaccia C (circa 20
+      funzioni) e si carica solo quando si apre un PDF.
+    - WGSL: i programmi della scheda video: copia esatta e bicubico per le
+      pagine; per l'interfaccia una sola forma descritta dalla distanza dal
+      bordo (rettangoli arrotondati, contorni, ombre, sfumature, e le linee
+      delle icone: niente immagini, nitide a ogni scala).
+    - fast_image_resize: Lanczos con istruzioni SIMD, in luce lineare.
+    - softbuffer: la copia nella finestra dal processore all'avvio.
+    - glyphon 0.12 (cosmic-text + swash, sopra wgpu 30): il testo
+      dell'interfaccia, misurato con i caratteri veri (tagli con "...",
+      centrature, titoli su due righe). Caratteri dentro l'exe (264 KB,
+      licenza OFL, in rust\crates\fumetto-render\caratteri): Instrument
+      Serif e Instrument Sans. Nessun carattere di sistema.
+    - rfd: le finestre di sistema (aprire, avvisi, conferme) sui tre
+      sistemi. Girano su un thread a parte: dentro il ciclo degli eventi,
+      un ridisegno chiesto da Windows a dialogo aperto manda winit in panico.
+    - sys-locale: la lingua dell'interfaccia del sistema.
+    - rav1d (dav1d riscritto in Rust, BSD) e avif-parse (Mozilla, MPL):
+      AVIF; la conversione da YUV a RGB e' in avif.rs, con la matrice
+      dichiarata dal file (BT.601, 709, 2020, identita').
+    - jxl-oxide (tutto Rust): JPEG XL.
+    - arboard: gli appunti (copia pagina) sui tre sistemi, tenuti da un
+      thread suo (su Linux gli appunti vivono quanto chi li ha riempiti).
+    - sha2: l'impronta dei file dell'ingranditore scaricati, prima di
+      tenerli (sono programmi che si eseguono).
+    - Real-ESRGAN (C++ con ncnn e Vulkan, BSD-3): NON e' nel pacchetto. Lo
+      scarica curl (in Windows 10 e 11, macOS, Linux: niente TLS
+      nell'exe) al primo uso, con conferma; se ne tengono l'eseguibile, la
+      DLL e il modello realesr-animevideov3 (9 MB su 44), controllati
+      con SHA-256 (su macOS e Linux solo i modelli: l'eseguibile per quei
+      sistemi non e' mai stato scaricato, la sua impronta non e' nota).
+    - windows-sys: console per --prova, cestino (SHFileOperation, con
+      annulla); su macOS e Linux il cestino passa dalla libreria trash.
+    - winresource (solo in compilazione): icona, nome "Fumetto" in Gestione
+      attivita', manifest (DPI, percorsi lunghi, controlli moderni).
+      L'icona (rust\crates\fumetto\risorse\fumetto.ico, 17 KB, 8 misure
+      rimpicciolite in luce lineare) si rifa' con fai_icona.py accanto.
+  Formati: cartelle, CBZ/ZIP, CBR/RAR (anche solidi), CB7/7Z, CBT/TAR,
+  PDF; immagini JPEG, PNG, WebP, GIF, BMP, AVIF, JPEG XL. Il tipo si riconosce dal
+  contenuto, non dall'estensione (nella libreria invece dall'estensione:
+  aprire ogni file renderebbe la scansione lenta come la lettura).
+
+2.3 Il percorso di una pagina
+-----------------------------
+  1. La lettura anticipata (8 thread a bassa priorita', cosi' chi disegna
+     passa sempre per primo) decodifica la pagina a piena risoluzione; se
+     richiesto la rifila (i margini si cercano su una miniatura grigia di
+     140 pixel, tolleranza 20 livelli, e si rinuncia se resterebbe meno del
+     55% della pagina) e la gira. Rifilo e rotazione fanno parte della
+     "misura" chiesta: una pagina e la sua misura restano sempre insieme,
+     e finche' non arriva quella nuova resta a schermo quella di prima.
+  2. La rimpicciolisce alla misura esatta dello schermo, sul processore,
+     in luce lineare con Lanczos (bianco e nero su un canale solo).
+     Ingrandire invece lo fa la scheda video a ogni fotogramma: non perde
+     niente e non occupa memoria.
+  3. Alla scheda video (l'integrata, che pilota lo schermo) arrivano solo
+     i pixel che si vedranno: ogni fotogramma e' una copia pixel per pixel.
+     L'interfaccia si disegna subito dopo, nello stesso fotogramma; quando
+     non c'e' niente da mostrare non costa niente.
+  4. All'avvio la scheda video impiega circa 600 ms a prepararsi (wgpu
+     sveglia anche la NVIDIA solo per elencarla): intanto le pagine si
+     copiano nella finestra dal processore, poi la scheda video prende il
+     posto della copia in 12-15 ms, con gli stessi pixel.
+  5. PDF: se la pagina e' una sola scansione JPEG se ne prendono i byte
+     originali e la si tratta come un CBZ; altre scansioni: pixel originali
+     da pdfium; pagine vettoriali: disegnate da pdfium direttamente alla
+     misura dello schermo (fino a 300 DPI).
+  Regole della lettura anticipata: 4 pagine avanti e 2 indietro (12 avanti
+  se si sfoglia in fretta); dopo un salto (avvio, Inizio/Fine, vai a
+  pagina, nuovo volume) prima solo la pagina da guardare, poi le altre.
+  Le copertine seguono la stessa strada in piccolo: due thread a bassa
+  priorita', prima pagina ritagliata in 2:3, cache su disco, e poi
+  rimpicciolite alla misura esatta della cella. Le miniature delle pagine
+  pure (altri due thread, nessuna cache su disco: 55 miniature in 250 ms),
+  con celle della forma tipica delle pagine del volume.
+  L'ingranditore AI: la pagina normale arriva subito; per quelle a schermo
+  mostrate almeno 1,2 volte i loro pixel, un thread fa rifare la pagina a
+  Real-ESRGAN (2x, 4x sotto i 700 pixel; 2,4 s per una tavola 728x1075) e
+  la versione migliorata, riportata alla misura dello schermo in luce
+  lineare, prende il posto dell'altra. Le ultime 3 si tengono ai loro
+  pixel: cambiando zoom si riusano (3 ms invece di 2,4 s).
+
+2.4 Qualita' misurata
+---------------------
+  Tavola sintetica (retini, linee, cerchi concentrici) rimpicciolita di 3
+  volte; scarto dalla luce reale, in livelli su 255 (piu' basso = piu' fedele):
+                        luce lineare   in gamma   bilineare semplice
+    retino a 45 gradi       20,8         43,5          83,4
+    retino + china           9,0         53,9         188,3
+  Il filtro in gamma (quello di quasi tutti i lettori) rende un retino al
+  50% grigio medio invece che grigio chiaro: i manga sembrano piu' scuri
+  di come sono stampati. Il bilineare semplice crea moire' (nel caso
+  peggiore un retino diventa nero).
+
+2.5 Prestazioni misurate
+------------------------
+  (portatile i5-12450H, scheda integrata Intel UHD, schermo 1920x1080,
+  con alimentatore: 144 Hz, cioe' 6,9 ms per fotogramma)
+    - Prima pagina a schermo: 280-315 ms (tavole 4K a colori), 198 ms
+      (webtoon). Era 1,2-1,9 s; Python a caldo 0,63 s.
+    - Giro di pagina: mediana 1-1,5 ms, peggiore 10 ms, anche a tasto
+      premuto (30 pagine al secondo), nessuna pagina in ritardo.
+    - Nastro: circa 840 fotogrammi su 6 s, 0-2 persi, peggiore 8 ms.
+    - Disegnare un fotogramma: 0,26 ms (webtoon ingrandito 0,97 ms).
+    - Rimpicciolire: 14 ms una tavola 1600x2400 in bianco e nero;
+      ~55 ms di decodifica + ~75 ms una tavola 4K a colori.
+    - Tutte le 16.239 pagine della cartella di prova: 163 s a piena
+      risoluzione (Python 197 s con decodifica ridotta), nessuna rotta.
+    - PDF di 40 scansioni 4K: si apre in 4 ms, 79 pagine al secondo.
+    - Una tavola 3496x2362: AVIF 150-165 ms di decodifica, JPEG XL
+      450-520 ms (jxl-oxide qui lavora su un thread solo; con i suoi
+      thread sarebbe piu' veloce, ma la lettura anticipata ne usa gia'
+      otto). Il riconoscimento dei webtoon all'apertura: 10-50 ms.
+    - CBR da 369 pagine: si apre in 5-12 ms.
+    - Libreria della cartella di prova: 57 volumi trovati in 0,27 s; le
+      prime 57 copertine fatte in 3,8 s (una volta sola: poi dalla cache).
+    - Caratteri e interfaccia pronti in 1-57 ms (due misure), nel thread
+      della scheda video, mai davanti alla prima pagina.
+  A batteria Windows abbassa lo schermo a 60 Hz: tutto resta fluido.
+  (Queste misure sono di prima dell'interfaccia: da rifare con --prova,
+  vedi capitolo 4.)
+
+2.6 Difetti trovati e corretti lungo la strada
+----------------------------------------------
+  Quasi tutti trovati dalla prova automatica, dai test o dagli scatti:
+    - Rimpicciolire sulla scheda integrata la bloccava 48 ms (7 fotogrammi
+      persi): spostato sul processore.
+    - Lo scorrimento del nastro andava 300 volte piu' piano del voluto
+      (tempo tra fotogrammi misurato nel punto sbagliato).
+    - Se la finestra veniva coperta, lo scorrimento si fermava per sempre.
+    - La prima "pagina" a schermo era un pixel ingrandito: la lettura
+      anticipata partiva prima che la finestra esistesse (1x1).
+    - La finestra nasce 800x600: la prima pagina veniva preparata due volte.
+    - Chiedere a wgpu sia Vulkan sia DX12 costava 550 ms di avvio.
+    - Caricare i driver della scheda video per primi rallentava
+      l'apertura della finestra (loader lock di Windows).
+    - Girando pagina a tasto premuto compariva un lampo nero.
+    - Nel nastro, dopo la ripresa, si ripartiva una pagina e mezza piu'
+      avanti (posizione salvata in pixel su un'altezza ancora stimata):
+      ora resta una frazione della pagina finche' l'altezza non e' nota.
+    - Ordinamento: "pagina.jpg" (la copertina senza numero) finiva dopo
+      "pagina2.jpg"; anche la versione Python ha questo difetto.
+    - rarfile estraeva un file alla volta (un processo per pagina).
+    - PDF lasciati decodificare a pdfium: 24 pagine al secondo, perche'
+      pdfium non lavora in parallelo; con i byte del JPEG sono 79.
+    - Una pagina illeggibile non era mai "pronta": a schermo restava la
+      pagina di prima mentre il titolo andava avanti, e dopo un salto la
+      lettura anticipata si fermava ad aspettarla. Ora occupa il suo posto,
+      nera, e il titolo (e un avviso) dicono "pagina illeggibile".
+    - Il titolo delle cartelle perdeva un pezzo: "Vol.01 Ch.001 - Screw"
+      diventava "Vol.01 Ch" (".001 - Screw" preso per un'estensione).
+    - L'icona aveva una sola immagine 256x256: Windows la rimpiccioliva da
+      se', in gamma; ora 8 misure rimpicciolite in luce lineare.
+    - Nella finestra vera la ricerca della libreria non poteva funzionare:
+      i tasti arrivavano all'interfaccia solo se erano cifre, e le frecce
+      sinistra/destra non arrivavano affatto (i test passavano perche'
+      chiamavano l'interfaccia direttamente). Trovato rileggendo il codice
+      il 25 settembre, corretto.
+    - Girando le pagine, quelle gia' pronte (non girate) si sarebbero
+      disegnate nel riquadro della pagina girata, deformate: ora la misura
+      cambia solo quando arriva la pagina girata.
+    - Spegnendo l'AI le pagine migliorate sparivano di colpo (un lampo
+      nero): ora restano finche' non arriva quella normale.
+    - Il menu, con le voci nuove, sarebbe stato alto 1100 pixel: ora sta
+      in due colonne affiancate, divise da un filo.
+    - Con la lente la pagina sotto spariva (visto negli scatti): pagine e
+      lente sono due gruppi di disegno nello stesso fotogramma, e il
+      secondo scriveva i suoi dati nello stesso tratto del buffer della
+      scheda video, cancellando quelli del primo prima che fossero usati.
+      Ora ogni gruppo scrive dopo il precedente.
+
+2.7 Test e strumenti di misura
+------------------------------
+  108 test: la mappa dei tasti (tasti di serie, scelti che vincono, il
+  Maiusc che conta per le lettere e non per i simboli, un tasto tolto a chi
+  l'aveva), le impostazioni (trascinare, tastiera, cattura di un tasto,
+  scorrimento), le regolazioni dell'immagine, i tasti mostrati nel menu;
+  ordinamento, formati (anche CB7, CBT e PDF creati al momento;
+  AVIF e JPEG XL veri, fatti con libavif e libjxl, in fumetto-core\prove),
+  rifilo e rotazione, misura dalle intestazioni (anche di un file tagliato),
+  riconoscimento dei webtoon e larghezza naturale del nastro, segnalibri,
+  miniature (apertura sulla pagina, clic, tastiera, forma delle celle),
+  menu in due colonne, ingrandimento (quando vale la pena),
+  rimpicciolimento in luce lineare, tasselli delle strisce, geometria del
+  nastro, stato del lettore (doppia pagina, zoom e livelli, ripresa,
+  lettura anticipata, vai a pagina, niente lampi neri, pagine
+  illeggibili), interfaccia (vai a pagina, menu, didascalia, barra,
+  galleria vuota, tagli con i puntini), libreria (serie dai nomi,
+  scansione, sezioni, ricerca, filtri, tastiera), copertine (ritaglio e
+  cache), progressi (scrittura sicura, file rovinato messo da parte,
+  recenti, segna letto), impostazioni, titoli delle cartelle.
+  fumetto-probe (rust\target\release\fumetto-probe.exe):
+    retino [cartella]     qualita' del rimpicciolimento, in PNG e numeri
+    ridimensiona          costo del rimpicciolimento sul processore
+    disegna               costo di un fotogramma sulla scheda video
+    avvio                 tappe della preparazione della scheda video
+    scansione <cartella>  decodifica tutti i volumi (come prova_scan.py)
+    prepara <volume> [n]  le prime n pagine, passo per passo
+    scatto <volume> [cartella] [larghezza altezza scala]
+                          l'interfaccia vera sulle pagine vere, in PNG
+                          (barra, zoom, didascalia, nastro, vai a pagina,
+                          menu, galleria vuota)
+    libreria <cartella> [uscita]
+                          la libreria vera di una cartella, in PNG
+                          (griglia, serie, ricerca, menu)
+    migliora <volume> [pagina] [larghezza altezza]
+                          l'ingranditore AI vero su una pagina: tempi, e
+                          prima/dopo in PNG
+    webtoon <volume>      le misure lette all'apertura, e il verdetto
+  Lo scatto ora fotografa anche segnalibro, vai a pagina con i segni, il
+  menu in due colonne, le miniature, le impostazioni (con luminosita' e
+  contrasto alzati, sezione Tasti) e la lente.
+  Opzione --integrata per usare la scheda a basso consumo.
+  Gli scatti servono a guardare l'interfaccia senza aprire finestre sul
+  desktop di chi sta usando il computer.
+
+
+=====================================================================
+3. COSA MANCA RISPETTO ALLA VERSIONE PYTHON
+=====================================================================
+
+3.1 Cose di base, che si notano subito
+--------------------------------------
+  [x] Aprire un file senza trascinarlo: Ctrl+O, Ctrl+Maiusc+O (cartella),
+      chiudere (Ctrl+W); un clic nella galleria vuota apre.
+  [x] File recenti: avviato senza volume riprende l'ultimo letto; nella
+      galleria vuota e nel menu (tasto destro) gli ultimi letti. Vengono
+      dai progressi, nessun elenco a parte.
+  [ ] I recenti nella jump list di Windows (arrivano con l'associazione
+      dei file dell'installer, capitolo 5).
+  [x] Messaggi d'errore visibili: finestra di sistema (volume che non si
+      apre, progressi non salvati, cestino); pagina illeggibile.
+  [x] Niente console con il doppio clic sull'exe.
+  [x] Icona del programma, anche nella finestra e nella barra delle
+      applicazioni, a ogni scala dello schermo.
+  [x] Italiano e inglese automatici (anche i messaggi d'errore).
+
+3.2 Lettura
+-----------
+  [x] Pagina intera (0), larga quanto la finestra (1), pixel reali (2),
+      anche dalla barra; zoom anche nel nastro (la sua larghezza).
+  [x] Vai a pagina (Ctrl+G).
+  [x] Menu contestuale (tasto destro).
+  [x] Riconoscimento automatico dei webtoon, con la sua opzione nel menu.
+  [x] Larghezza di partenza del nastro: al massimo 1,5 volte la misura
+      vera delle strisce e al massimo il 60% della finestra.
+  [x] Rifilo dei margini (C), anche questo ricordato fra le impostazioni.
+  [x] Rotazione (R, Maiusc+R), ricordata per ogni volume.
+  [x] Segnalibri (Ctrl+B): per volume, nel menu, sul righello, nelle
+      miniature. (In Python erano un elenco unico per tutti i volumi.)
+  [x] Salva pagina (Ctrl+S), copia pagina (Ctrl+C).
+  [x] Presentazione automatica (S).
+  [x] Doppio clic (al centro: schermo intero).
+
+3.3 I pezzi grandi
+------------------
+  [x] Libreria (Ctrl+L): cartelle scelte, scansione in sottofondo, serie
+      dal nome ("Titolo v03", "#12", "- 07", "vol. 2 (2021)") o dalla
+      cartella che raccoglie i capitoli, griglia che riempie la finestra,
+      "Continua a leggere", serie in pila, filtri, ricerca scrivendo,
+      tastiera, menu sulla copertina, cartelle da aggiungere e togliere,
+      copertine in cache (vedi 2.1).
+  [x] Miniature delle pagine (T), nello stile della libreria.
+  [x] Ingrandimento AI (U), Real-ESRGAN, con la sua opzione nel menu.
+  [x] AVIF e JPEG XL, dentro l'eseguibile (in Python erano facoltativi).
+  [x] Pacchetto da distribuire: rust\pacchetto.ps1 (capitolo 5).
+
+3.4 Cosa ha gia' la versione Rust e la Python no
+------------------------------------------------
+  Luce lineare senza moire' (anche nelle copertine), PDF con le scansioni
+  originali, CB7 senza cartelle temporanee, UnRAR incluso, doppia pagina
+  con copertina da sola, 144 Hz senza fotogrammi persi, prima pagina in
+  ~300 ms, zoom sul puntatore e percentuale vera, "Continua a leggere" e
+  capitoli raccolti per cartella nella libreria, un solo eseguibile da
+  20,7 MB con i suoi caratteri, AVIF e JPEG XL; miniature con la forma
+  delle pagine, segnalibri per volume, larghezza del nastro dalle strisce
+  vere, pagine migliorate che arrivano senza fermare la lettura.
+
+
+=====================================================================
+4. PROSSIMI PASSI, IN ORDINE
+=====================================================================
+  Fatto il 24 settembre: le cose di base (3.1); la scelta del testo (tre
+  proposte sulla tela https://claude.ai/artifact/PMmj7Y7UTBt7dhDFWTU36C,
+  scelta A resa premium, poi senza corsivo); didascalia, avvisi, vai a
+  pagina, menu, galleria vuota; barra in alto e zoom regolabile; libreria.
+
+  Fatto il 25 settembre: tutto il capitolo 3 (tranne la jump list), con
+  i test, gli scatti e le prove vere di ingranditore e riconoscimento.
+
+  1. Provare tutto a mano nella finestra vera. Finora: test e scatti
+     fuori schermo; tasti, clic e rotella non sono mai stati usati davvero.
+       - le cose nuove: T (clic, frecce, rotella, T per uscire), R e
+         Maiusc+R, C, S (e che si fermi alla fine), Ctrl+B e i nastrini,
+         Ctrl+S (stesso formato e formato diverso), Ctrl+C e incolla in un
+         altro programma, doppio clic al centro, un webtoon mai aperto (si
+         apre a nastro?), U la prima volta (chiede di scaricare?) e con
+         una scansione piccola (la pagina diventa piu' nitida dopo 2-3 s?),
+         un file AVIF e uno JPEG XL, il menu in due colonne;
+       - la ricerca della libreria scrivendo (prima non poteva funzionare);
+       - le impostazioni: trascinare le regolazioni (la pagina cambia dal
+         vivo?), cambiare un tasto e usarlo, Ctrl+, per aprire e chiudere;
+         la lente (L) su pagine normali e nel nastro, la rotella;
+       - Ctrl+O, Ctrl+W, clic nella galleria vuota, trascinare sulla
+         finestra un file che non e' un fumetto;
+       - la barra: passare sopra i tasti, cliccare la percentuale, H per
+         nasconderla e riaverla, riaprire l'app (se ne ricorda?);
+       - 0, 1, 2, + e -, anche nel nastro (V); Ctrl+G; il tasto destro;
+       - la libreria: aggiungere una cartella, scrivere per cercare, i
+         filtri, le frecce, aprire una pila, il tasto destro su una
+         copertina (anche il cestino), Ctrl+L per tornare al volume;
+       - --prova da PowerShell (le misure devono comparire li'), e rifare
+         le misure del 2.5 con l'interfaccia (a schermo sbloccato).
+  2. Metadati ComicInfo.xml (titolo, serie, numero, autori, verso manga):
+     migliorano serie e titoli della libreria.
+  3. Ingrandimento AI senza programmi esterni: la rete realesr-animevideov3
+     e' piccola (1,2 MB di pesi, 18 convoluzioni 3x3): scriverla in WGSL
+     toglierebbe i 44 MB da scaricare. Attenzione: sulla stessa scheda che
+     disegna le pagine, un calcolo lungo ferma i fotogrammi; va spezzato.
+  4. Il peso dell'eseguibile: da 15,3 a 20,7 MB con AVIF, JPEG XL e appunti
+     (vedi 5, Tecnici).
+  5. Distribuzione (capitolo 5).
+
+  Da decidere tu, quando vuoi:
+    - Le cartelle degli autori (tipo "ANRAKUGAI - AUTORE" con 6 titoli
+      dentro) oggi nella libreria diventano pile, come le serie. Tenerle
+      come raccolte, o solo le serie vere dai nomi? (Una riga in
+      fumetto-core\src\library.rs, group_by_folder.)
+    - La "sensazione" dello scorrimento: la funzione glide_step in
+      rust\crates\fumetto\src\strip.rs (segnata TODO(human)); oggi
+      rallenta in modo esponenziale e si ferma in circa 0,3 s. La usa
+      anche lo scorrimento della libreria.
+    - Provare l'app a occhio: G per confrontare luce lineare e gamma
+      sulle tue tavole, V e la rotella per sentire il nastro.
+
+
+=====================================================================
+5. ALTRI LAVORI APERTI
+=====================================================================
+  Distribuzione (ogni passo solo con il tuo via)
+    [x] Il pacchetto: rust\pacchetto.ps1 fa le prove, compila, e mette in
+        rust\dist\Fumetto\ Fumetto.exe, pdfium.dll e licenze\ (pdfium e le
+        sue, i caratteri, e terze-parti.txt con licenza e testi di ogni
+        libreria dentro l'eseguibile, presi da cargo metadata); poi lo zip
+        rust\dist\Fumetto-<versione>-windows-x64.zip. Provato il 25
+        settembre: 28,9 MB installato, 10,9 MB da scaricare (la versione
+        Python: 70,8 e 31,4). 212 librerie in terze-parti.txt; 6 non
+        portano il testo della licenza nel loro pacchetto (alloc-stdlib,
+        atomig-macro, clipboard-win, harfrust, profiling, spirv): per loro
+        c'e' solo il nome della licenza, e prima di pubblicare va aggiunto
+        il testo a mano.
+    [x] Repository git e primo commit (25 settembre): privato, su
+        https://github.com/nicgnello-cyber/fumetto, ramo main. Fuori dal
+        repository (.gitignore): rust\target, rust\dist, "scan per prove"
+        (fumetti veri). pdfium.dll c'e' (7 MB), cosi' una copia appena
+        scaricata compila e apre i PDF. GitHub CLI (gh) installato e
+        collegato all'account.
+    [x] Nome e pubblicazione (27 settembre). Il programma si chiama
+        NicoReader in tutto cio' che si vede: finestra, schermata iniziale,
+        libreria, dialoghi, risorse dell'exe, installer (NicoReader.exe,
+        tipo "NicoReader.Volume"), NicoReader.app (bundle
+        io.github.nicgnello-cyber.nicoreader), pacchetto nicoreader
+        (/opt/nicoreader, comando nicoreader, nicoreader.desktop), app_id
+        e WM_CLASS "nicoreader". Le cartelle dei dati si chiamano
+        NicoReader: al primo avvio quelle vecchie "Fumetto" diventano le
+        nuove (app_dir() in main.rs), cosi' progressi e libreria restano.
+        L'AppId dell'installer e' lo stesso di prima. Restano "fumetto" le
+        cartelle e i moduli del codice e FUMETTO_DATI.
+        Licenza: MIT o Apache-2.0, a scelta (LICENSE-MIT, LICENSE-APACHE;
+        copyright nicgnello-cyber), anche nei pacchetti.
+        Repository pubblico nuovo, nicgnello-cyber/NicoReader, partito da un
+        solo commit: la cronologia di prima aveva l'email personale come
+        autore. Il repository fumetto resta privato, come archivio (con le
+        PR 1-5).
+    [x] Windows ARM64 e Linux x64 (26 settembre). pacchetto.ps1 -Arch
+        arm64 fa Fumetto-<versione>-windows-arm64.zip (si compila anche da
+        un PC x64, con gli strumenti ARM64 di Visual Studio); pacchetto.sh
+        fa Fumetto-<versione>-linux-x64.tar.gz. pdfium per ARM64 e per
+        Linux lo scaricano gli script (stessa versione 8066, controllato
+        con SHA-256), fuori dal repository.
+        Su Linux x64 (Ubuntu 24.04) le 108 prove passano, e il programma si
+        apre e mostra le pagine (X11, Vulkan software). Linux ARM64:
+        compila, e le 108 prove passano sotto qemu. Windows ARM64 non
+        provato qui (serve l'SDK di Microsoft): lo compila GitHub Actions.
+        rav1d su ARM64 e' senza assembly: il pacchetto 1.1.0 su crates.io
+        non contiene src/arm/asm-offsets.h e non compila (vale anche per i
+        Mac con Apple Silicon). Gli AVIF si leggono, piu' lentamente. Da
+        riprovare alla prossima versione di rav1d.
+    [x] Compilazione automatica (GitHub Actions, .github/workflows/
+        pacchetti.yml): Windows x64, Windows ARM64 (compilato da x64, le
+        prove solo su x64) e Linux x64 (su Ubuntu 22.04, per una glibc
+        non troppo nuova). Parte a mano, per i tag v* e per le pull
+        request che toccano rust/; i pacchetti restano negli Artifacts.
+    [x] macOS (26 settembre): pacchetto-mac.sh fa Fumetto.app, con un
+        eseguibile universale (Apple Silicon e Intel uniti con lipo, da
+        macOS 10.15), pdfium mac-univ in Contents/Frameworks (pdf.rs lo
+        cerca li'), icona e licenze, firmato ad hoc; poi
+        Fumetto-<versione>-macos.dmg. terze_parti.py ora serve Linux e Mac.
+        L'icona (risorse/macos/fumetto.icns) la fa fai_icona.py, con il
+        disegno all'80% del riquadro come vuole la griglia di Apple.
+        In GitHub Actions il Mac gira solo a mano e per i tag: i suoi
+        minuti costano 10 volte quelli Linux. Da qui (Linux) verificato solo
+        con cargo check per i due Mac; il pacchetto vero lo fa Actions.
+    [ ] macOS: aprire i volumi dal Finder (doppio clic, "Apri con",
+        trascinati sull'icona nel Dock). Arrivano come Apple Event
+        (application:openURLs:), che winit 0.30 non passa al programma:
+        serve un metodo aggiunto al delegato di winit (objc2), poi
+        CFBundleDocumentTypes nell'Info.plist. Oggi si aprono da Cmd+O e
+        dalla libreria.
+    [ ] macOS: icona oltre i 256 px (512, 1024 per il Retina): serve un
+        disegno piu' grande di icona.png.
+    [ ] Su Windows ARM64 l'ingranditore AI scarica il Real-ESRGAN per x64,
+        che Windows 11 esegue emulato: da provare su un PC ARM (Vulkan in
+        emulazione). Per Linux ARM64 Real-ESRGAN non esiste: l'opzione
+        andrebbe nascosta prima di farne un pacchetto.
+    [x] Installer (26 settembre).
+        Windows: installer\fumetto.iss (Inno Setup 6), lo compila
+        pacchetto.ps1 dopo lo zip: Fumetto-<versione>-windows-<arch>-
+        setup.exe, 4,9 MB. Per l'utente senza amministratore (o per tutti,
+        a scelta), menu Start, desktop a richiesta, tipo "Fumetto
+        (volume)" con doppio clic su CBZ/CBR/CB7/CBT solo dove nessun altro
+        li apre (Libero() nel [Code]), "Apri con" anche per i PDF, e il
+        disinstallatore toglie tutto e ridà il doppio clic com'era (Togli()).
+        Stesso AppId per x64 e ARM64. Provato qui con Wine (Inno 6.5.4):
+        compila senza avvisi; installazione per tutti: file, collegamenti,
+        registro giusti, un .cbr gia' di un altro programma resta suo, il
+        doppio clic su un .cbz con spazi nel nome avvia Fumetto.exe con il
+        percorso; disinstallazione pulita. L'installazione per utente non
+        si prova in Wine (non conosce %LOCALAPPDATA%\Programs): da provare
+        su Windows. Al posto di Fumetto.exe c'era un exe qualsiasi: gli
+        artifact di Actions non si scaricano da qui.
+        Linux: pacchetto.sh fa anche fumetto_<versione>_<arch>.deb (8,8 MB):
+        /opt/fumetto, /usr/bin/fumetto, menu e icona per tutti; dipende da
+        libc6 (la glibc piu' alta chiesta dai binari), libstdc++6,
+        libxkbcommon(-x11). Provato: apt install, avvio dal menu su un PDF
+        (pdfium trovato attraverso /usr/bin/fumetto), apt remove pulito.
+        macOS: il dmg e' gia' l'installer del Mac.
+        GitHub Actions carica anche setup.exe e .deb.
+    [x] Pubblicazione su GitHub Releases (26 settembre): per ogni tag v*
+        il job "release" di pacchetti.yml aspetta Windows, Linux e macOS,
+        controlla che il tag sia la versione di Cargo.toml, e pubblica i
+        sette file con nomi senza versione (Fumetto-windows-x64-setup.exe,
+        Fumetto-macos.dmg, Fumetto-linux-x64.deb, ...): il README li
+        linka come releases/latest/download/<nome>, che segue sempre
+        l'ultima. Provati da qui actionlint e il passo dei nomi (anche con
+        un tag sbagliato); la prima Release vera nasce col primo tag.
+        Finche' il repository e' privato, i link funzionano solo per chi
+        ha accesso: per tutti serve renderlo pubblico (e allora la licenza).
+    [ ] Jump list.
+    [ ] Linux: RPM (Fedora, openSUSE) o AppImage, se servono.
+    [x] Accanto all'eseguibile: pdfium.dll e le sue licenze (lo fa
+        pacchetto.ps1).
+    [x] File delle licenze di terze parti di tutte le librerie, e dei
+        caratteri (lo fa pacchetto.ps1).
+    [ ] L'exe non e' firmato: SmartScreen mostrera' un avviso. Su macOS
+        serve un account sviluppatore Apple (99 dollari l'anno) per firma
+        e notarizzazione.
+
+  Tecnici
+    [ ] L'interfaccia e le copertine le disegna solo la scheda video: nei
+        primi ~600 ms, quando le pagine arrivano dal processore, non si
+        vedono (galleria e libreria compaiono quando la scheda e' pronta).
+    [ ] I testi dell'interfaccia si impaginano a ogni fotogramma (pochi
+        microsecondi l'uno): con la libreria a schermo sono decine; se lo
+        scorrimento ne risente, una cache per testo (overlay.rs).
+    [ ] macOS mai provato su un Mac vero; Linux solo in una macchina virtuale (driver
+        grafici veri, priorita' dei thread, cestino, "mostra nella
+        cartella", Wayland da provare). L'icona della finestra c'e' solo su
+        Windows: su macOS viene dal pacchetto .app, su Linux dal file
+        .desktop.
+    [x] Linux: fumetto.desktop e installa.sh (risorse/linux, nel tar.gz),
+        26 settembre. installa.sh scrive la voce del menu in
+        ~/.local/share/applications con il percorso della cartella (anche
+        con spazi: provato con gio launch, cioe' come la legge GNOME) e
+        l'icona in hicolor/256x256; --rimuovi toglie entrambe. La finestra
+        dichiara il nome "fumetto" (app.rs, with_name): su Wayland e' l'app_id
+        con cui il desktop la lega a fumetto.desktop, su X11 il WM_CLASS
+        (verificato con xprop). Si propone per CBZ, CBR, CB7, CBT e PDF
+        ("Apri con"); il desktop lo usa da solo solo dove non c'e' altro.
+    [ ] PDF protetti da password: oggi lo dice ma non chiede la password.
+    [ ] Zoom molto grandi: la pagina ingrandita si carica sulla scheda
+        video dal thread principale (fino a ~100 ms, una volta): spostarlo.
+    [ ] RAR solidi e 7z si tengono interi in memoria all'apertura: per
+        archivi enormi servirebbe una cartella temporanea.
+    [ ] Proporre agli autori di wgpu di poter chiedere direttamente la
+        scheda a basso consumo, senza accendere la NVIDIA all'avvio.
+    [x] fumetto-probe scatto, sulla scheda integrata, finiva ogni tanto
+        (1 volta su 10-15) con un errore di memoria dopo aver scritto tutti
+        gli scatti. gdb: e' nel driver Intel per Vulkan (igxelpicd64.dll),
+        mentre Windows chiude il processo (LdrShutdownProcess), non nel
+        nostro codice. Il probe usava Vulkan; ora usa DX12 come l'app:
+        0 errori su 30. Chi forza WGPU_BACKEND=vulkan sulla Intel lo
+        sappia: puo' succedere anche all'app, alla chiusura.
+    [ ] Il peso: +5,4 MB per AVIF (rav1d), JPEG XL (jxl-oxide) e appunti.
+        Da misurare pezzo per pezzo; rav1d a soli 8 bit ne toglierebbe
+        una parte, ma gli AVIF a 10 bit non si leggerebbero.
+    [ ] La conversione YUV -> RGB degli AVIF e' un ciclo semplice per
+        pixel, in virgola mobile: se gli AVIF diventano comuni, misurare
+        quanto pesa dei 150 ms e farla a righe o con SIMD.
+    [ ] Doppio clic: 450 ms fissi; su Windows si potrebbe leggere il
+        tempo scelto dall'utente (GetDoubleClickTime).
+    [ ] Presentazione: i secondi si cambiano solo in impostazioni.json.
+
+
+=====================================================================
+6. AVVERTENZE PER CHI MISURA (E PROVA)
+=====================================================================
+  - Le misure a schermo (fluidita', giro di pagina) valgono solo con lo
+    schermo sbloccato e la finestra visibile: con lo schermo bloccato
+    Windows non compone le finestre e i numeri sono falsi.
+  - Se chi usa il computer e' presente, niente tasti simulati ne'
+    finestre che rubano il primo piano: per guardare l'interfaccia si usano
+    gli scatti del probe, e le prove interattive le fa lui.
+  - A batteria lo schermo va a 60 Hz, con l'alimentatore a 144 Hz.
+  - La prova automatica non tocca progressi e impostazioni veri; con
+    FUMETTO_DATI le si puo' dare una cartella sua (serve per provare la
+    ripresa).
+  - La prima lettura di un volume dal disco e' piu' lenta delle successive.
+
+
+=====================================================================
+7. LA VERSIONE PYTHON (tolta il 25 settembre, per memoria)
+=====================================================================
+  Python + PySide6 (Qt 6), impacchettato con PyInstaller. Il 25 settembre
+  sono andati nel Cestino fumetto.py, Fumetto.spec, build.ps1,
+  prova_scan.py e .txt, build\, dist\, vendor\ (UnRAR64.dll), icona.ico, il
+  README e la cache delle copertine (%LOCALAPPDATA%\Fumetto\covers).
+  L'icona sorgente (icona.png) e' passata in rust\crates\fumetto\risorse.
+  Restano nel registro le sue preferenze (HKCU\Software\Fumetto, e
+  FumettoClose, FumettoExit, FumettoShot, FumettoTest delle sue prove):
+  la versione Rust non le usa.
+    Programma:          fumetto.py (un file, circa 2900 righe)
+    Eseguibile:         dist\Fumetto\Fumetto.exe (70,8 MB installato,
+                        31,4 MB zippato)
+  Fa tutto cio' che e' elencato nel capitolo 3, piu' pagina singola,
+  doppia pagina, manga, nastro, zoom, riapertura dove eri rimasto.
+  Formati: CBZ, CBR (con UnRAR.dll inclusa, dal 23/09), CB7, CBT, PDF
+  (pypdfium2), cartelle; AVIF e JPEG XL facoltativi.
+  Misure: cambio pagina 2,4 ms, avvio a caldo 0,63 s, 16.239 pagine di
+  prova in 197 s.
+  Difetti risolti nel tempo: blocco raro Python/Qt (trovato con py-spy),
+  chiusura sicura, CB7, webtoon sgranati, miniature tagliate, cartelle
+  ignorate dalla libreria, file spostati, CBR lenti (ora con UnRAR.dll).
+  Lasciati aperti (non si toccano piu', si va avanti in Rust): archivi
+  troncati, larghezza salvata dei volumi nel nastro al 100%, ordinamento
+  "pagina.jpg" dopo "pagina2.jpg".
+
+
+=====================================================================
+8. CONFRONTO CON CDISPLAYEX (versione Rust)
+=====================================================================
+  Meglio: fedelta' dell'immagine (luce lineare, niente moire'), velocita'
+  e fluidita', nastro per i webtoon, ripresa esatta dove si era rimasti,
+  PDF di scansioni letti con i pixel originali, libreria con "Continua a
+  leggere" e serie, zoom con la percentuale vera.
+  Pari: doppia pagina con copertina da sola, formati, menu e barra.
+  Vicino ma non pari: il peso (15,3 MB, piu' 7 MB per i PDF, contro i
+  pochi MB di CDisplayEx).
+  Ora pari: luminosita'/contrasto/gamma, lente d'ingrandimento (la nostra
+  mostra i pixel veri della pagina), tasti personalizzabili, impostazioni.
+  Peggio, per ora: la maturita'. CDisplayEx e' usato da anni da migliaia di
+  persone; le nostre funzioni nuove non sono ancora state usate a mano.
+
+
+=====================================================================
+9. IDEE PER IL FUTURO
+=====================================================================
+  [x] Luminosita', contrasto, gamma (sulla scheda video, 25 settembre).
+  [x] Lente d'ingrandimento.
+  [x] Scorciatoie da tastiera personalizzabili, foglio delle impostazioni.
+  [ ] Luminosita' e contrasto per volume (oggi valgono per tutti).
+  [ ] Tablet e touch: gesti, scorrimento con il dito, pizzico per zoomare.
+  [ ] Statistiche di lettura e sincronizzazione dei progressi tramite una
+      cartella condivisa (OneDrive, Dropbox...), senza server.
+  [ ] Profili colore delle scansioni (ICC).

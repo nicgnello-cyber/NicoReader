@@ -1,0 +1,53 @@
+[package]
+name = "fumetto-core"
+description = "Il nucleo di Fumetto: archivi, decodifica delle pagine, lettura anticipata. Nessuna grafica."
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+# AVIF: il contenitore (Mozilla, lo usa Firefox); la pagina AV1 la decodifica rav1d
+avif-parse = "2.1.0"
+# Lanczos con SIMD, in luce lineare a 16 bit
+fast_image_resize = "6.1.0"
+# JPEG (zune-jpeg sotto), PNG, GIF, BMP. Il WebP no: vedi sotto.
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "gif", "bmp"] }
+# JPEG XL, tutto in Rust
+jxl-oxide = { version = "0.12.6", default-features = false }
+# pdfium (C++, la libreria dei PDF di Chrome) si carica solo quando si apre un
+# PDF: senza la DLL il resto funziona, e i PDF dicono cosa manca
+libloading = "0.9.0"
+# WebP con la libreria di riferimento in C, compilata dentro l'eseguibile: nella
+# cartella di prova sono WebP 14.125 pagine su 15.400, e' il formato che conta.
+# sse41: il codice SIMD c'e', ma libwebp controlla la CPU prima di usarlo.
+libwebp-sys = { version = "0.14.4", features = ["sse41"] }
+# i progressi di lettura, in un file di testo leggibile
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+# CB7: solo decompressione, niente cifratura ne' algoritmi rari
+sevenz-rust2 = { version = "0.23.0", default-features = false }
+# l'impronta dei file dell'ingranditore AI scaricati: si eseguono, devono essere quelli
+sha2 = { version = "0.10", default-features = false }
+sys-locale = "0.3.2"
+# CBT: tar non compresso, le pagine si leggono direttamente dal file
+tar = { version = "0.4.46", default-features = false }
+thread-priority = "3.1.1"
+# sorgente C++ di RARLab compilato dentro: niente DLL, gira anche su macOS e Linux
+unrar = "0.5.8"
+# solo lettura, solo deflate: nei CBZ non si trova altro
+zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+# AV1 per le pagine AVIF: dav1d riscritto in Rust, con le sue routine SIMD
+# (in assembly, servono nasm per compilarle); solo la decodifica a 8 e 10 bit
+[target.'cfg(not(target_arch = "aarch64"))'.dependencies]
+rav1d = { version = "1.1.0", default-features = false, features = ["asm", "bitdepth_8", "bitdepth_16"] }
+
+# Su ARM64 (Windows su Snapdragon, Linux ARM) senza assembly: il pacchetto 1.1.0
+# su crates.io non contiene src/arm/asm-offsets.h e non compila. Solo Rust e'
+# piu' lento sugli AVIF, che sono pochi. Da rivedere alla prossima versione.
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+rav1d = { version = "1.1.0", default-features = false, features = ["bitdepth_8", "bitdepth_16"] }
+
+[dev-dependencies]
+# solo per i test: creare al volo i 7z da riaprire
+sevenz-rust2 = { version = "0.23.0", default-features = false, features = ["compress", "util"] }

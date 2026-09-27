@@ -1,0 +1,13 @@
+[package]
+name = "fumetto-probe"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+
+[dependencies]
+fast_image_resize = "6.1.0"
+fumetto = { version = "0.1.0", path = "../fumetto" }
+fumetto-core = { version = "0.1.0", path = "../fumetto-core" }
+fumetto-render = { version = "0.1.0", path = "../fumetto-render" }
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+pollster = "1.0.1"

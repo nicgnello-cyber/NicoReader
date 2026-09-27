@@ -1,0 +1,22 @@
+# risultati della compilazione: si rifanno
+rust/target/
+rust/dist/
+
+# pdfium per gli altri sistemi: lo scaricano pacchetto.ps1, pacchetto.sh e
+# pacchetto-mac.sh
+# (quello per Windows x64 invece sta nel repository)
+rust/vendor/pdfium/win-arm64/
+rust/vendor/pdfium/linux-x64/
+rust/vendor/pdfium/linux-arm64/
+rust/vendor/pdfium/mac-univ/
+
+# pagine di prova: fumetti veri, protetti da diritto d'autore, e pesanti
+scan per prove/
+
+# file dei sistemi e degli editor
+__pycache__/
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

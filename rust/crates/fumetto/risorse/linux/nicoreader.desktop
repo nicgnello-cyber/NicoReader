@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=NicoReader
+GenericName=Comic Reader
+GenericName[it]=Lettore di fumetti
+Comment=Read comics, manga and webtoons
+Comment[it]=Leggi fumetti, manga e webtoon
+Keywords=comic;manga;webtoon;cbz;cbr;cb7;reader;
+Keywords[it]=fumetto;fumetti;manga;webtoon;cbz;cbr;cb7;lettore;
+# Exec lo riscrive installa.sh con il percorso dell'eseguibile; cosi' com'e'
+# vale per un'installazione che mette nicoreader nel PATH
+Exec=nicoreader %f
+Icon=nicoreader
+Terminal=false
+Categories=Graphics;Viewer;
+MimeType=application/vnd.comicbook+zip;application/vnd.comicbook-rar;application/x-cbz;application/x-cbr;application/x-cb7;application/x-cbt;application/pdf;
+# il nome che la finestra dichiara (app.rs, with_name)
+StartupWMClass=nicoreader
