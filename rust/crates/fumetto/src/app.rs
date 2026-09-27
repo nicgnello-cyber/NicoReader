@@ -191,6 +191,9 @@ pub struct App {
     generation: u64,
     progress: Progress,
     last_save: Instant,
+    /// Il volume aperto appena segnato dal menu come letto o da leggere, con
+    /// il punto in cui stava il lettore: vedi `keep_position`.
+    marked: Option<(PathBuf, Saved)>,
 
     window: Option<Arc<Window>>,
     gfx: Option<Gfx>,
@@ -333,6 +336,7 @@ impl App {
             generation: 0,
             progress,
             last_save: Instant::now(),
+            marked: None,
             window: None,
             gfx: None,
             proxy,
@@ -595,7 +599,7 @@ impl App {
     /// Annota dove si e' arrivati nel volume aperto (il disco lo vede dopo).
     fn remember(&mut self) {
         if let (Some(book), Some(reader)) = (&self.book, &self.reader) {
-            self.progress.set(&book.path, reader.snapshot());
+            keep_position(&mut self.progress, &mut self.marked, &book.path, reader.snapshot());
         }
     }
 
@@ -1076,6 +1080,13 @@ impl App {
                 match pages {
                     Some(n) => {
                         self.progress.mark(&path, read, n);
+                        // il volume aperto: da qui il lettore non lo riscrive, finche' non ci si muove
+                        let same = |a: &Path| std::path::absolute(a).ok() == std::path::absolute(&path).ok();
+                        if let (Some(book), Some(reader)) = (&self.book, &self.reader)
+                            && same(&book.path)
+                        {
+                            self.marked = Some((book.path.clone(), reader.snapshot()));
+                        }
                         self.refresh_shelf();
                         self.refresh_recent();
                         self.ui.toast(if read { t("Segnato come letto", "Marked as read") } else { t("Di nuovo da leggere", "Unread again") }, now);
@@ -2150,6 +2161,21 @@ fn copier(jobs: mpsc::Receiver<(Arc<Book>, usize, Target)>, proxy: EventLoopProx
     }
 }
 
+/// Scrive nei progressi dove sta il lettore nel volume aperto. Ma se il
+/// volume e' stato appena segnato dal menu (letto, o di nuovo da leggere) e
+/// il lettore e' ancora fermo dove era, no: rimetterebbe fra quelli in
+/// lettura, alla pagina di prima, il volume appena tolto. Appena ci si muove,
+/// si torna a scriverlo: lo si sta leggendo davvero.
+fn keep_position(progress: &mut Progress, marked: &mut Option<(PathBuf, Saved)>, path: &Path, now: Saved) {
+    if let Some((was, at)) = marked {
+        if was.as_path() == path && *at == now {
+            return;
+        }
+        *marked = None;
+    }
+    progress.set(path, now);
+}
+
 /// La libreria come la vede l'interfaccia.
 fn shelf_data<'a>(lib: &'a Lib, roots: &'a [PathBuf], covered: &'a dyn Fn(&Path) -> bool, reading: bool) -> ShelfData<'a> {
     ShelfData {
@@ -2284,4 +2310,58 @@ fn set_icons(window: &Window) {
     };
     window.set_window_icon(icon(16.0));
     window.set_taskbar_icon(icon(32.0));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn at(page: usize) -> Saved {
+        Saved { page, pages: 20, ..Saved::default() }
+    }
+
+    /// Il volume aperto, segnato da leggere dal menu della libreria, non deve
+    /// tornare fra quelli in lettura al salvataggio successivo.
+    #[test]
+    fn segnato_da_leggere_resta_da_leggere() {
+        let path = Path::new("aperto.cbz");
+        let mut progress = Progress::in_memory();
+        let mut marked = None;
+        keep_position(&mut progress, &mut marked, path, at(7));
+        assert!(progress.get(path).is_some());
+
+        progress.mark(path, false, 20);
+        marked = Some((path.to_owned(), at(7)));
+        for _ in 0..3 {
+            keep_position(&mut progress, &mut marked, path, at(7));
+        }
+        assert!(progress.get(path).is_none(), "salvando, il lettore fermo lo rimetteva in lettura");
+
+        keep_position(&mut progress, &mut marked, path, at(8));
+        assert_eq!(progress.get(path).map(|s| s.page), Some(8), "ripreso a leggere: di nuovo in lettura");
+        assert!(marked.is_none());
+    }
+
+    /// Lo stesso per "segna come letto": resta letto, non torna alla pagina di prima.
+    #[test]
+    fn segnato_letto_resta_letto() {
+        let path = Path::new("aperto.cbz");
+        let mut progress = Progress::in_memory();
+        let mut marked = None;
+        keep_position(&mut progress, &mut marked, path, at(3));
+        progress.mark(path, true, 20);
+        marked = Some((path.to_owned(), at(3)));
+        keep_position(&mut progress, &mut marked, path, at(3));
+        assert_eq!(progress.get(path).map(|s| s.page), Some(19));
+    }
+
+    /// Un altro volume aperto dopo non eredita la regola.
+    #[test]
+    fn altro_volume_si_scrive() {
+        let mut progress = Progress::in_memory();
+        let mut marked = Some((PathBuf::from("vecchio.cbz"), at(3)));
+        keep_position(&mut progress, &mut marked, Path::new("nuovo.cbz"), at(3));
+        assert!(progress.get(Path::new("nuovo.cbz")).is_some());
+        assert!(marked.is_none());
+    }
 }
