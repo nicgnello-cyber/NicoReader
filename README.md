@@ -106,7 +106,9 @@ tag, either from the GitHub website (Releases → Draft a new release → tag
 
 Actions builds the packages for every system and publishes them in the
 `v0.2.0` Release, under the version-less names the links use (it stops if the
-tag doesn't match the version in Cargo.toml).
+tag doesn't match the version in Cargo.toml), with the notes from
+`.github/note-release.md` if the Release has none. To rewrite only the notes
+of the current version: Run workflow with "note" checked.
 
 ## License
 

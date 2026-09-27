@@ -103,7 +103,9 @@ GitHub (Releases -> Draft a new release -> tag `v0.2.0`, "create on publish"
 
 Actions fa i pacchetti di tutti i sistemi e li pubblica nella Release `v0.2.0`,
 con i nomi senza versione dei link (se il tag non e' la versione di
-Cargo.toml si ferma).
+Cargo.toml si ferma), e con le note di `.github/note-release.md` se la
+Release non ne ha. Per riscrivere solo le note della versione attuale: Run
+workflow con "note" spuntato.
 
 ## Licenza
 
