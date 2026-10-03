@@ -8,7 +8,8 @@ moiré), turn in a millisecond, and reopen where you left off.
 
 It reads folders, CBZ/ZIP, CBR/RAR (solid archives too), CB7/7Z, CBT/TAR and
 PDF, with JPEG, PNG, WebP, GIF, BMP, AVIF and JPEG XL pages. It has a library
-organized by series, thumbnails, bookmarks, two-page spreads, a vertical strip
+organized by series (from ComicInfo.xml when a volume has one, so manga also
+open right to left on their own), thumbnails, bookmarks, two-page spreads, a vertical strip
 for webtoons (detected automatically), zoom, a magnifier,
 brightness/contrast/gamma, customizable keys, and optional AI upscaling
 (Real-ESRGAN, downloaded on first use). The interface is in English and

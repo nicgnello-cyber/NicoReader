@@ -8,8 +8,9 @@ loro tono, senza moiré), si girano in un millisecondo e si riaprono dove le si
 era lasciate.
 
 Legge cartelle, CBZ/ZIP, CBR/RAR (anche solidi), CB7/7Z, CBT/TAR e PDF; pagine
-JPEG, PNG, WebP, GIF, BMP, AVIF e JPEG XL. Ha la libreria con le serie,
-miniature, segnalibri, doppia pagina, nastro per i webtoon (riconosciuti da
+JPEG, PNG, WebP, GIF, BMP, AVIF e JPEG XL. Ha la libreria con le serie
+(prese dalla ComicInfo.xml quando il volume ce l'ha: i manga si aprono anche
+da destra a sinistra da soli), miniature, segnalibri, doppia pagina, nastro per i webtoon (riconosciuti da
 soli), zoom, lente, luminosità/contrasto/gamma, tasti personalizzabili, e un
 ingrandimento AI facoltativo (Real-ESRGAN, scaricato al primo uso). In
 italiano e in inglese.

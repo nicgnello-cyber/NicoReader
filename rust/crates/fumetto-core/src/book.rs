@@ -10,6 +10,7 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use crate::comicinfo::{self, ComicInfo, is_comic_info};
 use crate::decode::Page;
 use crate::lingua::t;
 use crate::loader::Fit;
@@ -102,6 +103,8 @@ pub struct Book {
     pub names: Vec<String>,
     /// Pagina da cui partire: se si apre una singola immagine, e' quella.
     pub start_at: usize,
+    /// La ComicInfo.xml dentro il volume, se c'e'.
+    pub info: Option<ComicInfo>,
     store: Store,
 }
 
@@ -144,7 +147,13 @@ impl Book {
         if names.is_empty() {
             return Err(Error::NoImages);
         }
-        Ok(Book { path: path.to_owned(), title, names, start_at: 0, store })
+        let info = match &store {
+            // RAR solidi e 7z: la scheda e' gia' in memoria con le pagine
+            Store::Memory(files) => files.iter().find(|(n, _)| is_comic_info(n)).and_then(|(_, b)| ComicInfo::parse(b)),
+            Store::Pdf(_) => None,
+            _ => read_info(path),
+        };
+        Ok(Book { path: path.to_owned(), title, names, start_at: 0, info, store })
     }
 
     pub fn len(&self) -> usize {
@@ -308,14 +317,15 @@ fn open_7z(path: &Path) -> Result<(Vec<String>, Store), Error> {
     let mut files = HashMap::new();
     // un archivio troncato si ferma all'errore: le pagine lette fin li' restano
     let _ = archive.for_each_entries(|entry, reader| {
-        if !entry.is_directory() && is_image(entry.name()) {
+        let wanted = is_image(entry.name()) || (is_comic_info(entry.name()) && entry.size() <= comicinfo::MAX_BYTES);
+        if !entry.is_directory() && wanted {
             let mut bytes = Vec::with_capacity(entry.size() as usize);
             reader.read_to_end(&mut bytes)?;
             files.insert(entry.name().to_owned(), bytes);
         }
         Ok(true)
     });
-    let mut names: Vec<String> = files.keys().cloned().collect();
+    let mut names: Vec<String> = files.keys().filter(|n| is_image(n)).cloned().collect();
     sort(&mut names);
     Ok((names, Store::Memory(files)))
 }
@@ -365,7 +375,8 @@ fn open_rar(path: &Path) -> Result<(Vec<String>, Store), Error> {
     let mut cursor = unrar::Archive::new(path).open_for_processing().map_err(rar_err)?;
     while let Ok(Some(header)) = cursor.read_header() {
         let name = header.entry().filename.to_string_lossy().into_owned();
-        cursor = if header.entry().is_file() && is_image(&name) {
+        let info = is_comic_info(&name) && header.entry().unpacked_size <= comicinfo::MAX_BYTES;
+        cursor = if header.entry().is_file() && (is_image(&name) || info) {
             match header.read() {
                 Ok((bytes, next)) => {
                     files.insert(name, bytes);
@@ -380,9 +391,59 @@ fn open_rar(path: &Path) -> Result<(Vec<String>, Store), Error> {
             }
         };
     }
-    let mut names: Vec<String> = files.keys().cloned().collect();
+    let mut names: Vec<String> = files.keys().filter(|n| is_image(n)).cloned().collect();
     sort(&mut names);
     Ok((names, Store::Memory(files)))
+}
+
+/// La ComicInfo.xml di un volume senza aprirlo tutto: nelle cartelle accanto
+/// alle pagine, negli archivi dove si legge da sola (CBZ, CBT, CBR non solidi).
+/// Dai CB7 e dai CBR solidi si avrebbe solo decomprimendo cio' che le sta
+/// davanti, cioe' quasi tutto: per loro `None`, la si legge con le pagine.
+pub fn read_info(path: &Path) -> Option<ComicInfo> {
+    let bytes = if path.is_dir() {
+        let file = std::fs::read_dir(path).ok()?.flatten().find(|e| is_comic_info(&e.file_name().to_string_lossy()))?;
+        if file.metadata().ok()?.len() > comicinfo::MAX_BYTES {
+            return None;
+        }
+        std::fs::read(file.path()).ok()?
+    } else {
+        match sniff(path).ok()? {
+            Kind::Zip => {
+                let mut zip = zip::ZipArchive::new(File::open(path).ok()?).ok()?;
+                // la piu' in alto, se ce n'e' piu' d'una
+                let name = zip.file_names().filter(|n| is_comic_info(n)).min_by_key(|n| n.len())?.to_owned();
+                let f = zip.by_name(&name).ok()?;
+                read_limited(f)?
+            }
+            Kind::Tar => {
+                let mut archive = tar::Archive::new(File::open(path).ok()?);
+                let entry = archive.entries_with_seek().ok()?.flatten().find(|e| {
+                    e.header().entry_type().is_file() && e.path().is_ok_and(|p| is_comic_info(&p.to_string_lossy()))
+                })?;
+                read_limited(entry)?
+            }
+            Kind::Rar => {
+                let listing = unrar::Archive::new(path).open_for_listing().ok()?;
+                if listing.is_solid() {
+                    return None;
+                }
+                let name = listing.flatten().find_map(|e| {
+                    let name = e.filename.to_string_lossy().into_owned();
+                    (e.is_file() && is_comic_info(&name) && e.unpacked_size <= comicinfo::MAX_BYTES).then_some(name)
+                })?;
+                rar_read(path, &name).ok()?
+            }
+            Kind::SevenZ | Kind::Pdf | Kind::Other => return None,
+        }
+    };
+    ComicInfo::parse(&bytes)
+}
+
+fn read_limited(f: impl Read) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    f.take(comicinfo::MAX_BYTES + 1).read_to_end(&mut out).ok()?;
+    (out.len() as u64 <= comicinfo::MAX_BYTES).then_some(out)
 }
 
 fn rar_read(path: &Path, want: &str) -> Result<Vec<u8>, Error> {
@@ -445,6 +506,52 @@ mod tests {
         check(&Book::open(&sevenz_path).unwrap());
 
         for p in [&tar_path, &sevenz_path] {
+            let _ = std::fs::remove_file(p);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn la_scheda_in_ogni_formato() {
+        let dir = pages_dir("scheda");
+        let xml = "<?xml version=\"1.0\"?><ComicInfo><Series>Orbita Bassa</Series><Number>3</Number>\
+                   <Manga>YesAndRightToLeft</Manga></ComicInfo>";
+        std::fs::write(dir.join("ComicInfo.xml"), xml).unwrap();
+        let has_info = |book: &Book| {
+            check(book); // la scheda non e' una pagina
+            let info = book.info.as_ref().expect("scheda letta");
+            assert_eq!((info.series.as_deref(), info.right_to_left), (Some("Orbita Bassa"), Some(true)));
+        };
+        has_info(&Book::open(&dir).unwrap());
+
+        let tar_path = dir.with_extension("cbt");
+        let mut builder = tar::Builder::new(File::create(&tar_path).unwrap());
+        builder.append_dir_all(".", &dir).unwrap();
+        builder.finish().unwrap();
+        drop(builder);
+        has_info(&Book::open(&tar_path).unwrap());
+
+        let zip_path = dir.with_extension("cbz");
+        let mut zip = zip::ZipWriter::new(File::create(&zip_path).unwrap());
+        let stored = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for name in ["ComicInfo.xml", "p1.png", "p2.png", "p10.png"] {
+            zip.start_file(name, stored).unwrap();
+            io::Write::write_all(&mut zip, &std::fs::read(dir.join(name)).unwrap()).unwrap();
+        }
+        zip.finish().unwrap();
+        has_info(&Book::open(&zip_path).unwrap());
+
+        let sevenz_path = dir.with_extension("cb7");
+        sevenz_rust2::compress_to_path(&dir, &sevenz_path).unwrap();
+        has_info(&Book::open(&sevenz_path).unwrap());
+
+        // senza aprirli tutti: il 7z si dovrebbe decomprimere, si salta
+        for p in [&dir, &tar_path, &zip_path] {
+            assert_eq!(read_info(p).and_then(|i| i.number).as_deref(), Some("3"), "{}", p.display());
+        }
+        assert_eq!(read_info(&sevenz_path), None);
+
+        for p in [&tar_path, &zip_path, &sevenz_path] {
             let _ = std::fs::remove_file(p);
         }
         let _ = std::fs::remove_dir_all(&dir);

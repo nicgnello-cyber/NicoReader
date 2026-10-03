@@ -235,6 +235,8 @@ pub struct App {
     /// La libreria e' stata aperta sopra il volume che si legge (Ctrl+L).
     library_open: bool,
     lib: Lib,
+    /// Le schede ComicInfo.xml gia' lette, accanto alla cache delle copertine.
+    info_cache: PathBuf,
     /// Le copertine sulla scheda video, alla misura delle celle.
     covers: HashMap<PathBuf, (GpuImage, (u32, u32))>,
     /// Quelle che non si riesce a fare: non si richiedono di nuovo.
@@ -314,6 +316,7 @@ impl App {
             })
         };
         let keymap = Keymap::new(&settings.keys);
+        let info_cache = covers_dir.with_file_name("comicinfo.json");
         let cover_loader = {
             let proxy = proxy.clone();
             CoverLoader::new(covers_dir, move |c| {
@@ -361,6 +364,7 @@ impl App {
             settings_path,
             library_open: false,
             lib: Lib::default(),
+            info_cache,
             covers: HashMap::new(),
             covers_failed: Default::default(),
             cover_loader,
@@ -432,10 +436,11 @@ impl App {
         self.lib.scanning = true;
         let roots = self.settings.library.clone();
         let proxy = self.proxy.clone();
+        let cache = self.info_cache.clone();
         std::thread::Builder::new()
             .name("libreria".into())
             .spawn(move || {
-                let found = library::scan(&roots);
+                let found = library::scan_cached(&roots, &cache);
                 let _ = proxy.send_event(UserEvent::Scanned(roots, found));
             })
             .expect("thread della libreria");
@@ -513,6 +518,10 @@ impl App {
         // un volume mai letto: se le sue pagine sono strisce, e' un webtoon e
         // si legge a nastro. Chi ha gia' scelto come leggerlo decide lui
         let chosen = book.start_at > 0 || self.progress.get(&book.path).is_some_and(|s| s.pages > 0);
+        // la ComicInfo.xml dice se e' un manga da destra a sinistra
+        if !chosen && let Some(rtl) = book.info.as_ref().and_then(|i| i.right_to_left) {
+            reader.manga = rtl;
+        }
         let mut webtoon = false;
         if self.settings.webtoon && !chosen {
             let sizes = book.sample_sizes(7);

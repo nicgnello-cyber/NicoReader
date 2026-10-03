@@ -172,6 +172,7 @@ impl Shelf {
             needle.is_empty()
                 || e.title.to_lowercase().contains(&needle)
                 || e.series.as_ref().is_some_and(|s| s.to_lowercase().contains(&needle))
+                || e.authors.as_ref().is_some_and(|a| a.to_lowercase().contains(&needle))
         };
         let mut visible: Vec<usize> = (0..d.entries.len())
             .filter(|&i| self.filter.keeps(d.status[i]) && found(&d.entries[i]))
@@ -750,6 +751,7 @@ mod tests {
             title: title.to_owned(),
             series: series.map(|s| s.0.to_owned()),
             number: series.map(|s| s.1),
+            authors: None,
         }
     }
 
