@@ -10,11 +10,18 @@
 //! "Lanterne - 07", "Kaiju vol. 2 (2021)"); se il nome non ha un numero, dalla
 //! cartella che lo contiene (manga/AUTORE/Titolo/Capitolo 001: la serie e'
 //! "Titolo"), purche' non sia una delle cartelle della libreria.
+//!
+//! Se il volume ha una ComicInfo.xml, serie, numero e titolo vengono da li':
+//! chi l'ha scritta ne sapeva piu' del nome del file. Le schede lette si
+//! tengono in una cache su disco, cosi' la scansione dopo la prima non riapre
+//! gli archivi.
 
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::book::{is_image, title_of};
+use crate::book::{is_image, read_info, title_of};
+use crate::comicinfo::ComicInfo;
 use crate::natural::natural_cmp;
 use crate::progress::Progress;
 
@@ -41,6 +48,8 @@ pub struct Entry {
     pub series: Option<String>,
     /// Il numero nella serie, per ordinarla.
     pub number: Option<u32>,
+    /// Gli autori, dalla ComicInfo.xml: per cercarli.
+    pub authors: Option<String>,
 }
 
 /// Dove si e' arrivati in un volume.
@@ -67,9 +76,42 @@ impl Status {
 /// Tutti i volumi dentro le cartelle date, in ordine naturale di titolo.
 /// Le cartelle che non si leggono (un disco staccato) si saltano in silenzio.
 pub fn scan(roots: &[PathBuf]) -> Vec<Entry> {
+    scan_with(roots, &mut |path| read_info(path))
+}
+
+/// Come `scan`, con le schede ComicInfo tenute nel file `cache`: si rilegge
+/// solo quella dei volumi nuovi o cambiati (misura o data diverse).
+pub fn scan_cached(roots: &[PathBuf], cache: &Path) -> Vec<Entry> {
+    let mut old = InfoCache::load(cache);
+    let mut new = InfoCache::default();
+    let mut read = false;
+    let found = scan_with(roots, &mut |path| {
+        // le cartelle si guardano gia' per trovarle: rileggerle costa poco, e
+        // una scheda cambiata non cambierebbe la data della cartella
+        let Some(key) = cache_key(path).filter(|_| !path.is_dir()) else { return read_info(path) };
+        let info = old.0.remove(&key).unwrap_or_else(|| {
+            read = true;
+            read_info(path)
+        });
+        new.0.insert(key, info.clone());
+        info
+    });
+    // dentro solo i volumi visti adesso: quelli spariti o cambiati escono
+    if read || !old.0.is_empty() {
+        new.save(cache);
+    }
+    found
+}
+
+fn scan_with(roots: &[PathBuf], info: &mut dyn FnMut(&Path) -> Option<ComicInfo>) -> Vec<Entry> {
     let mut found = Vec::new();
     for root in roots {
         walk(root, root, &mut found);
+    }
+    for e in &mut found {
+        if let Some(info) = info(&e.path) {
+            apply_info(e, &info);
+        }
     }
     found.sort_by(|a: &Entry, b| natural_cmp(&a.title, &b.title).then_with(|| a.path.cmp(&b.path)));
     found.dedup_by(|a, b| a.path == b.path);
@@ -110,7 +152,53 @@ fn is_volume_file(name: &str) -> bool {
 fn entry(path: PathBuf) -> Entry {
     let title = title_of(&path);
     let (name, number) = parse_series(&title);
-    Entry { series: number.map(|_| name), number, title, path }
+    Entry { series: number.map(|_| name), number, title, path, authors: None }
+}
+
+/// Cio' che dice la ComicInfo.xml vince su cio' che si indovina dal nome. Una
+/// scheda senza serie lascia la serie al nome o alla cartella.
+fn apply_info(e: &mut Entry, info: &ComicInfo) {
+    if let Some(series) = &info.series {
+        e.series = Some(series.clone());
+        e.number = info.number_value();
+    } else if let Some(n) = info.number_value() {
+        e.number = Some(n);
+    }
+    if let Some(title) = info.display_title() {
+        e.title = title;
+    }
+    e.authors = info.authors.clone();
+}
+
+/// Le schede gia' lette, per percorso, misura e data del volume (`None`: il
+/// volume non ne ha una).
+#[derive(Default)]
+struct InfoCache(HashMap<String, Option<ComicInfo>>);
+
+impl InfoCache {
+    /// Una cache che manca o non si legge e' una cache vuota.
+    fn load(file: &Path) -> InfoCache {
+        let read = std::fs::read(file).ok().and_then(|b| serde_json::from_slice(&b).ok());
+        InfoCache(read.unwrap_or_default())
+    }
+
+    /// La cache e' un di piu': se non si scrive, la prossima volta si rilegge.
+    fn save(&self, file: &Path) {
+        let Ok(json) = serde_json::to_vec(&self.0) else { return };
+        let tmp = file.with_extension("tmp");
+        let _ = file
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|_| std::fs::write(&tmp, json))
+            .and_then(|_| std::fs::rename(&tmp, file));
+    }
+}
+
+fn cache_key(path: &Path) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
+    let modified = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
+    let abs = std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
+    Some(format!("{}|{}|{modified}", abs.to_string_lossy(), meta.len()))
 }
 
 /// I volumi senza numero nel nome, nella stessa cartella (che non sia una
@@ -131,7 +219,7 @@ fn group_by_folder(found: &mut [Entry], roots: &[PathBuf]) {
         }
         found[i].series = Some(title_of(folder));
         if parts.is_empty() {
-            found[i].number = first_number(&found[i].title);
+            found[i].number = found[i].number.or_else(|| first_number(&found[i].title));
         } else {
             // il numero da solo direbbe "Ch 1" di ogni volume: l'ordine lo da' il titolo intero
             found[i].title = format!("{} \u{00b7} {}", parts.join(" \u{00b7} "), found[i].title);
@@ -349,4 +437,69 @@ mod tests {
         assert_eq!(order, ["Vol 1 \u{00b7} Ch 1", "Vol 1 \u{00b7} Ch 2", "Vol 2 \u{00b7} Ch 1"]);
         let _ = std::fs::remove_dir_all(&root);
     }
+
+    /// Un CBZ con una pagina finta e, se data, la sua ComicInfo.xml.
+    fn cbz(path: &Path, info: Option<&str>) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        let stored = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        if let Some(xml) = info {
+            zip.start_file("ComicInfo.xml", stored).unwrap();
+            std::io::Write::write_all(&mut zip, xml.as_bytes()).unwrap();
+        }
+        zip.start_file("001.jpg", stored).unwrap();
+        std::io::Write::write_all(&mut zip, b"x").unwrap();
+        zip.finish().unwrap();
+    }
+
+    fn scheda(series: &str, number: &str, extra: &str) -> String {
+        format!("<ComicInfo><Series>{series}</Series><Number>{number}</Number>{extra}</ComicInfo>")
+    }
+
+    #[test]
+    fn la_comicinfo_vince_sul_nome() {
+        let root = std::env::temp_dir().join(format!("fumetto-libreria-scheda-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        // nomi che da soli non direbbero niente, o direbbero altro
+        cbz(&root.join("scaricati/op_c001_hq [scan].cbz"),
+            Some(&scheda("One Piece", "1", "<Title>Romance Dawn</Title><Writer>Eiichiro Oda</Writer>")));
+        cbz(&root.join("scaricati/zzz.cbz"), Some(&scheda("One Piece", "2", "")));
+        cbz(&root.join("Nebbia sul Porto v01.cbz"), None);
+        cbz(&root.join("Nebbia sul Porto v02.cbz"), Some("<ComicInfo><Summary>niente</Summary></ComicInfo>"));
+        // un capitolo scaricato da Mihon: una cartella con la sua scheda
+        let chapter = root.join("Mihon/Solo Leveling/Capitolo dodici");
+        std::fs::create_dir_all(&chapter).unwrap();
+        std::fs::write(chapter.join("001.jpg"), b"x").unwrap();
+        std::fs::write(chapter.join("ComicInfo.xml"), scheda("Solo Leveling", "12", "<Title>Chapter 12</Title>")).unwrap();
+
+        let found = scan(std::slice::from_ref(&root));
+        let got: Vec<_> = found.iter().map(|e| (e.title.as_str(), e.series.as_deref(), e.number)).collect();
+        assert_eq!(got, [
+            ("Nebbia sul Porto v01", Some("Nebbia sul Porto"), Some(1)),
+            ("Nebbia sul Porto v02", Some("Nebbia sul Porto"), Some(2)),
+            ("One Piece 1: Romance Dawn", Some("One Piece"), Some(1)),
+            ("One Piece 2", Some("One Piece"), Some(2)),
+            ("Solo Leveling: Chapter 12", Some("Solo Leveling"), Some(12)),
+        ]);
+        assert_eq!(found[2].authors.as_deref(), Some("Eiichiro Oda"));
+
+        // la cache: la seconda volta le schede vengono da li'
+        let cache = root.join("dati/comicinfo.json");
+        assert_eq!(scan_cached(std::slice::from_ref(&root), &cache), found);
+        let json = std::fs::read_to_string(&cache).unwrap();
+        assert!(json.contains("Romance Dawn") && !json.contains("Mihon"), "solo gli archivi: {json}");
+        std::fs::write(&cache, json.replace("Romance Dawn", "Dalla cache")).unwrap();
+        let again = scan_cached(std::slice::from_ref(&root), &cache);
+        assert_eq!(again[2].title, "One Piece 1: Dalla cache");
+
+        // un volume cambiato si rilegge, uno sparito esce dalla cache
+        cbz(&root.join("scaricati/op_c001_hq [scan].cbz"), Some(&scheda("One Piece", "1", "<Title>Nuova</Title>")));
+        std::fs::remove_file(root.join("scaricati/zzz.cbz")).unwrap();
+        let after = scan_cached(std::slice::from_ref(&root), &cache);
+        assert!(after.iter().any(|e| e.title == "One Piece 1: Nuova"));
+        let json = std::fs::read_to_string(&cache).unwrap();
+        assert!(!json.contains("zzz") && !json.contains("Dalla cache"), "{json}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
 }

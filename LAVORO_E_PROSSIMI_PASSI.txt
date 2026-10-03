@@ -584,8 +584,18 @@ Il capitolo 7 ne tiene la memoria e i numeri.
          copertina (anche il cestino), Ctrl+L per tornare al volume;
        - --prova da PowerShell (le misure devono comparire li'), e rifare
          le misure del 2.5 con l'interfaccia (a schermo sbloccato).
-  2. Metadati ComicInfo.xml (titolo, serie, numero, autori, verso manga):
-     migliorano serie e titoli della libreria.
+  2. [x] Metadati ComicInfo.xml (3 ottobre): fumetto-core\src\comicinfo.rs
+     (letta a mano, senza libreria XML: il file e' piatto; anche UTF-16,
+     CDATA, entita'). Nella libreria serie, numero (Number, o Volume se
+     manca), titolo ("Serie 12: Titolo"; "Serie: Chapter 12" se il titolo
+     ha gia' il numero, come in Mihon) e autori (si cercano scrivendo)
+     vincono sul nome del file. Aprendo un volume mai letto,
+     Manga=YesAndRightToLeft lo mette da destra a sinistra ("Yes" no: non
+     dice il verso). Si legge da CBZ, CBT, CBR non solidi e cartelle
+     (i capitoli di Mihon); dai CB7 e dai CBR solidi solo aprendoli (per la
+     libreria andrebbero decompressi quasi tutti). Le schede lette stanno in
+     comicinfo.json accanto alla cartella delle copertine, per percorso,
+     misura e data: la seconda scansione non riapre gli archivi.
   3. Ingrandimento AI senza programmi esterni: la rete realesr-animevideov3
      e' piccola (1,2 MB di pesi, 18 convoluzioni 3x3): scriverla in WGSL
      toglierebbe i 44 MB da scaricare. Attenzione: sulla stessa scheda che
