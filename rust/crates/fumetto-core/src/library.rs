@@ -20,6 +20,19 @@ use crate::progress::Progress;
 
 const VOLUME_EXT: &[&str] = &["cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z", "tar", "pdf"];
 
+/// Le parole che in un nome dicono "capitolo", "volume", "numero": prima del
+/// numero, non fanno parte della serie. Le piu' lunghe prima ("capitolo"
+/// prima di "cap").
+const MARKS: &[&str] = &[
+    "capitolo", "chapitre", "chapter", "episodio", "episode", "volume", "numero", "issue", "parte", "part", "tome",
+    "tomo", "vol.", "cap.", "ch.", "ep.", "no.", "n.", "vol", "cap", "ch", "ep", "v.", "v", "#", "t",
+];
+
+/// Una cartella con dentro altri volumi e al massimo tante immagini sciolte
+/// (la copertina della serie, un logo) non e' un volume: le immagini non sono
+/// pagine.
+const LOOSE_IMAGES: usize = 3;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Entry {
     pub path: PathBuf,
@@ -66,7 +79,8 @@ pub fn scan(roots: &[PathBuf]) -> Vec<Entry> {
 
 fn walk(root: &Path, dir: &Path, found: &mut Vec<Entry>) {
     let Ok(read) = std::fs::read_dir(dir) else { return };
-    let mut has_images = false;
+    let start = found.len();
+    let mut images = 0;
     for e in read.flatten() {
         let name = e.file_name().to_string_lossy().into_owned();
         if name.starts_with('.') {
@@ -77,12 +91,14 @@ fn walk(root: &Path, dir: &Path, found: &mut Vec<Entry>) {
             walk(root, &e.path(), found);
         } else if is_volume_file(&name) {
             found.push(entry(e.path()));
-        } else if !has_images && is_image(&name) {
-            has_images = true;
+        } else if is_image(&name) {
+            images += 1;
         }
     }
-    // la cartella della libreria stessa, con immagini sciolte, non e' un volume
-    if has_images && dir != root {
+    // la cartella della libreria stessa, con immagini sciolte, non e' un
+    // volume; e nemmeno una serie con la sua copertina accanto ai volumi
+    let volumes_inside = found.len() - start;
+    if images > 0 && dir != root && (volumes_inside == 0 || images > LOOSE_IMAGES) {
         found.push(entry(dir.to_owned()));
     }
 }
@@ -98,20 +114,74 @@ fn entry(path: PathBuf) -> Entry {
 }
 
 /// I volumi senza numero nel nome, nella stessa cartella (che non sia una
-/// della libreria) insieme ad altri: la cartella e' la serie.
+/// della libreria) insieme ad altri: la cartella e' la serie. Una cartella
+/// che dice solo "Vol 1" o "Ch 3" non e' la serie, e' un pezzo del volume: la
+/// serie e' piu' su (Berserk/Vol 1/Ch 1 e' "Berserk", volume "Vol 1 · Ch 1"),
+/// altrimenti i "Vol 1" di tutti i manga diventerebbero una serie sola.
 fn group_by_folder(found: &mut [Entry], roots: &[PathBuf]) {
-    let parent_of = |e: &Entry| e.path.parent().map(Path::to_owned);
+    let anchors: Vec<_> = found.iter().map(|e| series_folder(&e.path, roots)).collect();
     for i in 0..found.len() {
         if found[i].series.is_some() {
             continue;
         }
-        let Some(parent) = parent_of(&found[i]).filter(|p| !roots.contains(p)) else { continue };
-        let siblings = found.iter().filter(|e| parent_of(e).as_ref() == Some(&parent)).count();
-        if siblings >= 2 {
-            found[i].series = Some(title_of(&parent));
+        let Some((folder, parts)) = &anchors[i] else { continue };
+        let siblings = anchors.iter().filter(|a| a.as_ref().is_some_and(|(f, _)| f == folder)).count();
+        if siblings < 2 {
+            continue;
+        }
+        found[i].series = Some(title_of(folder));
+        if parts.is_empty() {
             found[i].number = first_number(&found[i].title);
+        } else {
+            // il numero da solo direbbe "Ch 1" di ogni volume: l'ordine lo da' il titolo intero
+            found[i].title = format!("{} \u{00b7} {}", parts.join(" \u{00b7} "), found[i].title);
+            found[i].number = None;
         }
     }
+}
+
+/// La cartella che fa da serie per un volume, saltando quelle che dicono solo
+/// "Vol 1" (restituite, dall'alto in basso); `None` se si arriva a una
+/// cartella della libreria.
+fn series_folder(volume: &Path, roots: &[PathBuf]) -> Option<(PathBuf, Vec<String>)> {
+    let mut folder = volume.parent()?;
+    let mut parts = Vec::new();
+    loop {
+        if roots.iter().any(|r| r.as_path() == folder) {
+            return None;
+        }
+        let name = title_of(folder);
+        if !chapter_like(&name) {
+            return Some((folder.to_owned(), parts));
+        }
+        parts.insert(0, name);
+        folder = folder.parent()?;
+    }
+}
+
+/// Un nome che dice solo un numero di capitolo o di volume: "Vol 1",
+/// "Ch.02", "Episode 5", "03".
+fn chapter_like(name: &str) -> bool {
+    let s = without_brackets(name);
+    let rest = s.trim_end_matches(|c: char| c.is_ascii_digit());
+    if rest.len() == s.len() {
+        return false;
+    }
+    let rest = rest.trim_matches(|c: char| c.is_whitespace() || "_-.\u{2013}".contains(c)).to_lowercase();
+    rest.is_empty() || MARKS.iter().any(|m| rest == m.trim_end_matches('.'))
+}
+
+/// Il nome senza le parentesi in fondo: "(2021)", "[Gruppo]", anche piu' d'una.
+fn without_brackets(title: &str) -> &str {
+    let mut s = title.trim();
+    while let Some(close) = s.chars().last().filter(|c| *c == ')' || *c == ']') {
+        let open = if close == ')' { '(' } else { '[' };
+        match s.rfind(open) {
+            Some(i) => s = s[..i].trim_end(),
+            None => break,
+        }
+    }
+    s
 }
 
 fn first_number(s: &str) -> Option<u32> {
@@ -123,18 +193,12 @@ fn first_number(s: &str) -> Option<u32> {
 /// Divide "Nebbia sul Porto v03" in ("Nebbia sul Porto", Some(3)). Senza un
 /// numero in fondo, il titolo intero e `None`.
 ///
-/// Il numero sta quasi sempre in fondo, preceduto magari da v, vol, #, t, cap
-/// o ch, e seguito a volte da un (anno) o un [gruppo] fra parentesi.
+/// Il numero sta quasi sempre in fondo, preceduto magari da una delle MARKS
+/// (v, vol, #, cap, ch, episode, tome...), e seguito a volte da un (anno) o un
+/// [gruppo] fra parentesi. Un nome che e' solo una di quelle parole ("Episode
+/// 5") non e' una serie.
 pub fn parse_series(title: &str) -> (String, Option<u32>) {
-    let mut s = title.trim();
-    // le parentesi in fondo: "(2021)", "[Gruppo]", anche piu' d'una
-    while let Some(close) = s.chars().last().filter(|c| *c == ')' || *c == ']') {
-        let open = if close == ')' { '(' } else { '[' };
-        match s.rfind(open) {
-            Some(i) => s = s[..i].trim_end(),
-            None => break,
-        }
-    }
+    let s = without_brackets(title);
     let whole = (s.to_owned(), None);
     let digits = s.len() - s.trim_end_matches(|c: char| c.is_ascii_digit()).len();
     if digits == 0 || digits > 4 {
@@ -143,8 +207,7 @@ pub fn parse_series(title: &str) -> (String, Option<u32>) {
     let number: u32 = s[s.len() - digits..].parse().unwrap_or(0);
     let before = &s[..s.len() - digits];
     let head = before.trim_end();
-    // un segno prima del numero, a sua volta preceduto da un separatore
-    const MARKS: &[&str] = &["capitolo", "chapter", "vol.", "cap.", "ch.", "vol", "cap", "ch", "v.", "v", "#", "t"];
+    // un segno prima del numero (MARKS), a sua volta preceduto da un separatore
     let sep = |c: Option<char>| c.is_none_or(|c| c.is_whitespace() || "_.-\u{2013}".contains(c));
     let lower = head.to_lowercase();
     let name = MARKS
@@ -186,6 +249,13 @@ mod tests {
             ("2001", "2001", None),
             ("Vol.01 Ch.001 - Screw", "Vol.01 Ch.001 - Screw", None),
             ("Acqua Alta", "Acqua Alta", None),
+            // le parole di capitolo da sole non sono una serie
+            ("Episode 5", "Episode 5", None),
+            ("Volume 3", "Volume 3", None),
+            ("Tower of God Episode 5", "Tower of God", Some(5)),
+            ("Dylan Dog n. 12", "Dylan Dog", Some(12)),
+            ("Asterix Tome 3", "Asterix", Some(3)),
+            ("Counterpart 2", "Counterpart", Some(2)),
         ] {
             assert_eq!(parse_series(title), (name.to_owned(), n), "{title}");
         }
@@ -216,6 +286,67 @@ mod tests {
             ("Nebbia sul Porto v02", Some("Nebbia sul Porto")),
             ("Singolo", None),
         ]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn capitoli_e_copertine_nelle_sottocartelle() {
+        let root = std::env::temp_dir().join(format!("fumetto-libreria-strutture-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let mk = |p: &str| {
+            let p = root.join(p);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b"x").unwrap();
+        };
+        // volumi numerati, con la copertina della serie accanto
+        mk("Manga/One Piece/One Piece v01.cbz");
+        mk("Manga/One Piece/One Piece v02.cbz");
+        mk("Manga/One Piece/cover.jpg");
+        // webtoon a capitoli, con la copertina nella cartella della serie
+        mk("Webtoon/Solo Leveling/cover.jpg");
+        mk("Webtoon/Solo Leveling/Chapter 1/001.jpg");
+        mk("Webtoon/Solo Leveling/Chapter 2/001.jpg");
+        // "Episode" non e' una serie: senza la correzione, i due webtoon finivano insieme
+        mk("Webtoon/Tower of God/Episode 1/001.jpg");
+        mk("Webtoon/Tower of God/Episode 2/001.jpg");
+        mk("Webtoon/Lore Olympus/Episode 1/001.jpg");
+        mk("Webtoon/Lore Olympus/Episode 2/001.jpg");
+        // capitoli dentro i volumi: la serie e' Berserk, non "Vol 1"
+        mk("Manga/Berserk/Vol 1/Ch 1/001.jpg");
+        mk("Manga/Berserk/Vol 1/Ch 2/001.jpg");
+        mk("Manga/Berserk/Vol 2/Ch 1/001.jpg");
+        mk("Manga/Vagabond/Vol 1/Ch 1/001.jpg");
+        mk("Manga/Vagabond/Vol 1/Ch 2/001.jpg");
+        // tante immagini accanto ai capitoli: sono pagine, la cartella resta un volume
+        for p in ["01", "02", "03", "04"] {
+            mk(&format!("Artbook/{p}.jpg"));
+        }
+        mk("Artbook/Extra 1/001.jpg");
+        let found = scan(std::slice::from_ref(&root));
+        let mut got: Vec<(&str, Option<&str>)> = found.iter().map(|e| (e.title.as_str(), e.series.as_deref())).collect();
+        got.sort();
+        assert_eq!(got, [
+            ("Artbook", None),
+            ("Chapter 1", Some("Solo Leveling")),
+            ("Chapter 2", Some("Solo Leveling")),
+            ("Episode 1", Some("Lore Olympus")),
+            ("Episode 1", Some("Tower of God")),
+            ("Episode 2", Some("Lore Olympus")),
+            ("Episode 2", Some("Tower of God")),
+            ("Extra 1", Some("Extra")), // dal nome, come prima; da solo resta una copertina singola
+            ("One Piece v01", Some("One Piece")),
+            ("One Piece v02", Some("One Piece")),
+            ("Vol 1 \u{00b7} Ch 1", Some("Berserk")),
+            ("Vol 1 \u{00b7} Ch 1", Some("Vagabond")),
+            ("Vol 1 \u{00b7} Ch 2", Some("Berserk")),
+            ("Vol 1 \u{00b7} Ch 2", Some("Vagabond")),
+            ("Vol 2 \u{00b7} Ch 1", Some("Berserk")),
+        ]);
+        // nella serie, i capitoli nei volumi in ordine
+        let mut berserk: Vec<&Entry> = found.iter().filter(|e| e.series.as_deref() == Some("Berserk")).collect();
+        berserk.sort_by(|a, b| by_number(a, b));
+        let order: Vec<&str> = berserk.iter().map(|e| e.title.as_str()).collect();
+        assert_eq!(order, ["Vol 1 \u{00b7} Ch 1", "Vol 1 \u{00b7} Ch 2", "Vol 2 \u{00b7} Ch 1"]);
         let _ = std::fs::remove_dir_all(&root);
     }
 }

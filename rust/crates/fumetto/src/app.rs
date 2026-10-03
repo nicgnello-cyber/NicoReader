@@ -482,7 +482,16 @@ impl App {
     pub fn open(&mut self, path: &Path) {
         match Book::open(path) {
             Ok(book) => self.set_book(book),
-            Err(e) => self.notify(dialog::cant_open(path, &e)),
+            Err(e) => {
+                // una cartella senza immagini ma con dei volumi (una serie in
+                // CBZ, capitoli in sottocartelle): si apre il primo
+                if matches!(e, fumetto_core::Error::NoImages)
+                    && let Some(first) = first_volume(path)
+                {
+                    return self.open(&first);
+                }
+                self.notify(dialog::cant_open(path, &e));
+            }
         }
     }
 
@@ -2161,6 +2170,19 @@ fn copier(jobs: mpsc::Receiver<(Arc<Book>, usize, Target)>, proxy: EventLoopProx
     }
 }
 
+/// Il primo volume dentro una cartella, in ordine naturale di percorso
+/// (v01 prima di v02, Vol 1/Ch 1 prima di Vol 1/Ch 2); `None` se non ce ne
+/// sono, o se non e' una cartella.
+fn first_volume(dir: &Path) -> Option<PathBuf> {
+    if !dir.is_dir() {
+        return None;
+    }
+    library::scan(&[dir.to_owned()])
+        .into_iter()
+        .map(|e| e.path)
+        .min_by(|a, b| fumetto_core::natural_cmp(&a.to_string_lossy(), &b.to_string_lossy()))
+}
+
 /// Scrive nei progressi dove sta il lettore nel volume aperto. Ma se il
 /// volume e' stato appena segnato dal menu (letto, o di nuovo da leggere) e
 /// il lettore e' ancora fermo dove era, no: rimetterebbe fra quelli in
@@ -2353,6 +2375,20 @@ mod tests {
         marked = Some((path.to_owned(), at(3)));
         keep_position(&mut progress, &mut marked, path, at(3));
         assert_eq!(progress.get(path).map(|s| s.page), Some(19));
+    }
+
+    /// Una cartella di soli archivi: si apre il primo, in ordine naturale.
+    #[test]
+    fn cartella_di_archivi_apre_il_primo() {
+        let dir = std::env::temp_dir().join(format!("fumetto-primo-volume-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("Serie")).unwrap();
+        for name in ["Serie v10.cbz", "Serie v2.cbz", "Serie v1.cbz"] {
+            std::fs::write(dir.join("Serie").join(name), b"x").unwrap();
+        }
+        assert_eq!(first_volume(&dir), Some(dir.join("Serie").join("Serie v1.cbz")));
+        assert_eq!(first_volume(&dir.join("Serie").join("Serie v1.cbz")), None, "un file non e' una cartella");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Un altro volume aperto dopo non eredita la regola.
