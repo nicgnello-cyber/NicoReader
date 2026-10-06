@@ -615,7 +615,7 @@ impl App {
     }
 
     /// Un avviso per chi legge: in una finestra di sistema, e sulla console.
-    fn notify(&mut self, text: String) {
+    pub fn notify(&mut self, text: String) {
         eprintln!("{text}");
         self.notices.push_back(text);
     }

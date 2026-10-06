@@ -76,6 +76,12 @@ jobs:
             rust/dist/*-setup.exe
           if-no-files-found: error
 
+      # clippy, senza avvisi: dopo i pacchetti, che restano comunque. Il
+      # codice solo per Windows lo vede solo questo job
+      - if: matrix.arch == 'x64'
+        run: cargo clippy --workspace --all-targets -- -D warnings
+        working-directory: rust
+
   linux:
     name: Linux x64
     if: (github.event_name != 'workflow_dispatch' || inputs.sistemi == 'tutti' || inputs.sistemi == 'linux') && !inputs.note
@@ -100,6 +106,10 @@ jobs:
             rust/dist/*.tar.gz
             rust/dist/*.deb
           if-no-files-found: error
+
+      # clippy, senza avvisi: dopo i pacchetti, che restano comunque
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+        working-directory: rust
 
   macos:
     name: macOS

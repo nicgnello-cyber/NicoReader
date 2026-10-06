@@ -36,6 +36,7 @@
 
 mod app;
 mod cpu_view;
+mod crash;
 mod dialog;
 #[cfg(target_os = "macos")]
 mod finder;
@@ -53,6 +54,7 @@ use winit::event_loop::EventLoop;
 fn main() {
     let started = Instant::now();
     attach_console();
+    crash::install(data_dir());
     let event_loop = match EventLoop::<app::UserEvent>::with_user_event().build() {
         Ok(l) => l,
         Err(e) => fatal(&e.to_string()),
@@ -82,6 +84,9 @@ fn main() {
     let script = prova.then(script::Script::new);
     let mut app = app::App::new(event_loop.create_proxy(), progress, settings, settings_path, cache_dir(),
                                 upscaler_dir(), started, script);
+    if let Some(text) = crash::last_crash(&data_dir()).filter(|_| !prova) {
+        app.notify(text);
+    }
     // macOS: un volume aperto dal Finder non sta fra gli argomenti, arriva
     // dopo (vedi finder.rs). Chi riprendere si decide a finestra aperta,
     // quando si sa se ce n'e' uno: niente volume vecchio aperto per niente
