@@ -26,8 +26,6 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 # CB7: solo decompressione, niente cifratura ne' algoritmi rari
 sevenz-rust2 = { version = "0.23.0", default-features = false }
-# l'impronta dei file dell'ingranditore AI scaricati: si eseguono, devono essere quelli
-sha2 = { version = "0.10", default-features = false }
 sys-locale = "0.3.2"
 # CBT: tar non compresso, le pagine si leggono direttamente dal file
 tar = { version = "0.4.46", default-features = false }

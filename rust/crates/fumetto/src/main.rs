@@ -28,7 +28,9 @@
 //! Ogni volume riapre dove lo si era lasciato. I progressi stanno in
 //! `progressi.json` nella cartella dei dati dell'utente (FUMETTO_DATI per
 //! cambiarla). FUMETTO_GPU=dedicata usa la scheda video dedicata;
-//! FUMETTO_LANG=it o en sceglie la lingua.
+//! FUMETTO_LANG=it o en sceglie la lingua; FUMETTO_AI_SOFTWARE=1 lascia
+//! lavorare l'ingrandimento AI anche su una scheda video software (lentissimo:
+//! per le prove).
 
 // una finestra, non un programma da console: con il doppio clic non si apre
 // anche la finestra nera della console (vedi `attach_console`)
@@ -55,6 +57,9 @@ fn main() {
     let started = Instant::now();
     attach_console();
     crash::install(data_dir());
+    // l'ingranditore che prima si scaricava (Real-ESRGAN, 9 MB): ora e'
+    // dentro il programma, e la sua cartella non serve piu'
+    let _ = std::fs::remove_dir_all(app_dir(dirs::cache_dir()).join("upscaler"));
     let event_loop = match EventLoop::<app::UserEvent>::with_user_event().build() {
         Ok(l) => l,
         Err(e) => fatal(&e.to_string()),
@@ -79,16 +84,8 @@ fn main() {
         settings.webtoon = false;
     }
     let script = prova.then(script::Script::new);
-    let mut app = app::App::new(
-        event_loop.create_proxy(),
-        progress,
-        settings,
-        settings_path,
-        cache_dir(),
-        upscaler_dir(),
-        started,
-        script,
-    );
+    let mut app =
+        app::App::new(event_loop.create_proxy(), progress, settings, settings_path, cache_dir(), started, script);
     if let Some(text) = crash::last_crash(&data_dir()).filter(|_| !prova) {
         app.notify(text);
     }
@@ -157,15 +154,6 @@ fn cache_dir() -> PathBuf {
         return PathBuf::from(dir).join("copertine");
     }
     app_dir(dirs::cache_dir()).join("copertine")
-}
-
-/// L'ingranditore AI, scaricato al primo uso: accanto alle copertine, nella
-/// cache del sistema.
-fn upscaler_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("FUMETTO_DATI") {
-        return PathBuf::from(dir).join("upscaler");
-    }
-    app_dir(dirs::cache_dir()).join("upscaler")
 }
 
 /// Senza console, i messaggi vanno persi. Lanciato da un terminale pero'

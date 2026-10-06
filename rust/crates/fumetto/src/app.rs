@@ -132,14 +132,10 @@ pub enum UserEvent {
     LensPage(Loaded),
     /// Una pagina migliorata dall'AI (o non migliorabile).
     Upscaled(Upscaled),
-    /// Si' (o no), scarica l'ingranditore.
-    DownloadConfirmed(bool),
     /// L'ultima Release su GitHub (vedi app/update.rs).
     Update(Release),
     /// Si', apri la pagina della versione nuova.
     OpenUpdate(String),
-    /// L'ingranditore e' stato scaricato, o perche' no.
-    Installed(Result<(), String>),
     /// Dove salvare la pagina (`None`: annullato).
     SaveTo(Option<PathBuf>),
     /// Com'e' andato un salvataggio o una copia: la riga da mostrare, o l'errore.
@@ -294,8 +290,6 @@ pub struct App {
     /// Le pagine chieste all'ingranditore, e quelle che non ha potuto fare.
     upscale_wanted: Vec<(usize, Target)>,
     upscale_failed: HashSet<(usize, Target)>,
-    /// Si sta scaricando l'ingranditore.
-    installing: bool,
 
     /// La presentazione: quando girare la prossima pagina.
     slideshow: Option<Instant>,
@@ -334,7 +328,7 @@ impl App {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         proxy: EventLoopProxy<UserEvent>, progress: Progress, settings: Settings, settings_path: Option<PathBuf>,
-        covers_dir: PathBuf, upscaler_dir: PathBuf, started: Instant, script: Option<Script>,
+        covers_dir: PathBuf, started: Instant, script: Option<Script>,
     ) -> App {
         let thumb_loader = {
             let proxy = proxy.clone();
@@ -344,7 +338,7 @@ impl App {
         };
         let upscaler = {
             let proxy = proxy.clone();
-            Upscaler::new(upscaler_dir, move |u| {
+            Upscaler::new(esrgan_engine(), move |u| {
                 let _ = proxy.send_event(UserEvent::Upscaled(u));
             })
         };
@@ -418,7 +412,6 @@ impl App {
             upscaler,
             upscale_wanted: Vec::new(),
             upscale_failed: HashSet::new(),
-            installing: false,
             slideshow: None,
             slide_last: None,
             last_click: None,
@@ -523,4 +516,18 @@ impl App {
     pub fn view_height(&self) -> f32 {
         self.view_size().1 as f32
     }
+}
+
+/// Il motore dell'ingrandimento: Real-ESRGAN sulla scheda video, preparato al
+/// primo uso (dal thread dell'ingrandimento: chiedere la scheda e compilare i
+/// programmi richiede un attimo, e chi non lo usa non lo paga).
+fn esrgan_engine() -> upscale::Engine {
+    let mut net: Option<Result<fumetto_render::esrgan::Esrgan, String>> = None;
+    Box::new(move |page, scale, go_on| {
+        let software = std::env::var_os("FUMETTO_AI_SOFTWARE").is_some();
+        match net.get_or_insert_with(|| pollster::block_on(fumetto_render::esrgan::Esrgan::new(software))) {
+            Ok(net) => Ok(net.upscale(page, scale, go_on)),
+            Err(e) => Err(e.clone()),
+        }
+    })
 }

@@ -63,34 +63,6 @@ pub fn save(window: &Window, name: String, near: Option<&Path>, proxy: EventLoop
     run(async move { chosen.await.map(|f| f.path().to_owned()) }, UserEvent::SaveTo, proxy);
 }
 
-/// Chiede se scaricare l'ingranditore AI, dicendo quanto e da dove.
-pub fn confirm_download(window: &Window, dir: &Path, proxy: EventLoopProxy<UserEvent>) {
-    let mb = fumetto_core::upscale::DOWNLOAD_MB;
-    let text = if fumetto_core::lingua::italian() {
-        format!(
-            "Per migliorare le scansioni a bassa risoluzione serve Real-ESRGAN, un programma esterno che lavora \
-                 sulla scheda video.\n\nScarico circa {mb} MB da github.com (progetto Real-ESRGAN) e ne tengo 9 in:\n{}\
-                 \n\nProcedo?",
-            dir.display()
-        )
-    } else {
-        format!(
-            "Enhancing low-resolution scans needs Real-ESRGAN, an external program that runs on the graphics card.\
-                 \n\nAbout {mb} MB will be downloaded from github.com (Real-ESRGAN project), and 9 kept in:\n{}\
-                 \n\nProceed?",
-            dir.display()
-        )
-    };
-    let asked = AsyncMessageDialog::new()
-        .set_parent(window)
-        .set_level(MessageLevel::Info)
-        .set_title("NicoReader")
-        .set_description(text)
-        .set_buttons(MessageButtons::YesNo)
-        .show();
-    run(asked, |r| UserEvent::DownloadConfirmed(r == rfd::MessageDialogResult::Yes), proxy);
-}
-
 /// Propone di aprire la pagina di una versione nuova; se si', torna
 /// `OpenUpdate` con il suo indirizzo.
 pub fn offer_update(window: &Window, release: &fumetto_core::update::Release, proxy: EventLoopProxy<UserEvent>) {

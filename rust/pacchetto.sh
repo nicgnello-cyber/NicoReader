@@ -74,6 +74,8 @@ install -m 755 crates/fumetto/risorse/linux/installa.sh "$dist/"
 cp "$pdfium/LICENSE" "$dist/licenze/pdfium/LICENSE.txt"
 cp "$pdfium"/licenses/* "$dist/licenze/pdfium/"
 cp crates/fumetto-render/caratteri/OFL-*.txt "$dist/licenze/"
+# i pesi di Real-ESRGAN, dentro l'eseguibile
+cp crates/fumetto-render/modelli/LICENSE-Real-ESRGAN.txt "$dist/licenze/"
 # la licenza di NicoReader stesso
 cp ../LICENSE-MIT "$dist/licenze/NicoReader-LICENSE-MIT.txt"
 cp ../LICENSE-APACHE "$dist/licenze/NicoReader-LICENSE-APACHE.txt"

@@ -266,9 +266,9 @@ impl Prefs {
                         pref: Pref::Upscale(!settings.upscale),
                     },
                     Row::Note(t(
-                        "Real-ESRGAN rifa le pagine mostrate più grandi dei loro pixel. Si scarica \
-                                 la prima volta (44 MB).",
-                        "Real-ESRGAN redoes pages shown larger than their pixels. Downloaded on first use (44 MB).",
+                        "Real-ESRGAN, sulla scheda video, rifà le pagine mostrate più grandi dei loro \
+                                 pixel.",
+                        "Real-ESRGAN, on the graphics card, redoes pages shown larger than their pixels.",
                     )),
                     Row::Toggle {
                         label: t("Barra in alto", "Top bar"),

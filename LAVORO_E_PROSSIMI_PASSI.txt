@@ -304,14 +304,12 @@ Il capitolo 7 ne tiene la memoria e i numeri.
     - jxl-oxide (tutto Rust): JPEG XL.
     - arboard: gli appunti (copia pagina) sui tre sistemi, tenuti da un
       thread suo (su Linux gli appunti vivono quanto chi li ha riempiti).
-    - sha2: l'impronta dei file dell'ingranditore scaricati, prima di
-      tenerli (sono programmi che si eseguono).
-    - Real-ESRGAN (C++ con ncnn e Vulkan, BSD-3): NON e' nel pacchetto. Lo
-      scarica curl (in Windows 10 e 11, macOS, Linux: niente TLS
-      nell'exe) al primo uso, con conferma; se ne tengono l'eseguibile, la
-      DLL e il modello realesr-animevideov3 (9 MB su 44), controllati
-      con SHA-256 (su macOS e Linux solo i modelli: l'eseguibile per quei
-      sistemi non e' mai stato scaricato, la sua impronta non e' nota).
+    - Real-ESRGAN (BSD-3): dal 6 ottobre la rete realesr-animevideov3 e'
+      scritta in WGSL (fumetto-render\src\esrgan.rs) e gira sulla scheda
+      video con wgpu; i pesi (1,2 MB, il .bin ncnn ufficiale) sono
+      nell'eseguibile, la licenza in licenze\LICENSE-Real-ESRGAN.txt.
+      Prima era il programma esterno realesrgan-ncnn-vulkan, scaricato al
+      primo uso (44 MB): non serve piu', e la sua cartella si cancella.
     - windows-sys: console per --prova, cestino (SHFileOperation, con
       annulla); su macOS e Linux il cestino passa dalla libreria trash.
     - winresource (solo in compilazione): icona, nome "Fumetto" in Gestione
@@ -606,10 +604,22 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      libreria andrebbero decompressi quasi tutti). Le schede lette stanno in
      comicinfo.json accanto alla cartella delle copertine, per percorso,
      misura e data: la seconda scansione non riapre gli archivi.
-  3. Ingrandimento AI senza programmi esterni: la rete realesr-animevideov3
-     e' piccola (1,2 MB di pesi, 18 convoluzioni 3x3): scriverla in WGSL
-     toglierebbe i 44 MB da scaricare. Attenzione: sulla stessa scheda che
-     disegna le pagine, un calcolo lungo ferma i fotogrammi; va spezzato.
+  3. [x] Ingrandimento AI senza programmi esterni (6 ottobre):
+     fumetto-render\src\esrgan.rs e shaders\esrgan_*.wgsl. 18 convoluzioni
+     3x3 (vec4 per 4 canali, pesi come mat4x4; ogni invocazione fa 4 pixel x
+     4 gruppi d'uscita: misurato il migliore fra 1x16 e 8x1), poi pixel
+     shuffle con l'entrata sommata; il 2x e' la media 2x2 del 4x (il modello
+     x2 ufficiale e' lo stesso 4x rimpicciolito). A tasselli di 192 pixel
+     con 18 di bordo (la portata della rete): uguale alla pagina intera,
+     senza giunture. Uno strato per invio, e si aspetta: la scheda disegna
+     fra uno e l'altro. Dispositivo suo, sulla scheda piu' potente; una
+     scheda software si rifiuta (FUMETTO_AI_SOFTWARE=1 la accetta, per le
+     prove). Verifiche: contro una rete in numpy dagli stessi pesi, uguale
+     (al massimo 1/255); contro realesrgan-ncnn-vulkan 42,6 dB (lui in
+     mezza precisione, e con i bordi a modo suo; la numpy da' lo stesso
+     valore). Velocita' su lavapipe (scheda software, 288x216 a 4x): 3,0 s,
+     contro 4,4 s di ncnn sulla stessa scheda. Su una scheda vera da
+     misurare (FUMETTO_ESRGAN=px,per per provare altre combinazioni).
   4. Il peso dell'eseguibile: da 15,3 a 20,7 MB con AVIF, JPEG XL e appunti
      (vedi 5, Tecnici).
   5. Distribuzione (capitolo 5).
@@ -741,10 +751,8 @@ Il capitolo 7 ne tiene la memoria e i numeri.
         Provato con una copia che si diceva 0.1.0: ha trovato la 0.1.1 su
         GitHub e l'ha proposta una volta; la seconda apertura non ha
         richiesto; spento, nessuna richiesta.
-    [ ] Su Windows ARM64 l'ingranditore AI scarica il Real-ESRGAN per x64,
-        che Windows 11 esegue emulato: da provare su un PC ARM (Vulkan in
-        emulazione). Per Linux ARM64 Real-ESRGAN non esiste: l'opzione
-        andrebbe nascosta prima di farne un pacchetto.
+    [x] Ingrandimento AI su Windows ARM64 e Linux ARM64: con la rete in
+        WGSL gira dove gira wgpu, senza programmi per x64 da emulare.
     [x] Installer (26 settembre).
         Windows: installer\fumetto.iss (Inno Setup 6), lo compila
         pacchetto.ps1 dopo lo zip: Fumetto-<versione>-windows-<arch>-

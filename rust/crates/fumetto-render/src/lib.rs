@@ -6,6 +6,7 @@
 //! [`Renderer::draw`] le mette sul nero: una copia pixel per pixel se la
 //! misura coincide, un'interpolazione bicubica se va ingrandita.
 
+pub mod esrgan;
 mod overlay;
 mod tiling;
 

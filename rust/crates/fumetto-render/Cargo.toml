@@ -9,3 +9,7 @@ bytemuck = { version = "1.25.2", features = ["derive"] }
 fumetto-core = { path = "../fumetto-core" }
 glyphon = "0.12"
 wgpu = "30.0.1"
+
+[dev-dependencies]
+# le prove dell'ingrandimento chiedono la scheda video
+pollster = "1.0.1"
