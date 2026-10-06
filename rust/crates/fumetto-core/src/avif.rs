@@ -36,7 +36,9 @@ pub fn decode(data: &[u8]) -> Result<Page, DecodeError> {
     let avif = avif_parse::read_avif(&mut std::io::Cursor::new(data)).map_err(|e| invalid(&e.to_string()))?;
     let meta = avif.primary_item_metadata().map_err(|e| invalid(&e.to_string()))?;
     super::decode::check_size(meta.max_frame_width.get(), meta.max_frame_height.get())?;
-    let picture = Decoder::new().ok_or_else(|| invalid("decodificatore"))?.picture(&avif.primary_item)
+    let picture = Decoder::new()
+        .ok_or_else(|| invalid("decodificatore"))?
+        .picture(&avif.primary_item)
         .ok_or_else(|| invalid("dati AV1"))?;
     picture.to_rgba().ok_or_else(|| invalid("formato dei pixel"))
 }
@@ -155,7 +157,8 @@ impl Picture {
         for y in 0..h {
             for x in 0..w {
                 let yv = sample(0, x, y);
-                let (cb, cr) = if gray { (0.5, 0.5) } else { (sample(1, x >> sx, y >> sy), sample(2, x >> sx, y >> sy)) };
+                let (cb, cr) =
+                    if gray { (0.5, 0.5) } else { (sample(1, x >> sx, y >> sy), sample(2, x >> sx, y >> sy)) };
                 let (r, g, b) = if identity {
                     (cr, yv, cb) // GBR: Y e' il verde, U il blu, V il rosso
                 } else {

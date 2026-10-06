@@ -72,14 +72,15 @@ mod tests {
 
     #[test]
     fn capitoli_e_pagine() {
-        assert_eq!(sorted(&["c2/p1", "c10/p1", "c2/p10", "c2/p2"]),
-                   ["c2/p1", "c2/p2", "c2/p10", "c10/p1"]);
+        assert_eq!(sorted(&["c2/p1", "c10/p1", "c2/p10", "c2/p2"]), ["c2/p1", "c2/p2", "c2/p10", "c10/p1"]);
     }
 
     #[test]
     fn numeri_enormi_e_zeri() {
-        assert_eq!(sorted(&["x99999999999999999999999", "x0100", "x1", "x01"]),
-                   ["x01", "x1", "x0100", "x99999999999999999999999"]);
+        assert_eq!(
+            sorted(&["x99999999999999999999999", "x0100", "x1", "x01"]),
+            ["x01", "x1", "x0100", "x99999999999999999999999"]
+        );
     }
 
     #[test]
@@ -89,8 +90,10 @@ mod tests {
 
     #[test]
     fn copertina_senza_numero_prima() {
-        assert_eq!(sorted(&["pagina2.jpg", "pagina.jpg", "pagina10.jpg"]),
-                   ["pagina.jpg", "pagina2.jpg", "pagina10.jpg"]);
+        assert_eq!(
+            sorted(&["pagina2.jpg", "pagina.jpg", "pagina10.jpg"]),
+            ["pagina.jpg", "pagina2.jpg", "pagina10.jpg"]
+        );
     }
 
     #[test]

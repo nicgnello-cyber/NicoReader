@@ -61,10 +61,11 @@ pub fn cover(path: &Path, cache: &Path) -> Result<Page, String> {
 /// La copertina di un volume, 320x480, senza cache.
 pub fn make(path: &Path) -> Result<Page, String> {
     let book = Book::open(path).map_err(|e| e.to_string())?;
-    let page = match book.content(0, Fit::Contain { width: COVER_W * 3, height: COVER_H * 3 }).map_err(|e| e.to_string())? {
-        Content::Encoded(bytes) => decode(&bytes).map_err(|e| e.to_string())?,
-        Content::Pixels(p) | Content::Exact(p, _) => p,
-    };
+    let page =
+        match book.content(0, Fit::Contain { width: COVER_W * 3, height: COVER_H * 3 }).map_err(|e| e.to_string())? {
+            Content::Encoded(bytes) => decode(&bytes).map_err(|e| e.to_string())?,
+            Content::Pixels(p) | Content::Exact(p, _) => p,
+        };
     let page = crop_to_cover(&page);
     Ok(resize(&page, COVER_W, COVER_H, true))
 }
@@ -92,8 +93,14 @@ fn encode_webp(p: &Page, quality: f32) -> std::io::Result<Vec<u8>> {
     // SAFETY: rgba e' largo `width * 4` per `height` righe, come dichiarato;
     // `out` lo alloca libwebp e lo si libera con WebPFree dopo averlo copiato.
     unsafe {
-        let n = libwebp_sys::WebPEncodeRGBA(p.rgba.as_ptr(), p.width as i32, p.height as i32, (p.width * 4) as i32,
-                                            quality, &mut out);
+        let n = libwebp_sys::WebPEncodeRGBA(
+            p.rgba.as_ptr(),
+            p.width as i32,
+            p.height as i32,
+            (p.width * 4) as i32,
+            quality,
+            &mut out,
+        );
         if n == 0 || out.is_null() {
             return Err(std::io::Error::other("WebP: codifica non riuscita"));
         }
@@ -192,9 +199,8 @@ fn work(shared: &Shared, deliver: &dyn Fn(Cover)) {
                 s = shared.wake.wait(s).unwrap_or_else(|e| e.into_inner());
             }
         };
-        let page = cover(&path, &cache).map(|p| {
-            if (p.width, p.height) == size { p } else { resize(&p, size.0.max(1), size.1.max(1), true) }
-        });
+        let page = cover(&path, &cache)
+            .map(|p| if (p.width, p.height) == size { p } else { resize(&p, size.0.max(1), size.1.max(1), true) });
         shared.lock().running.remove(&path);
         deliver(Cover { path, size, page });
     }
@@ -212,7 +218,9 @@ mod tests {
         std::fs::create_dir_all(&volume).unwrap();
         // una striscia alta: la copertina ne prende l'inizio
         let (w, h) = (200u32, 2000u32);
-        let rgba: Vec<u8> = (0..h).flat_map(|y| (0..w).flat_map(move |_| if y < 300 { [250, 250, 250, 255] } else { [10, 10, 10, 255] })).collect();
+        let rgba: Vec<u8> = (0..h)
+            .flat_map(|y| (0..w).flat_map(move |_| if y < 300 { [250, 250, 250, 255] } else { [10, 10, 10, 255] }))
+            .collect();
         image::save_buffer(volume.join("001.png"), &rgba, w, h, image::ColorType::Rgba8).unwrap();
         let cache = dir.join("cache");
         let c = cover(&volume, &cache).unwrap();

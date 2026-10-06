@@ -38,7 +38,9 @@ impl App {
 }
 
 /// La libreria come la vede l'interfaccia.
-pub(super) fn shelf_data<'a>(lib: &'a Lib, roots: &'a [PathBuf], covered: &'a dyn Fn(&Path) -> bool, reading: bool) -> ShelfData<'a> {
+pub(super) fn shelf_data<'a>(
+    lib: &'a Lib, roots: &'a [PathBuf], covered: &'a dyn Fn(&Path) -> bool, reading: bool,
+) -> ShelfData<'a> {
     ShelfData {
         entries: &lib.entries,
         status: &lib.status,

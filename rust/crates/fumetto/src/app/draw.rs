@@ -91,11 +91,15 @@ impl App {
             keys.copied().max_by_key(|i| i.abs_diff(here)).filter(|i| i.abs_diff(here) > 4)
         };
         let mut total: usize = self.shown.values().map(|s| s.image.bytes()).sum();
-        while total > BUDGET && let Some(far) = far_from(&mut self.shown.keys()) {
+        while total > BUDGET
+            && let Some(far) = far_from(&mut self.shown.keys())
+        {
             total -= self.shown.remove(&far).map_or(0, |s| s.image.bytes());
         }
         let mut total: usize = self.cpu_pages.values().map(|p| p.0.bytes()).sum();
-        while total > BUDGET && let Some(far) = far_from(&mut self.cpu_pages.keys()) {
+        while total > BUDGET
+            && let Some(far) = far_from(&mut self.cpu_pages.keys())
+        {
             total -= self.cpu_pages.remove(&far).map_or(0, |p| p.0.bytes());
         }
     }
@@ -126,8 +130,17 @@ impl App {
         self.last_tick = Some(now);
         let Some(reader) = &mut self.reader else {
             // nessun volume: la galleria vuota
-            let ctx = context(self.window.as_deref(), &self.book, None, &self.recent, &[], self.settings.hud, None, None,
-                              look!(self));
+            let ctx = context(
+                self.window.as_deref(),
+                &self.book,
+                None,
+                &self.recent,
+                &[],
+                self.settings.hud,
+                None,
+                None,
+                look!(self),
+            );
             let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut Estimate));
             self.present(&[], &[], &scene);
             return;
@@ -140,8 +153,17 @@ impl App {
         }
         let ready = reader.ready(&prepared);
         let lens = self.lens_items(&items);
-        let ctx = context(self.window.as_deref(), &self.book, self.reader.as_ref(), &self.recent, &items, self.settings.hud,
-                          None, None, look!(self));
+        let ctx = context(
+            self.window.as_deref(),
+            &self.book,
+            self.reader.as_ref(),
+            &self.recent,
+            &items,
+            self.settings.hud,
+            None,
+            None,
+            look!(self),
+        );
         let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut Estimate));
         let Some(presented) = self.present_with(&items, &[], lens, &scene) else { return };
         if let Some(reader) = &mut self.reader {
@@ -196,8 +218,17 @@ impl App {
             .map(|(p, _, _, w, h, _)| (p.clone(), (px(*w), px(*h))))
             .filter(|(p, size)| !self.covers_failed.contains(p) && self.covers.get(p).is_none_or(|c| c.1 != *size))
             .collect();
-        let ctx = context(self.window.as_deref(), &self.book, self.reader.as_ref(), &self.recent, &[], self.settings.hud,
-                          Some(d), None, look!(self));
+        let ctx = context(
+            self.window.as_deref(),
+            &self.book,
+            self.reader.as_ref(),
+            &self.recent,
+            &[],
+            self.settings.hud,
+            Some(d),
+            None,
+            look!(self),
+        );
         let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut Estimate));
         if wanted != self.cover_wanted {
             self.cover_loader.request(wanted.clone());
@@ -225,7 +256,8 @@ impl App {
         let base = self.reader.as_ref().map_or(Target::plain(Fit::Width(1)), |r| r.target());
         let target = Target { fit: Fit::Contain { width: cw, height: ch }, ..base };
         let slots = self.ui.thumbs.slots(&d, view, scale);
-        let wanted: Vec<usize> = slots.iter().map(|s| s.0).filter(|i| images.get(i).is_none_or(|t| t.1 != target)).collect();
+        let wanted: Vec<usize> =
+            slots.iter().map(|s| s.0).filter(|i| images.get(i).is_none_or(|t| t.1 != target)).collect();
         if (Some(target), &wanted) != (self.thumb_wanted.0, &self.thumb_wanted.1) {
             self.thumb_loader.set_target(target);
             self.thumb_loader.request(&wanted);
@@ -242,8 +274,17 @@ impl App {
                 Some((Extra::Thumb(i), (x + (w - iw) / 2.0).round(), (y + h - ih).round(), iw, ih))
             })
             .collect();
-        let ctx = context(self.window.as_deref(), &self.book, self.reader.as_ref(), &self.recent, &[], self.settings.hud,
-                          None, Some(d), look!(self));
+        let ctx = context(
+            self.window.as_deref(),
+            &self.book,
+            self.reader.as_ref(),
+            &self.recent,
+            &[],
+            self.settings.hud,
+            None,
+            Some(d),
+            look!(self),
+        );
         let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut Estimate));
         // le miniature lontane si lasciano andare
         if self.thumb_images.len() > THUMBS_KEPT {
@@ -260,8 +301,10 @@ impl App {
     }
 
     /// Come `present`, con la lente: (cerchio, pagine ingrandite).
-    fn present_with(&mut self, items: &[Item], covers: &[(Extra, f32, f32, f32, f32)],
-                    lens: Option<((f32, f32, f32), Vec<Item>)>, scene: &Scene) -> Option<Instant> {
+    fn present_with(
+        &mut self, items: &[Item], covers: &[(Extra, f32, f32, f32, f32)], lens: Option<((f32, f32, f32), Vec<Item>)>,
+        scene: &Scene,
+    ) -> Option<Instant> {
         let presented = match self.gfx {
             // ponytail: l'interfaccia, le copertine e la lente le disegna solo
             // la scheda video; nei primi 600 ms, dal processore, si vedono solo
@@ -280,8 +323,10 @@ impl App {
         Some(presented)
     }
 
-    fn present_gpu(&mut self, items: &[Item], covers: &[(Extra, f32, f32, f32, f32)],
-                   lens: Option<((f32, f32, f32), Vec<Item>)>, scene: &Scene) -> Option<Instant> {
+    fn present_gpu(
+        &mut self, items: &[Item], covers: &[(Extra, f32, f32, f32, f32)], lens: Option<((f32, f32, f32), Vec<Item>)>,
+        scene: &Scene,
+    ) -> Option<Instant> {
         // le copertine della libreria restano com'erano: le regolazioni sono per le pagine
         let adjust = if covers.iter().any(|c| matches!(c.0, Extra::Cover(_))) { Adjust::NONE } else { self.adjust() };
         let target = self.reader.as_ref().map(|r| r.target());
@@ -342,8 +387,14 @@ impl App {
         let mut encoder = gfx.gpu.device.create_command_encoder(&Default::default());
         gfx.renderer.draw(&mut encoder, &view, gfx.config.format, size, &placements, Pass { adjust, ..Pass::PLAIN });
         if let Some((circle, _)) = lens {
-            gfx.renderer.draw(&mut encoder, &view, gfx.config.format, size, &lens_placements,
-                              Pass { clear: false, adjust, clip: Some(circle) });
+            gfx.renderer.draw(
+                &mut encoder,
+                &view,
+                gfx.config.format,
+                size,
+                &lens_placements,
+                Pass { clear: false, adjust, clip: Some(circle) },
+            );
         }
         if let Err(e) = gfx.overlay.draw(&mut encoder, &view, size, scene) {
             eprintln!("interfaccia: {e}");
@@ -361,7 +412,13 @@ impl App {
         let list: Vec<cpu_view::Item> = items
             .iter()
             .filter_map(|it| {
-                self.cpu_pages.get(&it.page).map(|(page, _)| cpu_view::Item { page, x: it.x, y: it.y, w: it.w, h: it.h })
+                self.cpu_pages.get(&it.page).map(|(page, _)| cpu_view::Item {
+                    page,
+                    x: it.x,
+                    y: it.y,
+                    w: it.w,
+                    h: it.h,
+                })
             })
             .collect();
         let adjust = Adjust::from_steps(self.settings.brightness, self.settings.contrast, self.settings.gamma);
@@ -440,9 +497,10 @@ impl App {
 /// Cio' che l'interfaccia deve sapere, dai pezzi dell'app che servono (e
 /// non da tutta l'app, cosi' l'interfaccia si puo' cambiare intanto).
 #[allow(clippy::too_many_arguments)]
-pub(super) fn context<'a>(window: Option<&Window>, book: &'a Option<Arc<Book>>, reader: Option<&'a Reader>, recent: &'a [Recent],
-               items: &[Item], hud: bool, shelf: Option<ShelfData<'a>>, thumbs: Option<ThumbsData<'a>>,
-               look: Look<'a>) -> Context<'a> {
+pub(super) fn context<'a>(
+    window: Option<&Window>, book: &'a Option<Arc<Book>>, reader: Option<&'a Reader>, recent: &'a [Recent],
+    items: &[Item], hud: bool, shelf: Option<ShelfData<'a>>, thumbs: Option<ThumbsData<'a>>, look: Look<'a>,
+) -> Context<'a> {
     let slideshow = look.slideshow;
     let (vw, vh) = window.map_or((1.0, 1.0), |w| {
         let s = w.inner_size();
@@ -476,16 +534,34 @@ pub(super) fn context<'a>(window: Option<&Window>, book: &'a Option<Arc<Book>>, 
         }
     });
     let fullscreen = window.is_some_and(|w| w.fullscreen().is_some());
-    Context { view: (vw, vh), scale, book, recent, hud, fullscreen, shelf, thumbs, settings: look.settings, keys: look.keys,
-              lens: look.lens }
+    Context {
+        view: (vw, vh),
+        scale,
+        book,
+        recent,
+        hud,
+        fullscreen,
+        shelf,
+        thumbs,
+        settings: look.settings,
+        keys: look.keys,
+        lens: look.lens,
+    }
 }
 
 /// Le miniature come le vede l'interfaccia.
-pub(super) fn thumbs_data<'a>(book: &'a Option<Arc<Book>>, reader: Option<&'a Reader>, ready: &'a dyn Fn(usize) -> bool)
-                   -> Option<ThumbsData<'a>> {
+pub(super) fn thumbs_data<'a>(
+    book: &'a Option<Arc<Book>>, reader: Option<&'a Reader>, ready: &'a dyn Fn(usize) -> bool,
+) -> Option<ThumbsData<'a>> {
     let (book, r) = (book.as_ref()?, reader?);
-    Some(ThumbsData { title: &book.title, pages: r.pages(), here: r.here(), bookmarks: r.bookmarks(),
-                      ratio: r.typical_ratio(), ready })
+    Some(ThumbsData {
+        title: &book.title,
+        pages: r.pages(),
+        here: r.here(),
+        bookmarks: r.bookmarks(),
+        ratio: r.typical_ratio(),
+        ready,
+    })
 }
 
 /// Per i tasti e i clic le miniature pronte non contano.

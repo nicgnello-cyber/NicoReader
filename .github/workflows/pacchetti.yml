@@ -111,6 +111,10 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
         working-directory: rust
 
+      # la forma del codice (rustfmt.toml): basta un sistema, e' la stessa
+      - run: cargo fmt --all --check
+        working-directory: rust
+
   macos:
     name: macOS
     if: (github.event_name != 'workflow_dispatch' || inputs.sistemi == 'tutti' || inputs.sistemi == 'macos') && !inputs.note

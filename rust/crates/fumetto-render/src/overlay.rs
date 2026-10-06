@@ -356,10 +356,7 @@ impl Overlay {
             Face::Serif => "Instrument Serif",
             Face::Sans => "Instrument Sans",
         };
-        let mut attrs = Attrs::new()
-            .family(Family::Name(family))
-            .style(Style::Normal)
-            .weight(Weight(t.weight));
+        let mut attrs = Attrs::new().family(Family::Name(family)).style(Style::Normal).weight(Weight(t.weight));
         if t.tracking != 0.0 {
             attrs = attrs.letter_spacing(t.tracking);
         }
@@ -381,8 +378,9 @@ impl Overlay {
     /// Disegna la scena sopra cio' che il bersaglio contiene gia'.
     // ponytail: ogni testo si impagina a ogni fotogramma (pochi microsecondi
     // l'uno, e sono una decina); una cache per testo se diventano centinaia
-    pub fn draw(&mut self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView, size: (u32, u32),
-                scene: &Scene) -> Result<(), String> {
+    pub fn draw(
+        &mut self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView, size: (u32, u32), scene: &Scene,
+    ) -> Result<(), String> {
         if scene.is_empty() {
             return Ok(());
         }
@@ -425,8 +423,15 @@ impl Overlay {
                 custom_glyphs: &[],
             });
             self.texts[i]
-                .prepare(&self.device, &self.queue, &mut self.fonts, &mut self.atlas, &self.viewport, areas,
-                         &mut self.swash)
+                .prepare(
+                    &self.device,
+                    &self.queue,
+                    &mut self.fonts,
+                    &mut self.atlas,
+                    &self.viewport,
+                    areas,
+                    &mut self.swash,
+                )
                 .map_err(|e| format!("testo: {e}"))?;
         }
 

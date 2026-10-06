@@ -1,0 +1,6 @@
+# Lo stile del codice: righe fino a 120 colonne, e le espressioni brevi su
+# una riga sola finche' ci stanno ("Max"), come era scritto prima di usare
+# rustfmt. Le Actions controllano che sia rispettato (cargo fmt --check).
+max_width = 120
+use_small_heuristics = "Max"
+fn_params_layout = "Compressed"

@@ -65,6 +65,8 @@ pub enum Bind {
 }
 
 impl Bind {
+    // una tabella: a una voce per riga sarebbe lunga quaranta righe
+    #[rustfmt::skip]
     pub const ALL: [Bind; 39] = [
         Bind::Right, Bind::Left, Bind::Down, Bind::Up, Bind::Next, Bind::Prev, Bind::First, Bind::Last, Bind::GoTo,
         Bind::Thumbs, Bind::Double, Bind::Cover, Bind::Strip, Bind::StripWider, Bind::StripNarrower, Bind::Manga,
@@ -171,15 +173,31 @@ impl Bind {
     /// Il gruppo, nelle impostazioni.
     pub fn group(self) -> &'static str {
         match self {
-            Bind::Right | Bind::Left | Bind::Down | Bind::Up | Bind::Next | Bind::Prev | Bind::First | Bind::Last
-            | Bind::GoTo | Bind::Thumbs => t("Sfogliare", "Turning pages"),
+            Bind::Right
+            | Bind::Left
+            | Bind::Down
+            | Bind::Up
+            | Bind::Next
+            | Bind::Prev
+            | Bind::First
+            | Bind::Last
+            | Bind::GoTo
+            | Bind::Thumbs => t("Sfogliare", "Turning pages"),
             Bind::Double | Bind::Cover | Bind::Strip | Bind::StripWider | Bind::StripNarrower | Bind::Manga => {
                 t("Modi di lettura", "Reading modes")
             }
             Bind::ZoomIn | Bind::ZoomOut | Bind::ZoomPage | Bind::ZoomWidth | Bind::ZoomActual | Bind::Lens => "Zoom",
-            Bind::RotateRight | Bind::RotateLeft | Bind::Trim | Bind::Upscale | Bind::Linear => t("La pagina", "The page"),
+            Bind::RotateRight | Bind::RotateLeft | Bind::Trim | Bind::Upscale | Bind::Linear => {
+                t("La pagina", "The page")
+            }
             Bind::Slideshow | Bind::Bookmark | Bind::Save | Bind::Copy => t("Altro", "More"),
-            Bind::Open | Bind::OpenFolder | Bind::Library | Bind::Close | Bind::Fullscreen | Bind::Hud | Bind::Settings
+            Bind::Open
+            | Bind::OpenFolder
+            | Bind::Library
+            | Bind::Close
+            | Bind::Fullscreen
+            | Bind::Hud
+            | Bind::Settings
             | Bind::Quit => t("Volumi e finestra", "Volumes and window"),
         }
     }

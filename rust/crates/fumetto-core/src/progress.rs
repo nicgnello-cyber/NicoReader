@@ -80,9 +80,7 @@ impl Progress {
                 return;
             }
         }
-        saved.read_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
+        saved.read_at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
         self.entries.insert(key, saved);
         self.dirty = true;
     }
@@ -92,7 +90,8 @@ impl Progress {
     /// allineato.
     pub fn recent(&self) -> Vec<(PathBuf, &Saved)> {
         // senza pagine: rimesso da leggere, ricordato solo per i segnalibri
-        let mut v: Vec<_> = self.entries.iter().filter(|(_, s)| s.pages > 0).map(|(k, s)| (PathBuf::from(k), s)).collect();
+        let mut v: Vec<_> =
+            self.entries.iter().filter(|(_, s)| s.pages > 0).map(|(k, s)| (PathBuf::from(k), s)).collect();
         v.sort_by_key(|(_, s)| std::cmp::Reverse(s.read_at));
         v
     }

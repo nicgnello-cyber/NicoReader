@@ -34,8 +34,9 @@ pub struct Gpu {
 }
 
 impl Gpu {
-    pub async fn new(instance: &wgpu::Instance, surface: Option<&wgpu::Surface<'_>>,
-                     power: wgpu::PowerPreference) -> Result<Gpu, String> {
+    pub async fn new(
+        instance: &wgpu::Instance, surface: Option<&wgpu::Surface<'_>>, power: wgpu::PowerPreference,
+    ) -> Result<Gpu, String> {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: power,
@@ -224,8 +225,8 @@ impl Renderer {
             bind_group_layouts: &[Some(&tile_layout), Some(&quad_layout)],
             immediate_size: 0,
         });
-        let quad_stride = (size_of::<QuadUniform>() as u32)
-            .next_multiple_of(device.limits().min_uniform_buffer_offset_alignment);
+        let quad_stride =
+            (size_of::<QuadUniform>() as u32).next_multiple_of(device.limits().min_uniform_buffer_offset_alignment);
         let quads = Mutex::new(QuadBuffer::new(&device, &quad_layout, quad_stride, 16));
         Renderer {
             max_dim: device.limits().max_texture_dimension_2d,
@@ -245,8 +246,7 @@ impl Renderer {
     /// parte con il prossimo invio alla coda, senza fermare chi disegna.
     pub fn upload(&self, page: &Page) -> Result<GpuImage, String> {
         if page.width > self.max_dim {
-            return Err(format!("pagina larga {} pixel: la scheda video arriva a {}",
-                               page.width, self.max_dim));
+            return Err(format!("pagina larga {} pixel: la scheda video arriva a {}", page.width, self.max_dim));
         }
         let row_bytes = page.width as usize * 4;
         let tiles = tiling::tile_rows(page.height)
@@ -266,14 +266,21 @@ impl Renderer {
                 self.queue.write_texture(
                     texture.as_image_copy(),
                     rows,
-                    wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row_bytes as u32), rows_per_image: None },
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(row_bytes as u32),
+                        rows_per_image: None,
+                    },
                     texture.size(),
                 );
                 let view = texture.create_view(&Default::default());
                 let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: None,
                     layout: &self.tile_layout,
-                    entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&view) }],
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    }],
                 });
                 Tile { bind, stored: t.stored, core: t.core }
             })
@@ -323,8 +330,10 @@ impl Renderer {
     /// Disegna le immagini (sul nero, se `pass.clear`). Il bersaglio deve
     /// essere in un formato *non* sRGB: i valori delle pagine sono gia'
     /// codificati e vanno copiati.
-    pub fn draw(&self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView,
-                format: wgpu::TextureFormat, size: (u32, u32), items: &[Placement], pass: Pass) {
+    pub fn draw(
+        &self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView, format: wgpu::TextureFormat,
+        size: (u32, u32), items: &[Placement], pass: Pass,
+    ) {
         let (tw, th) = (size.0 as f32, size.1 as f32);
         let a = pass.adjust;
         let adjust = [a.brightness, a.contrast, 1.0 / a.gamma, (!a.is_none()) as u32 as f32];
@@ -354,7 +363,12 @@ impl Renderer {
                 }
                 if pass.clip.is_some() {
                     let (sx, sy) = (src[2] / rect[2], src[3] / rect[3]);
-                    src = [src[0] + (cx0 - rect[0]) * sx, src[1] + (cy0 - rect[1]) * sy, (cx1 - cx0) * sx, (cy1 - cy0) * sy];
+                    src = [
+                        src[0] + (cx0 - rect[0]) * sx,
+                        src[1] + (cy0 - rect[1]) * sy,
+                        (cx1 - cx0) * sx,
+                        (cy1 - cy0) * sy,
+                    ];
                     rect = [cx0, cy0, cx1 - cx0, cy1 - cy0];
                 }
                 quads.push((
@@ -406,14 +420,17 @@ impl Renderer {
     /// Disegna fuori schermo e restituisce i pixel RGBA: per le prove e per
     /// guardare davvero il risultato, senza finestra. `then` disegna altro
     /// sopra le pagine (l'interfaccia), in [`OFFSCREEN_FORMAT`].
-    pub fn render_to_rgba(&self, size: (u32, u32), items: &[Placement],
-                          then: impl FnOnce(&mut wgpu::CommandEncoder, &wgpu::TextureView)) -> Vec<u8> {
+    pub fn render_to_rgba(
+        &self, size: (u32, u32), items: &[Placement], then: impl FnOnce(&mut wgpu::CommandEncoder, &wgpu::TextureView),
+    ) -> Vec<u8> {
         self.render_to_rgba_with(size, items, Pass::PLAIN, then)
     }
 
     /// Come `render_to_rgba`, con le regolazioni di `pass`.
-    pub fn render_to_rgba_with(&self, size: (u32, u32), items: &[Placement], pass: Pass,
-                               then: impl FnOnce(&mut wgpu::CommandEncoder, &wgpu::TextureView)) -> Vec<u8> {
+    pub fn render_to_rgba_with(
+        &self, size: (u32, u32), items: &[Placement], pass: Pass,
+        then: impl FnOnce(&mut wgpu::CommandEncoder, &wgpu::TextureView),
+    ) -> Vec<u8> {
         let (w, h) = size;
         let target = self.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("fuori schermo"),

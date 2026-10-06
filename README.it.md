@@ -77,6 +77,10 @@ sul Mac servono anche gli strumenti di Xcode, `xcode-select --install`):
     cargo build --release
     cargo test --workspace
 
+Prima di una pull request, `cargo fmt --all` e
+`cargo clippy --workspace --all-targets -- -D warnings`: GitHub Actions li
+controlla tutti e due.
+
 Su Linux e macOS le prove dei PDF vogliono pdfium in `vendor/pdfium/`: lo
 scaricano `pacchetto.sh` e `pacchetto-mac.sh` la prima volta.
 

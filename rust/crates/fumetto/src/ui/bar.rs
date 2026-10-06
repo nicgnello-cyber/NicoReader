@@ -86,10 +86,23 @@ pub(super) fn hud_buttons(ctx: &Context, b: &BookInfo) -> Vec<Button> {
     let mut x = 10.0 * s;
     push(x, btn, icon(Icon::Open), act(Action::Open), false, tip(t("Apri", "Open"), &k(Bind::Open)));
     x += btn + 2.0 * s;
-    push(x, btn, icon(Icon::Gallery), act(Action::ToggleLibrary), false,
-         tip(t("Libreria", "Library"), &k(Bind::Library)));
+    push(
+        x,
+        btn,
+        icon(Icon::Gallery),
+        act(Action::ToggleLibrary),
+        false,
+        tip(t("Libreria", "Library"), &k(Bind::Library)),
+    );
     x += btn + 2.0 * s;
-    push(x, btn, icon(Icon::Thumbs), act(Action::ToggleThumbs), false, tip(t("Miniature", "Thumbnails"), &k(Bind::Thumbs)));
+    push(
+        x,
+        btn,
+        icon(Icon::Thumbs),
+        act(Action::ToggleThumbs),
+        false,
+        tip(t("Miniature", "Thumbnails"), &k(Bind::Thumbs)),
+    );
 
     // a destra, dal bordo verso il centro
     let mut r = vw - 10.0 * s;
@@ -123,37 +136,126 @@ pub(super) fn hud_buttons(ctx: &Context, b: &BookInfo) -> Vec<Button> {
     let (first_key, last_key) = if b.manga { (k(Bind::Last), k(Bind::First)) } else { (k(Bind::First), k(Bind::Last)) };
     push(cx0, btn, icon(Icon::First), act(start), false, tip(t("Inizio", "Start"), &first_key));
     push(cx0 + btn, btn, icon(Icon::Prev), act(back), false, tip(t("Indietro", "Back"), &page_keys.0));
-    push(cx0 + 2.0 * btn, folio_w, Look::Folio(format!("{}  /  {}", b.folio, b.pages)), act(Action::AskPage), false,
-         tip(t("Vai a pagina", "Go to page"), &k(Bind::GoTo)));
-    push(cx0 + 2.0 * btn + folio_w, btn, icon(Icon::Next), act(forth), false,
-         tip(t("Avanti", "Forward"), &page_keys.1));
+    push(
+        cx0 + 2.0 * btn,
+        folio_w,
+        Look::Folio(format!("{}  /  {}", b.folio, b.pages)),
+        act(Action::AskPage),
+        false,
+        tip(t("Vai a pagina", "Go to page"), &k(Bind::GoTo)),
+    );
+    push(
+        cx0 + 2.0 * btn + folio_w,
+        btn,
+        icon(Icon::Next),
+        act(forth),
+        false,
+        tip(t("Avanti", "Forward"), &page_keys.1),
+    );
     push(cx0 + 3.0 * btn + folio_w, btn, icon(Icon::Last), act(end), false, tip(t("Fine", "End"), &last_key));
 
-    push(mark, btn, icon(Icon::Bookmark), act(Action::ToggleBookmark), b.bookmarked,
-         tip(if b.bookmarked { t("Pagina segnata", "Bookmarked") } else { t("Segna la pagina", "Bookmark the page") },
-             &k(Bind::Bookmark)));
-    let single_cmd = if b.double { act(Action::ToggleDouble) } else if b.strip { act(Action::ToggleStrip) } else { None };
+    push(
+        mark,
+        btn,
+        icon(Icon::Bookmark),
+        act(Action::ToggleBookmark),
+        b.bookmarked,
+        tip(
+            if b.bookmarked { t("Pagina segnata", "Bookmarked") } else { t("Segna la pagina", "Bookmark the page") },
+            &k(Bind::Bookmark),
+        ),
+    );
+    let single_cmd = if b.double {
+        act(Action::ToggleDouble)
+    } else if b.strip {
+        act(Action::ToggleStrip)
+    } else {
+        None
+    };
     let is_single = !b.double && !b.strip;
-    push(single, btn, icon(Icon::Single), single_cmd.or(act(Action::ZoomTo(Zoom::Page))), is_single,
-         tip(t("Pagina singola", "Single page"), &k(if b.double { Bind::Double } else { Bind::Strip })));
-    push(double, btn, icon(Icon::Double), act(Action::ToggleDouble), b.double,
-         tip(t("Doppia pagina", "Two pages"), &k(Bind::Double)));
+    push(
+        single,
+        btn,
+        icon(Icon::Single),
+        single_cmd.or(act(Action::ZoomTo(Zoom::Page))),
+        is_single,
+        tip(t("Pagina singola", "Single page"), &k(if b.double { Bind::Double } else { Bind::Strip })),
+    );
+    push(
+        double,
+        btn,
+        icon(Icon::Double),
+        act(Action::ToggleDouble),
+        b.double,
+        tip(t("Doppia pagina", "Two pages"), &k(Bind::Double)),
+    );
     push(strip, btn, icon(Icon::Strip), act(Action::ToggleStrip), b.strip, tip(t("Nastro", "Strip"), &k(Bind::Strip)));
-    push(dir, btn, icon(if b.manga { Icon::RightToLeft } else { Icon::LeftToRight }), act(Action::ToggleManga),
-         b.manga, tip(if b.manga { t("Da destra a sinistra", "Right to left") } else { t("Da sinistra a destra", "Left to right") }, &k(Bind::Manga)));
+    push(
+        dir,
+        btn,
+        icon(if b.manga { Icon::RightToLeft } else { Icon::LeftToRight }),
+        act(Action::ToggleManga),
+        b.manga,
+        tip(
+            if b.manga {
+                t("Da destra a sinistra", "Right to left")
+            } else {
+                t("Da sinistra a destra", "Left to right")
+            },
+            &k(Bind::Manga),
+        ),
+    );
     let zoomable = b.zoom.is_some();
-    push(minus, btn, icon(Icon::Minus), zoomable.then_some(Command::Act(Action::ZoomOut)), false,
-         tip(t("Riduci", "Zoom out"), &k(Bind::ZoomOut)));
-    push(zoom, 64.0 * s, Look::Zoom(b.zoom.map_or("\u{2014}".into(), |z| format!("{z}%"))),
-         zoomable.then_some(Command::Act(Action::ZoomTo(Zoom::Page))), false,
-         tip(t("Livelli di zoom", "Zoom levels"), &format!("{} {} {}", k(Bind::ZoomPage), k(Bind::ZoomWidth), k(Bind::ZoomActual))));
-    push(plus, btn, icon(Icon::Plus), zoomable.then_some(Command::Act(Action::ZoomIn)), false,
-         tip(t("Ingrandisci", "Zoom in"), &k(Bind::ZoomIn)));
-    push(full + 2.0 * s, btn, icon(if ctx.fullscreen { Icon::FullExit } else { Icon::Full }),
-         act(Action::ToggleFullscreen), false,
-         tip(if ctx.fullscreen { t("Esci dallo schermo intero", "Exit full screen") } else { t("Schermo intero", "Full screen") }, &k(Bind::Fullscreen)));
-    push(hide, btn, icon(Icon::Hide), act(Action::ToggleHud), false,
-         tip(t("Nascondi la barra", "Hide the bar"), &k(Bind::Hud)));
+    push(
+        minus,
+        btn,
+        icon(Icon::Minus),
+        zoomable.then_some(Command::Act(Action::ZoomOut)),
+        false,
+        tip(t("Riduci", "Zoom out"), &k(Bind::ZoomOut)),
+    );
+    push(
+        zoom,
+        64.0 * s,
+        Look::Zoom(b.zoom.map_or("\u{2014}".into(), |z| format!("{z}%"))),
+        zoomable.then_some(Command::Act(Action::ZoomTo(Zoom::Page))),
+        false,
+        tip(
+            t("Livelli di zoom", "Zoom levels"),
+            &format!("{} {} {}", k(Bind::ZoomPage), k(Bind::ZoomWidth), k(Bind::ZoomActual)),
+        ),
+    );
+    push(
+        plus,
+        btn,
+        icon(Icon::Plus),
+        zoomable.then_some(Command::Act(Action::ZoomIn)),
+        false,
+        tip(t("Ingrandisci", "Zoom in"), &k(Bind::ZoomIn)),
+    );
+    push(
+        full + 2.0 * s,
+        btn,
+        icon(if ctx.fullscreen { Icon::FullExit } else { Icon::Full }),
+        act(Action::ToggleFullscreen),
+        false,
+        tip(
+            if ctx.fullscreen {
+                t("Esci dallo schermo intero", "Exit full screen")
+            } else {
+                t("Schermo intero", "Full screen")
+            },
+            &k(Bind::Fullscreen),
+        ),
+    );
+    push(
+        hide,
+        btn,
+        icon(Icon::Hide),
+        act(Action::ToggleHud),
+        false,
+        tip(t("Nascondi la barra", "Hide the bar"), &k(Bind::Hud)),
+    );
     v
 }
 
@@ -203,14 +305,28 @@ pub(super) fn hud(ctx: &Context, b: &BookInfo, hover: Option<Hover>, m: &mut dyn
         if hovered {
             l.rects.push(Rect::new(btn.x, by, btn.w, bh, [1.0, 1.0, 1.0, 0.075]).radius(8.0 * s));
         }
-        let color = if !enabled { alpha(MUTED_F, 0.35) } else if btn.on || hovered { INK_F } else { MUTED_F };
+        let color = if !enabled {
+            alpha(MUTED_F, 0.35)
+        } else if btn.on || hovered {
+            INK_F
+        } else {
+            MUTED_F
+        };
         let cx = btn.x + btn.w / 2.0;
         match &btn.face {
             Look::Icon(icon) => draw_icon(&mut l, *icon, cx.round(), cy.round(), s, color),
-            Look::Folio(label) => l.texts.push(Text::new(label.as_str(), Face::Serif, 19.0 * s, INK)
-                .boxed(btn.w, Align::Center).on_baseline(btn.x, cy + 6.5 * s)),
-            Look::Zoom(label) => l.texts.push(Text::new(label.as_str(), Face::Sans, 12.5 * s, to_u8(color)).weight(500)
-                .tabular().boxed(btn.w, Align::Center).on_baseline(btn.x, cy + 4.5 * s)),
+            Look::Folio(label) => l.texts.push(
+                Text::new(label.as_str(), Face::Serif, 19.0 * s, INK)
+                    .boxed(btn.w, Align::Center)
+                    .on_baseline(btn.x, cy + 6.5 * s),
+            ),
+            Look::Zoom(label) => l.texts.push(
+                Text::new(label.as_str(), Face::Sans, 12.5 * s, to_u8(color))
+                    .weight(500)
+                    .tabular()
+                    .boxed(btn.w, Align::Center)
+                    .on_baseline(btn.x, cy + 4.5 * s),
+            ),
         }
         if btn.on {
             // la voce scelta: un punto rosso sotto
@@ -235,7 +351,8 @@ pub(crate) fn tooltip(l: &mut Layer, m: &mut dyn Measure, tip: &str, cx: f32, ba
     let th = (30.0 * s).round();
     l.rects.push(Rect::new(x, y + 4.0 * s, w, th, [0.0, 0.0, 0.0, 0.5]).radius(8.0 * s).blur(10.0 * s));
     l.rects.push(Rect::new(x, y, w, th, [1.0, 1.0, 1.0, 0.1]).radius(8.0 * s));
-    l.rects.push(Rect::new(x + s, y + s, w - 2.0 * s, th - 2.0 * s, alpha(rgb(0x14, 0x13, 0x11), 0.98)).radius(7.0 * s));
+    l.rects
+        .push(Rect::new(x + s, y + s, w - 2.0 * s, th - 2.0 * s, alpha(rgb(0x14, 0x13, 0x11), 0.98)).radius(7.0 * s));
     l.texts.push(text.boxed(w, Align::Center).on_baseline(x, y + th / 2.0 + 4.5 * s));
 }
 
@@ -255,7 +372,9 @@ pub(crate) fn draw_icon(l: &mut Layer, icon: Icon, cx: f32, cy: f32, s: f32, col
             boxes.push((-8.0, -4.0, 16.0, 11.0));
             line(&[(-7.5, -4.0), (-7.5, -7.0), (-2.5, -7.0), (-0.5, -4.0)]);
         }
-        Icon::Gallery => boxes.extend([(-7.0, -7.0, 6.0, 6.0), (1.0, -7.0, 6.0, 6.0), (-7.0, 1.0, 6.0, 6.0), (1.0, 1.0, 6.0, 6.0)]),
+        Icon::Gallery => {
+            boxes.extend([(-7.0, -7.0, 6.0, 6.0), (1.0, -7.0, 6.0, 6.0), (-7.0, 1.0, 6.0, 6.0), (1.0, 1.0, 6.0, 6.0)])
+        }
         Icon::Prev => line(&[(3.0, -6.0), (-3.0, 0.0), (3.0, 6.0)]),
         Icon::Next => line(&[(-3.0, -6.0), (3.0, 0.0), (-3.0, 6.0)]),
         Icon::First => {

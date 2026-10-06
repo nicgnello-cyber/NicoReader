@@ -21,7 +21,11 @@ pub(super) fn main_rows(ctx: &Context) -> Vec<Row> {
         rows.push(Row::Sep);
         rows.push(Row::Head(t("Recenti", "Recent")));
         for r in ctx.recent.iter().take(recent) {
-            rows.push(Row::Recent { title: r.title.clone(), place: r.place.clone(), cmd: Command::Open(r.path.clone()) });
+            rows.push(Row::Recent {
+                title: r.title.clone(),
+                place: r.place.clone(),
+                cmd: Command::Open(r.path.clone()),
+            });
         }
     }
     let Some(b) = &ctx.book else {

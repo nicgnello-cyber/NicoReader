@@ -57,31 +57,59 @@ impl Stats {
     pub fn report(&self, gpu: &str) -> String {
         let mut s = String::new();
         let _ = writeln!(s, "\n== NicoReader, misure del prototipo ==");
-        let _ = writeln!(s, "scheda video: {gpu}, schermo a {:.0} Hz ({:.2} ms per fotogramma)",
-                         1000.0 / self.refresh_ms, self.refresh_ms);
+        let _ = writeln!(
+            s,
+            "scheda video: {gpu}, schermo a {:.0} Hz ({:.2} ms per fotogramma)",
+            1000.0 / self.refresh_ms,
+            self.refresh_ms
+        );
         let ms = |v: Option<f32>| v.map_or("-".to_string(), |v| format!("{v:.0} ms"));
-        let _ = writeln!(s, "avvio: finestra {}, scheda video pronta {}, prima pagina preparata {}, a schermo {}",
-                         ms(self.window_ms), ms(self.gpu_ms), ms(self.first_loaded_ms), ms(self.first_page_ms));
+        let _ = writeln!(
+            s,
+            "avvio: finestra {}, scheda video pronta {}, prima pagina preparata {}, a schermo {}",
+            ms(self.window_ms),
+            ms(self.gpu_ms),
+            ms(self.first_loaded_ms),
+            ms(self.first_page_ms)
+        );
         if !self.turns.is_empty() {
-            let _ = writeln!(s, "giro di pagina (tasto -> consegna allo schermo), {} giri: {}; pagina non pronta {} volte",
-                             self.turns.len(), summary(&self.turns), self.misses);
+            let _ = writeln!(
+                s,
+                "giro di pagina (tasto -> consegna allo schermo), {} giri: {}; pagina non pronta {} volte",
+                self.turns.len(),
+                summary(&self.turns),
+                self.misses
+            );
         }
         if !self.frames.is_empty() {
             let late = self.frames.iter().filter(|&&f| f > self.refresh_ms * 1.5).count();
-            let _ = writeln!(s, "nastro, {} fotogrammi: intervallo {}; persi {late} ({:.2}%)",
-                             self.frames.len(), summary(&self.frames),
-                             late as f32 * 100.0 / self.frames.len() as f32);
+            let _ = writeln!(
+                s,
+                "nastro, {} fotogrammi: intervallo {}; persi {late} ({:.2}%)",
+                self.frames.len(),
+                summary(&self.frames),
+                late as f32 * 100.0 / self.frames.len() as f32
+            );
         }
         if !self.acquire.is_empty() {
-            let _ = writeln!(s, "attesa del fotogramma: {}; fallite {} {:?}", summary(&self.acquire),
-                             self.acquire_failures.len(),
-                             self.acquire_failures.iter().take(3).collect::<Vec<_>>());
+            let _ = writeln!(
+                s,
+                "attesa del fotogramma: {}; fallite {} {:?}",
+                summary(&self.acquire),
+                self.acquire_failures.len(),
+                self.acquire_failures.iter().take(3).collect::<Vec<_>>()
+            );
         }
         if !self.prepared.is_empty() {
             let col = |f: fn(&(f32, f32, f32)) -> f32| self.prepared.iter().map(f).collect::<Vec<_>>();
-            let _ = writeln!(s, "pagine preparate: {} (su un thread) lettura {}, decodifica {}, rimpicciolimento {}",
-                             self.prepared.len(), summary(&col(|p| p.0)), summary(&col(|p| p.1)),
-                             summary(&col(|p| p.2)));
+            let _ = writeln!(
+                s,
+                "pagine preparate: {} (su un thread) lettura {}, decodifica {}, rimpicciolimento {}",
+                self.prepared.len(),
+                summary(&col(|p| p.0)),
+                summary(&col(|p| p.1)),
+                summary(&col(|p| p.2))
+            );
         }
         for n in &self.notes {
             let _ = writeln!(s, "  {n}");

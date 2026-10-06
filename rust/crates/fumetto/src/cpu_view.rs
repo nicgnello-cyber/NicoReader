@@ -97,7 +97,12 @@ mod tests {
 
     #[test]
     fn copia_e_taglia_ai_bordi() {
-        let page = Page { width: 2, height: 2, rgba: vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 10, 20, 30, 0], opaque: false };
+        let page = Page {
+            width: 2,
+            height: 2,
+            rgba: vec![255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 10, 20, 30, 0],
+            opaque: false,
+        };
         let mut buffer = vec![7u32; 9];
         blit(&mut buffer, 3, 3, &page, 2, -1, None); // sporge a destra e in alto
         assert_eq!(buffer, [7, 7, 0x0000ff, 7, 7, 7, 7, 7, 7]);

@@ -33,8 +33,8 @@ mod bar;
 mod menu;
 mod panels;
 
-pub(crate) use bar::{Icon, draw_icon, tooltip};
 use bar::{Hover, hud, hud_hit};
+pub(crate) use bar::{Icon, draw_icon, tooltip};
 use menu::{main_rows, zoom_rows};
 use panels::{caption, goto, lens_ring, ruler, to_u8, toast_only, welcome};
 
@@ -266,10 +266,22 @@ struct Menu {
 
 #[derive(Clone, Debug)]
 pub(crate) enum Row {
-    Item { label: &'static str, key: String, on: bool, cmd: Command },
-    Recent { title: String, place: String, cmd: Command },
+    Item {
+        label: &'static str,
+        key: String,
+        on: bool,
+        cmd: Command,
+    },
+    Recent {
+        title: String,
+        place: String,
+        cmd: Command,
+    },
     /// Una cartella della libreria: il suo percorso, e un clic la toglie.
-    Folder { path: PathBuf, cmd: Command },
+    Folder {
+        path: PathBuf,
+        cmd: Command,
+    },
     Head(&'static str),
     Sep,
     /// Da qui una colonna nuova, accanto.
@@ -416,8 +428,13 @@ impl Ui {
             Command::FoldersMenu(x, y) => {
                 let d = ctx.shelf.as_ref()?;
                 let width = 380.0 * ctx.scale;
-                self.menu = Some(Menu { x: x - width + 36.0 * ctx.scale, y: y + 6.0 * ctx.scale, selected: None,
-                                        rows: Shelf::folders_menu(d), width });
+                self.menu = Some(Menu {
+                    x: x - width + 36.0 * ctx.scale,
+                    y: y + 6.0 * ctx.scale,
+                    selected: None,
+                    rows: Shelf::folders_menu(d),
+                    width,
+                });
                 None
             }
             other => Some(other),
@@ -480,7 +497,8 @@ impl Ui {
             m.selected = Some(i);
             return true;
         }
-        if self.menu.is_none() && self.goto.is_none()
+        if self.menu.is_none()
+            && self.goto.is_none()
             && let Some(p) = &mut self.prefs
         {
             return p.motion(ctx.settings, ctx.keys, ctx.view, ctx.scale, x, y);
@@ -545,8 +563,13 @@ impl Ui {
             if b.id() == Hover::Zoom && b.cmd.is_some() {
                 // la percentuale apre i livelli di zoom, appena sotto
                 let x = (b.x + b.w / 2.0 - ZOOM_MENU_W * ctx.scale / 2.0).round();
-                self.menu = Some(Menu { x, y: hud_height(ctx.scale) + 6.0 * ctx.scale, selected: None, rows: zoom_rows(ctx),
-                                        width: ZOOM_MENU_W * ctx.scale });
+                self.menu = Some(Menu {
+                    x,
+                    y: hud_height(ctx.scale) + 6.0 * ctx.scale,
+                    selected: None,
+                    rows: zoom_rows(ctx),
+                    width: ZOOM_MENU_W * ctx.scale,
+                });
                 return Handled::Yes(None);
             }
             return Handled::Yes(b.cmd);
@@ -767,8 +790,10 @@ impl Ui {
         // ombra morbida (si vede sulle pagine chiare), filo, fondo
         l.rects.push(Rect::new(f.x, f.y + 10.0 * s, f.w, f.h, [0.0, 0.0, 0.0, 0.55]).radius(12.0 * s).blur(26.0 * s));
         l.rects.push(Rect::new(f.x, f.y, f.w, f.h, [1.0, 1.0, 1.0, 0.09]).radius(12.0 * s));
-        l.rects.push(Rect::new(f.x + s, f.y + s, f.w - 2.0 * s, f.h - 2.0 * s, alpha(rgb(0x11, 0x10, 0x0E), 0.98))
-            .radius(11.0 * s));
+        l.rects.push(
+            Rect::new(f.x + s, f.y + s, f.w - 2.0 * s, f.h - 2.0 * s, alpha(rgb(0x11, 0x10, 0x0E), 0.98))
+                .radius(11.0 * s),
+        );
         let cw = menu.width;
         for (i, (row, &(x, top))) in rows.iter().zip(&spots).enumerate() {
             let h = row.height() * s;
@@ -777,16 +802,21 @@ impl Ui {
                 text.boxed(110.0 * s, Align::Right).on_baseline(x + cw - 18.0 * s - 110.0 * s, top + base * s)
             };
             if menu.selected == Some(i) {
-                l.rects.push(Rect::new(x + 6.0 * s, top + 2.0 * s, cw - 12.0 * s, h - 4.0 * s, [1.0, 1.0, 1.0, 0.065])
-                    .radius(7.0 * s));
+                l.rects.push(
+                    Rect::new(x + 6.0 * s, top + 2.0 * s, cw - 12.0 * s, h - 4.0 * s, [1.0, 1.0, 1.0, 0.065])
+                        .radius(7.0 * s),
+                );
             }
             match row {
                 Row::Item { label, key, on, .. } => {
                     if *on {
                         let d = 6.0 * s;
-                        l.rects.push(Rect::new(x + 17.0 * s - d / 2.0, top + h / 2.0 - d / 2.0, d, d, ACCENT).radius(d));
+                        l.rects
+                            .push(Rect::new(x + 17.0 * s - d / 2.0, top + h / 2.0 - d / 2.0, d, d, ACCENT).radius(d));
                     }
-                    l.texts.push(Text::new(*label, Face::Sans, 13.5 * s, INK).weight(450).on_baseline(left, top + 22.0 * s));
+                    l.texts.push(
+                        Text::new(*label, Face::Sans, 13.5 * s, INK).weight(450).on_baseline(left, top + 22.0 * s),
+                    );
                     l.texts.push(right_box(Text::new(key.as_str(), Face::Sans, 12.0 * s, MUTED).tabular(), 22.0));
                 }
                 Row::Recent { title, place, .. } => {
@@ -801,7 +831,9 @@ impl Ui {
                     l.texts.push(right_box(Text::new(hint, Face::Sans, 12.0 * s, ACCENT_TEXT), 22.0));
                 }
                 Row::Head(text) => l.texts.push(caps(text, 10.0 * s, MUTED).on_baseline(left, top + 21.0 * s)),
-                Row::Sep => l.rects.push(Rect::new(x + 18.0 * s, (top + 6.0 * s).round(), cw - 36.0 * s, s.round(), HAIR)),
+                Row::Sep => {
+                    l.rects.push(Rect::new(x + 18.0 * s, (top + 6.0 * s).round(), cw - 36.0 * s, s.round(), HAIR))
+                }
                 // fra le colonne un filo, come la piega fra due pagine
                 Row::Break => l.rects.push(Rect::new(x, f.y + 18.0 * s, s.round(), f.h - 36.0 * s, HAIR)),
             }
@@ -875,8 +907,19 @@ mod tests {
 
     fn ctx<'a>(b: Option<BookInfo<'a>>, recent: &'a [Recent]) -> Context<'a> {
         static SETTINGS: std::sync::LazyLock<fumetto_core::Settings> = std::sync::LazyLock::new(Default::default);
-        Context { view: (1920.0, 1080.0), scale: 1.0, book: b, recent, hud: false, fullscreen: false, shelf: None,
-                  thumbs: None, settings: &SETTINGS, keys: Keymap::defaults(), lens: None }
+        Context {
+            view: (1920.0, 1080.0),
+            scale: 1.0,
+            book: b,
+            recent,
+            hud: false,
+            fullscreen: false,
+            shelf: None,
+            thumbs: None,
+            settings: &SETTINGS,
+            keys: Keymap::defaults(),
+            lens: None,
+        }
     }
 
     #[test]
@@ -962,7 +1005,8 @@ mod tests {
         let m = ui.menu.as_ref().unwrap();
         let (frame, spots) = ui.menu_frame(&c, m, &m.rows);
         assert!((frame.w - 2.0 * MENU_W).abs() < 1.0, "due colonne: {}", frame.w);
-        let double = m.rows.iter().position(|r| matches!(r, Row::Item { cmd: Command::Act(Action::ToggleDouble), .. })).unwrap();
+        let double =
+            m.rows.iter().position(|r| matches!(r, Row::Item { cmd: Command::Act(Action::ToggleDouble), .. })).unwrap();
         let (x, y) = spots[double];
         assert!(x > frame.x + MENU_W - 1.0, "la seconda colonna");
         assert_eq!(ui.click(x + 50.0, y + 10.0, &c), Handled::Yes(Some(Command::Act(Action::ToggleDouble))));
@@ -975,10 +1019,13 @@ mod tests {
         let c = ctx(Some(BookInfo { bookmarks: &marks, ..book(10) }), &[]);
         ui.open_menu(100.0, 100.0, &c);
         let rows = &ui.menu.as_ref().unwrap().rows;
-        let jumps: Vec<&Command> = rows.iter().filter_map(|r| match r {
-            Row::Recent { cmd: cmd @ Command::Act(Action::GoTo(_)), .. } => Some(cmd),
-            _ => None,
-        }).collect();
+        let jumps: Vec<&Command> = rows
+            .iter()
+            .filter_map(|r| match r {
+                Row::Recent { cmd: cmd @ Command::Act(Action::GoTo(_)), .. } => Some(cmd),
+                _ => None,
+            })
+            .collect();
         assert_eq!(jumps, [&Command::Act(Action::GoTo(2)), &Command::Act(Action::GoTo(7))]);
     }
 
@@ -1041,7 +1088,9 @@ mod tests {
         c.hud = true;
         let b = c.book.as_ref().unwrap();
         let buttons = hud_buttons(&c, b);
-        assert!(buttons.iter().filter(|b| matches!(b.face, Look::Icon(Icon::Plus | Icon::Minus))).all(|b| b.cmd.is_none()));
+        assert!(
+            buttons.iter().filter(|b| matches!(b.face, Look::Icon(Icon::Plus | Icon::Minus))).all(|b| b.cmd.is_none())
+        );
     }
 
     #[test]

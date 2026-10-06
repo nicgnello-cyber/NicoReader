@@ -45,10 +45,19 @@ impl App {
                 self.save_settings();
                 let text = match taken {
                     Some(from) if fumetto_core::lingua::italian() => {
-                        format!("{} ora fa \u{ab}{}\u{bb}, non più \u{ab}{}\u{bb}", combo.shown(), bind.label(), from.label())
+                        format!(
+                            "{} ora fa \u{ab}{}\u{bb}, non più \u{ab}{}\u{bb}",
+                            combo.shown(),
+                            bind.label(),
+                            from.label()
+                        )
                     }
-                    Some(from) => format!("{} now does \u{201c}{}\u{201d}, no longer \u{201c}{}\u{201d}", combo.shown(),
-                                          bind.label(), from.label()),
+                    Some(from) => format!(
+                        "{} now does \u{201c}{}\u{201d}, no longer \u{201c}{}\u{201d}",
+                        combo.shown(),
+                        bind.label(),
+                        from.label()
+                    ),
                     None => format!("{}: {}", bind.label(), combo.shown()),
                 };
                 self.ui.toast(text, now);
@@ -86,7 +95,8 @@ impl App {
 
     pub fn act(&mut self, action: Action, event_loop: &ActiveEventLoop) {
         // aprire, chiudere, la libreria, vai a pagina: le miniature si chiudono
-        if matches!(action, Action::Open | Action::OpenFolder | Action::Close | Action::ToggleLibrary | Action::AskPage) {
+        if matches!(action, Action::Open | Action::OpenFolder | Action::Close | Action::ToggleLibrary | Action::AskPage)
+        {
             self.thumbs_open = false;
         }
         match action {
@@ -172,7 +182,10 @@ impl App {
         }
         // chi gira pagina a mano ha tutto il tempo della presentazione per la nuova
         if self.slideshow.is_some()
-            && matches!(action, Action::Next | Action::Prev | Action::First | Action::Last | Action::GoTo(_) | Action::Scroll(_))
+            && matches!(
+                action,
+                Action::Next | Action::Prev | Action::First | Action::Last | Action::GoTo(_) | Action::Scroll(_)
+            )
         {
             self.slideshow = Some(now + Duration::from_secs(self.settings.slideshow.max(1) as u64));
         }
@@ -196,7 +209,11 @@ impl App {
             Command::Open(path) => self.open(&path),
             Command::MarkRead(path, read) => {
                 // per segnarlo letto serve sapere quante pagine ha
-                let pages = self.progress.get(&path).map(|s| s.pages).filter(|&n| n > 0)
+                let pages = self
+                    .progress
+                    .get(&path)
+                    .map(|s| s.pages)
+                    .filter(|&n| n > 0)
                     .or_else(|| Book::open(&path).ok().map(|b| b.len()));
                 match pages {
                     Some(n) => {
@@ -210,10 +227,22 @@ impl App {
                         }
                         self.refresh_shelf();
                         self.refresh_recent();
-                        self.ui.toast(if read { t("Segnato come letto", "Marked as read") } else { t("Di nuovo da leggere", "Unread again") }, now);
+                        self.ui.toast(
+                            if read {
+                                t("Segnato come letto", "Marked as read")
+                            } else {
+                                t("Di nuovo da leggere", "Unread again")
+                            },
+                            now,
+                        );
                     }
-                    None => self.notify(t("Questo volume non si apre: non so quante pagine abbia.",
-                                          "This volume doesn't open: its page count is unknown.").to_owned()),
+                    None => self.notify(
+                        t(
+                            "Questo volume non si apre: non so quante pagine abbia.",
+                            "This volume doesn't open: its page count is unknown.",
+                        )
+                        .to_owned(),
+                    ),
                 }
             }
             Command::Reveal(path) => {
@@ -306,21 +335,35 @@ pub(super) fn place(s: &Saved) -> String {
 fn note(action: Action, r: &Reader) -> Option<String> {
     let pick = |on: bool, yes: &str, no: &str| (if on { yes } else { no }).to_owned();
     Some(match action {
-        Action::ToggleDouble => pick(r.mode == Mode::Double, t("Doppia pagina", "Two pages"), t("Pagina singola", "Single page")),
+        Action::ToggleDouble => {
+            pick(r.mode == Mode::Double, t("Doppia pagina", "Two pages"), t("Pagina singola", "Single page"))
+        }
         Action::ToggleStrip => pick(r.mode == Mode::Strip, t("Nastro", "Strip"), t("Pagina singola", "Single page")),
-        Action::ToggleManga => pick(r.manga, t("Da destra a sinistra", "Right to left"), t("Da sinistra a destra", "Left to right")),
+        Action::ToggleManga => {
+            pick(r.manga, t("Da destra a sinistra", "Right to left"), t("Da sinistra a destra", "Left to right"))
+        }
         Action::ToggleCover if r.mode == Mode::Double => {
             pick(r.cover_alone(), t("Copertina da sola", "Cover alone"), t("Copertina in coppia", "Cover paired"))
         }
-        Action::ToggleLinear => pick(r.linear, t("Luce lineare", "Linear light"), t("Gamma, per confronto", "Gamma, for comparison")),
+        Action::ToggleLinear => {
+            pick(r.linear, t("Luce lineare", "Linear light"), t("Gamma, per confronto", "Gamma, for comparison"))
+        }
         Action::Rotate(true) => t("Girata a destra", "Rotated right").to_owned(),
         Action::Rotate(false) => t("Girata a sinistra", "Rotated left").to_owned(),
-        Action::ToggleTrim if r.mode == Mode::Strip => {
-            pick(r.trim, t("Margini rifilati (non nel nastro)", "Margins trimmed (not in the strip)"), t("Pagine intere", "Whole pages"))
-        }
+        Action::ToggleTrim if r.mode == Mode::Strip => pick(
+            r.trim,
+            t("Margini rifilati (non nel nastro)", "Margins trimmed (not in the strip)"),
+            t("Pagine intere", "Whole pages"),
+        ),
         Action::ToggleTrim => pick(r.trim, t("Margini rifilati", "Margins trimmed"), t("Pagine intere", "Whole pages")),
-        Action::ToggleBookmark => pick(r.bookmarked(), t("Pagina segnata", "Page bookmarked"), t("Segno tolto", "Bookmark removed")),
-        Action::Zoom { .. } | Action::ZoomIn | Action::ZoomOut | Action::ZoomTo(_) | Action::ZoomReset
+        Action::ToggleBookmark => {
+            pick(r.bookmarked(), t("Pagina segnata", "Page bookmarked"), t("Segno tolto", "Bookmark removed"))
+        }
+        Action::Zoom { .. }
+        | Action::ZoomIn
+        | Action::ZoomOut
+        | Action::ZoomTo(_)
+        | Action::ZoomReset
         | Action::StripWider(_) => format!("Zoom {}%", r.zoom_percent()?),
         _ => return None,
     })
@@ -342,12 +385,21 @@ pub(super) fn combo_of(event: &winit::event::KeyEvent, m: ModifiersState) -> Opt
             NamedKey::ArrowUp => "Up".into(),
             NamedKey::ArrowDown => "Down".into(),
             NamedKey::Space => "Space".into(),
-            NamedKey::PageUp | NamedKey::PageDown | NamedKey::Home | NamedKey::End | NamedKey::Escape
-            | NamedKey::Backspace | NamedKey::Enter | NamedKey::Delete | NamedKey::Insert | NamedKey::Tab => format!("{n:?}"),
+            NamedKey::PageUp
+            | NamedKey::PageDown
+            | NamedKey::Home
+            | NamedKey::End
+            | NamedKey::Escape
+            | NamedKey::Backspace
+            | NamedKey::Enter
+            | NamedKey::Delete
+            | NamedKey::Insert
+            | NamedKey::Tab => format!("{n:?}"),
             // F1..F24: il nome e' gia' quello
             other => {
                 let name = format!("{other:?}");
-                let f_key = name.strip_prefix('F').is_some_and(|d| !d.is_empty() && d.chars().all(|c| c.is_ascii_digit()));
+                let f_key =
+                    name.strip_prefix('F').is_some_and(|d| !d.is_empty() && d.chars().all(|c| c.is_ascii_digit()));
                 if !f_key {
                     return None;
                 }

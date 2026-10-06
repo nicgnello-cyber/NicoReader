@@ -15,7 +15,10 @@ use fumetto_render::{Align, Face, Layer, Measure, Rect, Text};
 
 use crate::reader::Action;
 use crate::strip::glide_step;
-use crate::ui::{self, ACCENT, BLACK, Command, HAIR, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, alpha, caps, draw_icon, fit, rgb};
+use crate::ui::{
+    self, ACCENT, BLACK, Command, HAIR, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, alpha, caps, draw_icon, fit,
+    rgb,
+};
 
 /// Cio' che le miniature devono sapere, dall'app.
 pub struct ThumbsData<'a> {
@@ -201,7 +204,13 @@ impl Thumbs {
         let (_, y) = g.cell(i);
         let y = y - self.scroll;
         let (lo, hi) = (g.top + 20.0 * g.s, g.view.1 - 20.0 * g.s);
-        let delta = if y < lo { y - lo } else if y + g.row_h > hi { y + g.row_h - hi } else { 0.0 };
+        let delta = if y < lo {
+            y - lo
+        } else if y + g.row_h > hi {
+            y + g.row_h - hi
+        } else {
+            0.0
+        };
         self.scroll = (self.scroll + delta).clamp(0.0, g.max_scroll(d.pages));
         self.glide = 0.0;
     }
@@ -250,12 +259,15 @@ impl Thumbs {
             }
             if self.selected == Some(i) {
                 let o = 5.0 * s;
-                l.rects.push(Rect::new(x - o, y - o, w + 2.0 * o, h + 2.0 * o, ACCENT).radius(4.0 * s).stroke((2.0 * s).round()));
+                l.rects.push(
+                    Rect::new(x - o, y - o, w + 2.0 * o, h + 2.0 * o, ACCENT).radius(4.0 * s).stroke((2.0 * s).round()),
+                );
             }
             if d.bookmarks.binary_search(&i).is_ok() {
                 // un nastrino che spunta dal bordo alto, come fra le pagine di un libro
                 let (bw, bh) = ((7.0 * s).round(), (18.0 * s).round());
-                l.rects.push(Rect::new((x + w - 16.0 * s).round(), (y - 4.0 * s).round(), bw, bh, ACCENT).radius(1.0 * s));
+                l.rects
+                    .push(Rect::new((x + w - 16.0 * s).round(), (y - 4.0 * s).round(), bw, bh, ACCENT).radius(1.0 * s));
             }
             let here = i == d.here;
             if here {
@@ -263,8 +275,12 @@ impl Thumbs {
                 l.rects.push(Rect::new(x, (y + h + 7.0 * s).round(), w, (2.0 * s).round(), ACCENT));
             }
             let color = if here || hovered { INK } else { MUTED };
-            l.texts.push(Text::new((i + 1).to_string(), Face::Sans, 12.0 * s, color).tabular().boxed(w, Align::Center)
-                .on_baseline(x, y + h + 28.0 * s));
+            l.texts.push(
+                Text::new((i + 1).to_string(), Face::Sans, 12.0 * s, color)
+                    .tabular()
+                    .boxed(w, Align::Center)
+                    .on_baseline(x, y + h + 28.0 * s),
+            );
         }
         vec![l, self.bar(d, &g, m)]
     }
@@ -277,8 +293,12 @@ impl Thumbs {
         let mut l = Layer::default();
         l.rects.push(Rect::new(0.0, 0.0, vw, h, BLACK));
         l.rects.push(Rect::new(0.0, h - s.round(), vw, s.round(), alpha(HAIR, 0.8)));
-        let count = caps(&if italian() { format!("{} pagine", d.pages) } else { format!("{} pages", d.pages) }, 11.0 * s, MUTED)
-            .tabular();
+        let count = caps(
+            &if italian() { format!("{} pagine", d.pages) } else { format!("{} pages", d.pages) },
+            11.0 * s,
+            MUTED,
+        )
+        .tabular();
         let count_w = m.width(&count);
         let x0 = (24.0 * s).round();
         let title = fit(m, Text::new(d.title, Face::Serif, 22.0 * s, INK), vw - x0 - count_w - 160.0 * s);
@@ -294,7 +314,15 @@ impl Thumbs {
         }
         draw_icon(&mut l, Icon::Close, (x + 18.0 * s).round(), cy, s, if hovered { INK_F } else { MUTED_F });
         if hovered {
-            ui::tooltip(&mut l, m, t("Torna alla lettura   \u{00b7}   Esc", "Back to reading   \u{00b7}   Esc"), x + 18.0 * s, h, vw, s);
+            ui::tooltip(
+                &mut l,
+                m,
+                t("Torna alla lettura   \u{00b7}   Esc", "Back to reading   \u{00b7}   Esc"),
+                x + 18.0 * s,
+                h,
+                vw,
+                s,
+            );
         }
         l
     }

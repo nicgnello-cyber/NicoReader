@@ -17,16 +17,12 @@ use crate::loader::Fit;
 use crate::natural::natural_cmp;
 use crate::pdf::PdfDoc;
 
-const IMAGE_EXT: &[&str] = &[
-    "jpg", "jpeg", "jpe", "jfif", "png", "gif", "bmp", "webp", "tif", "tiff", "avif", "jxl",
-];
+const IMAGE_EXT: &[&str] = &["jpg", "jpeg", "jpe", "jfif", "png", "gif", "bmp", "webp", "tif", "tiff", "avif", "jxl"];
 
 pub fn is_image(name: &str) -> bool {
     let file = name.rsplit(['/', '\\']).next().unwrap_or(name);
     !file.starts_with('.')
-        && file
-            .rsplit_once('.')
-            .is_some_and(|(_, ext)| IMAGE_EXT.iter().any(|e| ext.eq_ignore_ascii_case(e)))
+        && file.rsplit_once('.').is_some_and(|(_, ext)| IMAGE_EXT.iter().any(|e| ext.eq_ignore_ascii_case(e)))
 }
 
 #[derive(Debug)]
@@ -463,7 +459,9 @@ mod tests {
 
     #[test]
     fn il_titolo_di_una_cartella_tiene_i_punti() {
-        let dir = std::env::temp_dir().join(format!("fumetto-test-titolo-{}", std::process::id())).join("Vol.01 Ch.001 - Screw");
+        let dir = std::env::temp_dir()
+            .join(format!("fumetto-test-titolo-{}", std::process::id()))
+            .join("Vol.01 Ch.001 - Screw");
         std::fs::create_dir_all(&dir).unwrap();
         assert_eq!(title_of(&dir), "Vol.01 Ch.001 - Screw");
         assert_eq!(title_of(Path::new("Nebbia sul Porto v03.cbz")), "Nebbia sul Porto v03");
@@ -476,9 +474,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         for (i, name) in ["p10.png", "p2.png", "p1.png"].iter().enumerate() {
-            image::RgbaImage::from_pixel(4, 6, image::Rgba([i as u8 * 50, 0, 0, 255]))
-                .save(dir.join(name))
-                .unwrap();
+            image::RgbaImage::from_pixel(4, 6, image::Rgba([i as u8 * 50, 0, 0, 255])).save(dir.join(name)).unwrap();
         }
         dir
     }
