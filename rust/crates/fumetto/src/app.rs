@@ -87,6 +87,9 @@ pub enum UserEvent {
     Loaded(Loaded),
     /// La scheda video e' pronta (o non lo sara' mai).
     Gpu(Box<Result<GpuStart, String>>),
+    /// macOS: dei volumi aperti dal Finder (in `finder::take`).
+    #[cfg(target_os = "macos")]
+    Finder,
     /// La risposta della finestra per aprire un volume (`None`: annullata);
     /// `true` se era una cartella da aggiungere alla libreria.
     Chosen(Option<PathBuf>, bool),
@@ -221,6 +224,9 @@ pub struct App {
     /// All'avvio, niente da leggere: appena si vede la finestra, si chiede
     /// cosa aprire.
     pub ask_open: bool,
+    /// Il volume da riprendere a finestra aperta, se intanto non se ne e'
+    /// chiesto un altro (macOS: dal Finder).
+    pub resume_later: Option<PathBuf>,
     /// Il salvataggio dei progressi e' gia' fallito: lo si dice una volta sola.
     save_failed: bool,
 
@@ -357,6 +363,7 @@ impl App {
             dialog: false,
             notices: VecDeque::new(),
             ask_open: false,
+            resume_later: None,
             save_failed: false,
             ui: Ui::new(),
             recent: Vec::new(),
@@ -409,6 +416,20 @@ impl App {
     /// Le miniature sono a schermo: aperte, su un volume, fuori dalla libreria.
     fn thumbs_shown(&self) -> bool {
         self.thumbs_open && self.reader.is_some() && !self.shelf_shown()
+    }
+
+    /// macOS: apre il primo dei volumi arrivati dal Finder (la finestra e'
+    /// una), al posto di quello da riprendere e della richiesta di cosa
+    /// aprire. Arrivati prima della finestra, li prende `resumed`.
+    #[cfg(target_os = "macos")]
+    fn open_from_finder(&mut self) {
+        if self.window.is_none() {
+            return;
+        }
+        let Some(path) = crate::finder::take().into_iter().next() else { return };
+        self.resume_later = None;
+        self.ask_open = false;
+        self.open(&path);
     }
 
     /// Chiude le miniature e dimentica tutto cio' che riguarda il volume:
@@ -1677,11 +1698,24 @@ impl ApplicationHandler<UserEvent> for App {
         // primo fotogramma (nero) si disegna subito, la finestra appare con
         // quello, prende la sua misura vera, e parte la lettura anticipata
         self.redraw();
+        #[cfg(target_os = "macos")]
+        self.open_from_finder();
+        if let Some(path) = self.resume_later.take() {
+            self.open(&path);
+        }
+    }
+
+    // su macOS Cmd+Q (o "Esci" dal Dock) chiude il programma da dentro AppKit,
+    // senza tornare da run_app: il punto di lettura si salva qui
+    fn exiting(&mut self, _: &ActiveEventLoop) {
+        self.save_progress();
     }
 
     fn user_event(&mut self, _: &ActiveEventLoop, event: UserEvent) {
         match event {
             UserEvent::Loaded(loaded) => self.arrived(loaded),
+            #[cfg(target_os = "macos")]
+            UserEvent::Finder => self.open_from_finder(),
             UserEvent::Gpu(start) => match *start {
                 Ok(start) => self.gpu_arrived(start),
                 Err(e) => eprintln!("scheda video: {e}; si continua copiando dal processore"),

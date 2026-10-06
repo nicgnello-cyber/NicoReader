@@ -43,7 +43,9 @@ firmato con un account sviluppatore Apple, quindi la prima volta macOS lo
 blocca: si apre da Impostazioni di Sistema -> Privacy e sicurezza -> "Apri
 comunque" (una volta sola), oppure da Terminale con
 `xattr -dr com.apple.quarantine /Applications/NicoReader.app`. I volumi si
-aprono dall'app (Cmd+O, la libreria), non ancora con doppio clic dal Finder.
+aprono dal Finder (doppio clic su CBZ, CBR, CB7 e CBT se nessun'altra app li
+apre gia', "Apri con" per questi e per i PDF, o trascinandoli, anche una
+cartella, sull'icona nel Dock) e dall'app (Cmd+O, la libreria).
 
 **Linux.** Il `.deb` si installa con un doppio clic o con
 `sudo apt install ./NicoReader-linux-x64.deb`: NicoReader finisce nel menu delle

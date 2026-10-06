@@ -37,6 +37,8 @@
 mod app;
 mod cpu_view;
 mod dialog;
+#[cfg(target_os = "macos")]
+mod finder;
 mod gpu_start;
 mod script;
 mod stats;
@@ -66,7 +68,7 @@ fn main() {
     } else {
         Progress::load(data_dir().join("progressi.json"))
     };
-    let volume = asked.or_else(|| if prova { None } else { resume(&progress) });
+    let volume = asked.clone().or_else(|| if prova { None } else { resume(&progress) });
     // la prima volta la galleria e' vuota: si chiede subito cosa aprire.
     // Dopo, la galleria mostra gli ultimi letti e si sceglie da li'
     let first_time = progress.recent().is_empty();
@@ -80,6 +82,20 @@ fn main() {
     let script = prova.then(script::Script::new);
     let mut app = app::App::new(event_loop.create_proxy(), progress, settings, settings_path, cache_dir(),
                                 upscaler_dir(), started, script);
+    // macOS: un volume aperto dal Finder non sta fra gli argomenti, arriva
+    // dopo (vedi finder.rs). Chi riprendere si decide a finestra aperta,
+    // quando si sa se ce n'e' uno: niente volume vecchio aperto per niente
+    #[cfg(target_os = "macos")]
+    let volume = {
+        finder::install(event_loop.create_proxy());
+        match (&asked, prova) {
+            (None, false) => {
+                app.resume_later = volume;
+                None
+            }
+            _ => volume,
+        }
+    };
     match volume {
         Some(path) => app.open(&path),
         None => app.ask_open = !prova && first_time,
