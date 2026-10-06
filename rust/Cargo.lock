@@ -865,6 +865,8 @@ dependencies = [
  "fumetto-core",
  "fumetto-render",
  "image",
+ "objc2 0.6.4",
+ "objc2-foundation 0.3.2",
  "pollster 1.0.1",
  "rfd",
  "softbuffer",

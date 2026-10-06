@@ -684,14 +684,24 @@ Il capitolo 7 ne tiene la memoria e i numeri.
         In GitHub Actions il Mac gira solo a mano e per i tag: i suoi
         minuti costano 10 volte quelli Linux. Da qui (Linux) verificato solo
         con cargo check per i due Mac; il pacchetto vero lo fa Actions.
-    [ ] macOS: aprire i volumi dal Finder (doppio clic, "Apri con",
-        trascinati sull'icona nel Dock). Arrivano come Apple Event
+    [x] macOS: aprire i volumi dal Finder (6 ottobre): doppio clic, "Apri
+        con", trascinati sull'icona nel Dock. Arrivano come Apple Event
         (application:openURLs:), che winit 0.30 non passa al programma:
-        serve un metodo aggiunto al delegato di winit (objc2), poi
-        CFBundleDocumentTypes nell'Info.plist. Oggi si aprono da Cmd+O e
-        dalla libreria.
-    [ ] macOS: icona oltre i 256 px (512, 1024 per il Retina): serve un
-        disegno piu' grande di icona.png.
+        finder.rs aggiunge il metodo al delegato di winit (objc2,
+        class_addMethod) prima che parta. Al lancio arrivano prima della
+        finestra: il volume da riprendere si sceglie a finestra aperta
+        (App::resume_later), cosi' non se ne apre uno vecchio per niente.
+        Info.plist: CFBundleDocumentTypes (CBZ/CBR/CB7/CBT "Default", PDF e
+        cartelle "Alternate") e i tipi dei CB* (UTImportedTypeDeclarations).
+        Insieme: Cmd+Q chiude da dentro AppKit senza tornare da run_app, e
+        il punto di lettura non si salvava; ora lo salva App::exiting.
+        Provato da GitHub Actions con prova-finder.sh (open -a, lo stesso
+        Apple Event del doppio clic, a programma chiuso e aperto, poi
+        "quit"): da qui si compila solo (cargo check per i due Mac).
+    [x] macOS: icona fino a 1024 px per il Retina (6 ottobre). fai_icona.py
+        ora disegna l'icona (forme misurate su icona.png di prima, bordi
+        sfumati in luce lineare) a ogni misura: icona.png, fumetto.ico e
+        nicoreader.icns vengono tutti da li'.
     [ ] Su Windows ARM64 l'ingranditore AI scarica il Real-ESRGAN per x64,
         che Windows 11 esegue emulato: da provare su un PC ARM (Vulkan in
         emulazione). Per Linux ARM64 Real-ESRGAN non esiste: l'opzione

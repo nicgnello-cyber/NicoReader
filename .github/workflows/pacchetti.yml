@@ -120,6 +120,9 @@ jobs:
 
       - run: ./rust/pacchetto-mac.sh
 
+      # i volumi aperti dal Finder (application:openURLs:) arrivano davvero
+      - run: ./rust/prova-finder.sh
+
       - uses: actions/upload-artifact@v4
         with:
           name: NicoReader-macos

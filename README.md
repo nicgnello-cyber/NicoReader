@@ -44,9 +44,11 @@ with" for PDFs too. Uninstall it from Settings → Apps.
 signed with an Apple developer account, so macOS blocks it the first time:
 open it from System Settings → Privacy & Security → "Open Anyway" (only
 once), or from Terminal with
-`xattr -dr com.apple.quarantine /Applications/NicoReader.app`. Open volumes
-from within the app (Cmd+O, or the library); double-clicking files in the
-Finder doesn't work yet.
+`xattr -dr com.apple.quarantine /Applications/NicoReader.app`. Volumes open
+from the Finder (double-click on CBZ, CBR, CB7 and CBT files if no other app
+already opens them, "Open With" for those and for PDFs, or drag them, or a
+folder, onto the icon in the Dock), and from within the app (Cmd+O, or the
+library).
 
 **Linux.** Install the `.deb` with a double click or with
 `sudo apt install ./NicoReader-linux-x64.deb`: NicoReader appears in the
