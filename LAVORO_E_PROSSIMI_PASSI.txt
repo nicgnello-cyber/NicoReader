@@ -729,6 +729,18 @@ Il capitolo 7 ne tiene la memoria e i numeri.
         con cargo fmt --check (su Linux). La tabella dei tasti (Bind::ALL)
         resta compatta con #[rustfmt::skip]. Gli argomenti allineati sotto
         la parentesi aperta, che rustfmt non sa fare, ora vanno uno per riga.
+    [x] Avviso delle versioni nuove (6 ottobre). Una volta al giorno al
+        massimo, in sottofondo, curl chiede a api.github.com l'ultima
+        Release (fumetto-core\src\update.rs; come per l'ingranditore, niente
+        librerie di rete nell'eseguibile). Se e' piu' nuova (confronto dei
+        numeri: 0.10 dopo 0.9) e non la si e' gia' proposta, una finestra di
+        sistema chiede se aprirne la pagina; si apre solo un indirizzo delle
+        Release di NicoReader. Impostazioni: check_updates (Lettura, acceso
+        di serie), update_checked, update_offered. Senza rete si riprova
+        all'apertura dopo; la prova automatica (--prova) non chiede.
+        Provato con una copia che si diceva 0.1.0: ha trovato la 0.1.1 su
+        GitHub e l'ha proposta una volta; la seconda apertura non ha
+        richiesto; spento, nessuna richiesta.
     [ ] Su Windows ARM64 l'ingranditore AI scarica il Real-ESRGAN per x64,
         che Windows 11 esegue emulato: da provare su un PC ARM (Vulkan in
         emulazione). Per Linux ARM64 Real-ESRGAN non esiste: l'opzione

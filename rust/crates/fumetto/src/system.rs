@@ -18,6 +18,17 @@ pub fn reveal(path: &Path) -> Result<(), String> {
     spawned.map(|_| ()).map_err(|e| e.to_string())
 }
 
+/// Apre un indirizzo nel browser di sistema.
+pub fn open_url(url: &str) -> Result<(), String> {
+    #[cfg(windows)]
+    let spawned = std::process::Command::new("rundll32").args(["url.dll,FileProtocolHandler", url]).spawn();
+    #[cfg(target_os = "macos")]
+    let spawned = std::process::Command::new("open").arg(url).spawn();
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let spawned = std::process::Command::new("xdg-open").arg(url).spawn();
+    spawned.map(|_| ()).map_err(|e| e.to_string())
+}
+
 /// Sposta un file o una cartella nel cestino.
 #[cfg(windows)]
 pub fn trash(path: &Path) -> Result<(), String> {

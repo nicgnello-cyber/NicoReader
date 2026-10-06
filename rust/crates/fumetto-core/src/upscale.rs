@@ -152,7 +152,7 @@ fn unpack(zip_path: &Path, dir: &Path) -> Result<(), String> {
     })
 }
 
-fn hide_window(cmd: &mut Command) {
+pub(crate) fn hide_window(cmd: &mut Command) {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

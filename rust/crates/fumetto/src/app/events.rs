@@ -179,6 +179,16 @@ impl ApplicationHandler<UserEvent> for App {
                 }
                 self.request_upscale();
             }
+            UserEvent::Update(release) => self.update_arrived(release),
+            UserEvent::OpenUpdate(url) => {
+                self.dialog = false;
+                if let Err(e) = system::open_url(&url) {
+                    self.notify(format!(
+                        "{}\n\n{url}\n\n{e}",
+                        t("Impossibile aprire la pagina.", "Can't open the page.")
+                    ));
+                }
+            }
             UserEvent::DownloadConfirmed(yes) => {
                 self.dialog = false;
                 if yes {

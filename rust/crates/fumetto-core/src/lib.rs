@@ -15,6 +15,7 @@ mod pdf;
 mod progress;
 mod resize;
 mod settings;
+pub mod update;
 pub mod upscale;
 
 pub use book::{Book, Content, Error, is_image, read_info, title_of};
