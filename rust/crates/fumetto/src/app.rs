@@ -20,6 +20,7 @@ use fumetto::ui::{self, BookInfo, Command, Context, Handled, Recent, Ui};
 use fumetto_core::covers::{Cover, CoverLoader};
 use fumetto_core::library::{self, Entry, Status};
 use fumetto_core::lingua::t;
+use fumetto_core::update::Release;
 use fumetto_core::upscale::{self, Job, Upscaled, Upscaler};
 use fumetto_core::{Book, Content, Fit, Loaded, Loader, Page, Progress, Target};
 use fumetto_core::{Saved, Settings};
@@ -86,6 +87,7 @@ mod draw;
 mod events;
 mod shelf;
 mod tools;
+mod update;
 mod volume;
 
 use actions::{combo_of, place, ui_key};
@@ -132,6 +134,10 @@ pub enum UserEvent {
     Upscaled(Upscaled),
     /// Si' (o no), scarica l'ingranditore.
     DownloadConfirmed(bool),
+    /// L'ultima Release su GitHub (vedi app/update.rs).
+    Update(Release),
+    /// Si', apri la pagina della versione nuova.
+    OpenUpdate(String),
     /// L'ingranditore e' stato scaricato, o perche' no.
     Installed(Result<(), String>),
     /// Dove salvare la pagina (`None`: annullato).
@@ -250,6 +256,8 @@ pub struct App {
     /// Il volume da riprendere a finestra aperta, se intanto non se ne e'
     /// chiesto un altro (macOS: dal Finder).
     pub resume_later: Option<PathBuf>,
+    /// Una versione nuova da proporre, quando non c'e' altro da mostrare.
+    update_offer: Option<Release>,
     /// Il salvataggio dei progressi e' gia' fallito: lo si dice una volta sola.
     save_failed: bool,
 
@@ -389,6 +397,7 @@ impl App {
             notices: VecDeque::new(),
             ask_open: false,
             resume_later: None,
+            update_offer: None,
             save_failed: false,
             ui: Ui::new(),
             recent: Vec::new(),
@@ -429,6 +438,7 @@ impl App {
         };
         app.refresh_recent();
         app.rescan();
+        app.check_update();
         app
     }
 

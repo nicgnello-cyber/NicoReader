@@ -28,6 +28,8 @@ pub enum Pref {
     Trim(bool),
     Upscale(bool),
     Hud(bool),
+    /// Chiedere a GitHub se c'e' una versione nuova.
+    CheckUpdates(bool),
     /// Secondi della presentazione.
     Slideshow(u32),
     LensZoom(f32),
@@ -279,6 +281,15 @@ impl Prefs {
                         less: Pref::Slideshow(secs.saturating_sub(1).max(1)),
                         more: Pref::Slideshow((secs + 1).min(120)),
                     },
+                    Row::Toggle {
+                        label: t("Avvisa delle versioni nuove", "Tell me about new versions"),
+                        on: settings.check_updates,
+                        pref: Pref::CheckUpdates(!settings.check_updates),
+                    },
+                    Row::Note(t(
+                        "Una volta al giorno chiede a GitHub qual è l'ultima versione. Non manda nient'altro.",
+                        "Once a day it asks GitHub which version is the latest. Nothing else is sent.",
+                    )),
                 ]
             }
             Tab::Lens => vec![
@@ -703,6 +714,20 @@ mod tests {
             "oltre il bordo: il minimo"
         );
         assert_eq!(p.click(&st, &km, VIEW, 1.0, tx, ty), Handled::Yes(None), "rilasciando non cambia altro");
+    }
+
+    #[test]
+    fn l_avviso_delle_versioni_nuove_si_spegne() {
+        let (p, mut st, km) = open(Tab::Reading);
+        let toggle = |p: &Prefs, st: &Settings| {
+            p.rows(st, &km).into_iter().find_map(|r| match r {
+                Row::Toggle { on, pref: pref @ Pref::CheckUpdates(_), .. } => Some((on, pref)),
+                _ => None,
+            })
+        };
+        assert_eq!(toggle(&p, &st), Some((true, Pref::CheckUpdates(false))), "acceso di serie");
+        st.check_updates = false;
+        assert_eq!(toggle(&p, &st), Some((false, Pref::CheckUpdates(true))));
     }
 
     #[test]

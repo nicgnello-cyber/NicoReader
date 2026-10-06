@@ -8,8 +8,8 @@ license.workspace = true
 # gli appunti (copia la pagina) su Windows, macOS e Linux
 arboard = "3.6"
 dirs = "7.0.0"
-fumetto-core = { version = "0.1.0", path = "../fumetto-core" }
-fumetto-render = { version = "0.1.0", path = "../fumetto-render" }
+fumetto-core = { path = "../fumetto-core" }
+fumetto-render = { path = "../fumetto-render" }
 # salvare una pagina in PNG o JPEG
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
 pollster = "1.0.1"

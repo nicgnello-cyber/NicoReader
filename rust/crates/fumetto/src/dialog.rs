@@ -91,6 +91,36 @@ pub fn confirm_download(window: &Window, dir: &Path, proxy: EventLoopProxy<UserE
     run(asked, |r| UserEvent::DownloadConfirmed(r == rfd::MessageDialogResult::Yes), proxy);
 }
 
+/// Propone di aprire la pagina di una versione nuova; se si', torna
+/// `OpenUpdate` con il suo indirizzo.
+pub fn offer_update(window: &Window, release: &fumetto_core::update::Release, proxy: EventLoopProxy<UserEvent>) {
+    let (new, this) = (&release.version, env!("CARGO_PKG_VERSION"));
+    let text = if fumetto_core::lingua::italian() {
+        format!(
+            "È uscito NicoReader {new} (questo è il {this}).\n\nApro la sua pagina su GitHub, con le novità e \
+             i file da scaricare?\n\nL'avviso si può spegnere nelle impostazioni (Lettura)."
+        )
+    } else {
+        format!(
+            "NicoReader {new} is out (this is {this}).\n\nOpen its page on GitHub, with what's new and the \
+             files to download?\n\nThis notice can be turned off in the settings (Reading)."
+        )
+    };
+    let asked = AsyncMessageDialog::new()
+        .set_parent(window)
+        .set_level(MessageLevel::Info)
+        .set_title("NicoReader")
+        .set_description(text)
+        .set_buttons(MessageButtons::YesNo)
+        .show();
+    let url = release.url.clone();
+    run(
+        asked,
+        move |r| if r == rfd::MessageDialogResult::Yes { UserEvent::OpenUpdate(url) } else { UserEvent::DialogClosed },
+        proxy,
+    );
+}
+
 /// Un avviso con il solo tasto OK.
 pub fn error(window: &Window, text: String, proxy: EventLoopProxy<UserEvent>) {
     let shown = AsyncMessageDialog::new()

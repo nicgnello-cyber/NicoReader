@@ -176,6 +176,8 @@ impl App {
             self.dialog = true;
         } else if std::mem::take(&mut self.ask_open) {
             self.ask(false);
+        } else if let Some(release) = self.update_offer.take() {
+            self.offer_update(release);
         }
     }
 

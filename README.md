@@ -67,6 +67,10 @@ Open a volume from the menu (right click), with Ctrl+O (Cmd+O on a Mac), from
 the library, or by double-clicking the file. With no volume, it resumes the
 last one you read. Ctrl+, opens the settings (keys included).
 
+Once a day NicoReader asks GitHub which version is the latest (nothing else
+is sent); when a newer one is out, it offers to open its page, once per
+version. Turn it off in Settings → Reading.
+
 From the command line, after building it:
 
     rust\target\release\fumetto.exe [volume]      (Windows)

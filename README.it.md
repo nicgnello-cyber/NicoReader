@@ -64,6 +64,10 @@ Si apre un volume dal menu (tasto destro), con Ctrl+O (Cmd+O sul Mac), dalla
 libreria o con doppio clic sul file. Senza volume riprende l'ultimo letto.
 Ctrl+, apre le impostazioni (anche i tasti).
 
+Una volta al giorno NicoReader chiede a GitHub qual è l'ultima versione (non
+manda nient'altro); se ne è uscita una nuova, propone di aprirne la pagina,
+una volta per versione. Si spegne in Impostazioni → Lettura.
+
 Da riga di comando, dopo averlo compilato:
 
     rust\target\release\fumetto.exe [volume]      (Windows)

@@ -25,6 +25,11 @@ impl App {
                 s.webtoon = on;
                 self.save_settings();
             }
+            Pref::CheckUpdates(on) => {
+                s.check_updates = on;
+                self.save_settings();
+                self.check_update();
+            }
             // queste passano per le loro azioni: fanno anche il resto
             // (rifare le pagine, spostarle sotto la barra, scaricare l'AI)
             Pref::Trim(on) => match &self.reader {
