@@ -70,6 +70,8 @@ cp crates/fumetto/risorse/macos/nicoreader.icns "$app/Contents/Resources/"
 cp "$pdfium/LICENSE" "$app/Contents/Resources/licenze/pdfium/LICENSE.txt"
 cp "$pdfium"/licenses/* "$app/Contents/Resources/licenze/pdfium/"
 cp crates/fumetto-render/caratteri/OFL-*.txt "$app/Contents/Resources/licenze/"
+# i pesi di Real-ESRGAN, dentro l'eseguibile
+cp crates/fumetto-render/modelli/LICENSE-Real-ESRGAN.txt "$app/Contents/Resources/licenze/"
 # la licenza di NicoReader stesso
 cp ../LICENSE-MIT "$app/Contents/Resources/licenze/NicoReader-LICENSE-MIT.txt"
 cp ../LICENSE-APACHE "$app/Contents/Resources/licenze/NicoReader-LICENSE-APACHE.txt"

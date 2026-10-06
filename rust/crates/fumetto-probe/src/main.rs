@@ -63,14 +63,13 @@ fn main() {
     }
 }
 
-/// L'ingranditore vero (quello gia' scaricato) su una pagina vera, mostrata
+/// L'ingranditore vero (Real-ESRGAN sulla scheda video) su una pagina vera, mostrata
 /// a pagina intera in una finestra `view`: la pagina normale e quella
 /// migliorata, alla misura dello schermo, in `migliora-prima.png` e `-dopo.png`.
 fn migliora(volume: &Path, page: usize, view: (u32, u32)) -> Result<(), String> {
     use fumetto_core::upscale::{self, Job, Upscaler};
     use fumetto_core::{Fit, Target, decode_page, to_screen};
     let book = std::sync::Arc::new(fumetto_core::Book::open(volume).map_err(|e| e.to_string())?);
-    let dir = dirs_cache().join("NicoReader").join("upscaler");
     let target = Target::plain(Fit::Contain { width: view.0, height: view.1 });
     let before = decode_page(&book, page, target)?;
     println!(
@@ -84,12 +83,13 @@ fn migliora(volume: &Path, page: usize, view: (u32, u32)) -> Result<(), String> 
     let normal = to_screen(before, target);
     save(Path::new("migliora-prima.png"), &normal.rgba, normal.width, normal.height)?;
     let (tx, rx) = std::sync::mpsc::channel();
-    let up = Upscaler::new(dir, move |u| {
+    // anche su una scheda software: qui si prova, la lentezza si sopporta
+    let net = pollster::block_on(fumetto_render::esrgan::Esrgan::new(true))?;
+    println!("ingrandimento su {}", net.describe());
+    let engine: upscale::Engine = Box::new(move |page, scale, go_on| Ok(net.upscale(page, scale, go_on)));
+    let up = Upscaler::new(engine, move |u| {
         let _ = tx.send(u);
     });
-    if !up.installed() {
-        return Err(format!("l'ingranditore non c'e' in {}", up.dir().display()));
-    }
     let t = Instant::now();
     up.request(vec![Job { book, generation: 1, index: page, target }]);
     let got = rx.recv_timeout(std::time::Duration::from_secs(200)).map_err(|_| "nessuna risposta".to_string())?;
@@ -124,11 +124,6 @@ fn webtoon(volume: &Path) -> Result<(), String> {
         None => println!("non e' un webtoon"),
     }
     Ok(())
-}
-
-/// La cartella della cache del sistema, come la trova l'app.
-fn dirs_cache() -> PathBuf {
-    std::env::var_os("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(std::env::temp_dir)
 }
 
 fn gpu(power: wgpu::PowerPreference) -> Result<(Gpu, Renderer), String> {

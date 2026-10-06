@@ -1,11 +1,9 @@
 //! L'ingrandimento AI: le scansioni a bassa risoluzione, mostrate piu' grandi
 //! dei loro pixel, rifatte con Real-ESRGAN invece che solo interpolate.
 //!
-//! Real-ESRGAN (BSD-3, di Xintao Wang) e' un programma esterno, in C++ con
-//! ncnn e Vulkan: lavora sulla scheda video, e su un portatile con due schede
-//! puo' usare la dedicata mentre la integrata disegna le pagine. Non sta nel
-//! pacchetto: chi lo vuole lo scarica al primo uso (44 MB da GitHub, di cui se
-//! ne tengono 9), chi non lo vuole non paga niente.
+//! Qui la coda delle pagine e il loro giro; la rete la fa girare un "motore"
+//! che passa chi crea l'Upscaler (nel programma: fumetto_render::esrgan, sulla
+//! scheda video). Il nucleo resta senza grafica.
 //!
 //! Il modello e' realesr-animevideov3, non x4plus-anime: misurato su una tavola
 //! degradata contro l'originale, 25,1 dB in 1,4 s contro 17,1 dB in 4,5 s; il
@@ -16,67 +14,22 @@
 //! dall'unico thread di questo modulo, e prende il suo posto senza avvisi.
 
 use std::collections::VecDeque;
-use std::io::Read;
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::Command;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
 
 use crate::book::Book;
-use crate::decode::{Page, decode};
-use crate::lingua::t;
+use crate::decode::Page;
 use crate::loader::{Decoded, Target, decode_page, to_screen};
-
-/// Il pacchetto di Real-ESRGAN per questo sistema.
-#[cfg(windows)]
-const URL: &str =
-    "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-windows.zip";
-#[cfg(target_os = "macos")]
-const URL: &str =
-    "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-macos.zip";
-#[cfg(all(unix, not(target_os = "macos")))]
-const URL: &str =
-    "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip";
-
-/// Quanto si scarica, in MB: e' cio' che si promette a chi dice di si'.
-pub const DOWNLOAD_MB: u32 = 44;
-
-#[cfg(windows)]
-const EXE: &str = "realesrgan-ncnn-vulkan.exe";
-#[cfg(not(windows))]
-const EXE: &str = "realesrgan-ncnn-vulkan";
-
-/// Del pacchetto si tiene solo questo (con l'impronta SHA-256, dove la si
-/// conosce: i file per Windows, verificati sul pacchetto ufficiale). Un file
-/// diverso da quello atteso non si tiene: e' un programma che si esegue.
-const KEEP: &[(&str, Option<&str>)] = &[
-    (EXE, if cfg!(windows) { Some("07e49f7cbb4ede01ae4dd4c399d3a7e5846e3d2085c3128eff881e55cb7b1a0c") } else { None }),
-    ("vcomp140.dll", Some("8f72ef2e483465444b2059fc6744d6cb22cd8d8a27f6fa56befd2a42dcd0f78b")),
-    ("realesr-animevideov3-x2.bin", Some("548a36f9c3f4ab8da56cd3b13badf23968bee207b396dad14d04b830e5f2ab2d")),
-    ("realesr-animevideov3-x2.param", Some("b88ff4f00ebf019a7fdac17fdd45a7fd3665d37509efc5baf2e4da2e24420a04")),
-    ("realesr-animevideov3-x4.bin", Some("548a36f9c3f4ab8da56cd3b13badf23968bee207b396dad14d04b830e5f2ab2d")),
-    ("realesr-animevideov3-x4.param", Some("850a248e7c14c27e5bd8cf7265113a9441036a7db63963bb8aa5169d788a435e")),
-];
 
 /// Si migliora solo una pagina mostrata almeno 1,2 volte i suoi pixel: sotto,
 /// l'interpolazione della scheda video non si distingue.
 pub const MIN_GAIN: f32 = 1.2;
 
-/// Oltre questo tempo il programma si ferma: una pagina che non arriva in tre
-/// minuti non arrivera' piu'.
-const TIMEOUT: Duration = Duration::from_secs(180);
-
 /// Quante pagine migliorate (ai loro pixel, prima della misura dello schermo)
 /// si tengono: cambiando zoom si riusano invece di rifarle. Una tavola 2x pesa
 /// 25-40 MB.
 const KEEP_DONE: usize = 3;
-
-/// L'eseguibile, se e' gia' stato scaricato in `dir`.
-pub fn exe(dir: &Path) -> Option<PathBuf> {
-    let exe = dir.join(EXE);
-    exe.is_file().then_some(exe)
-}
 
 /// Vale la pena di migliorare una pagina `native` mostrata come vuole `target`?
 pub fn worth(native: (u32, u32), target: Target) -> bool {
@@ -84,74 +37,8 @@ pub fn worth(native: (u32, u32), target: Target) -> bool {
     native.0 > 0 && w as f32 >= native.0 as f32 * MIN_GAIN
 }
 
-/// Scarica il pacchetto in `dir` e ne tiene solo il necessario. Ci vuole
-/// tempo: va chiamata da un thread a parte. Il download lo fa curl, che c'e'
-/// in Windows 10 e 11, in macOS e in ogni Linux: niente librerie TLS
-/// nell'eseguibile per un file che si scarica una volta.
-pub fn install(dir: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(dir.join("models")).map_err(|e| e.to_string())?;
-    let zip_path = dir.join("pacchetto.zip");
-    let result = download(&zip_path).and_then(|_| unpack(&zip_path, dir));
-    let _ = std::fs::remove_file(&zip_path);
-    if result.is_err() {
-        let _ = std::fs::remove_dir_all(dir);
-    }
-    result
-}
-
-fn download(to: &Path) -> Result<(), String> {
-    let mut curl = Command::new("curl");
-    curl.args(["--location", "--fail", "--silent", "--show-error", "--max-time", "600", "--output"])
-        .arg(to)
-        .arg(URL)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
-    hide_window(&mut curl);
-    let out = curl.output().map_err(|e| format!("curl: {e}"))?;
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr).trim().to_owned());
-    }
-    Ok(())
-}
-
-fn unpack(zip_path: &Path, dir: &Path) -> Result<(), String> {
-    use sha2::{Digest, Sha256};
-    let file = std::fs::File::open(zip_path).map_err(|e| e.to_string())?;
-    let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
-    for i in 0..zip.len() {
-        let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
-        let name = entry.name().rsplit('/').next().unwrap_or_default().to_owned();
-        let Some((_, hash)) = KEEP.iter().find(|(n, _)| *n == name) else { continue };
-        let mut bytes = Vec::new();
-        entry.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
-        if let Some(hash) = hash {
-            let got: String = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
-            if got != *hash {
-                return Err(format!("{name}: {}", t("non è il file atteso", "not the expected file")));
-            }
-        }
-        let to = if name.ends_with(".bin") || name.ends_with(".param") {
-            dir.join("models").join(&name)
-        } else {
-            dir.join(&name)
-        };
-        std::fs::write(&to, bytes).map_err(|e| e.to_string())?;
-        #[cfg(unix)]
-        if name == EXE {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o755));
-        }
-    }
-    exe(dir).map(|_| ()).ok_or_else(|| {
-        t(
-            "Il pacchetto scaricato non contiene il programma atteso.",
-            "The downloaded package lacks the expected program.",
-        )
-        .to_owned()
-    })
-}
-
+/// Su Windows un programma lanciato da qui (curl, per le versioni nuove)
+/// non apre la finestra nera della console.
 pub(crate) fn hide_window(cmd: &mut Command) {
     #[cfg(windows)]
     {
@@ -163,14 +50,20 @@ pub(crate) fn hide_window(cmd: &mut Command) {
     let _ = cmd;
 }
 
+/// Il motore: la pagina ingrandita 2 o 4 volte; `Ok(None)` se il terzo
+/// argomento dice di smettere, `Err` se l'ingrandimento non si puo' fare
+/// (nessuna scheda video adatta): lo si dice una volta, e basta.
+pub type Engine = Box<dyn FnMut(&Page, u32, &dyn Fn() -> bool) -> Result<Option<Page>, String> + Send>;
+
 /// Una pagina migliorata, alla misura dello schermo; `None` se non si e'
-/// potuto (una pagina PDF disegnata, il programma che non parte): non la si
-/// richiede piu'.
+/// potuto (una pagina PDF disegnata, il motore che non va): non la si
+/// richiede piu'. `error`: perche' il motore non va, la prima volta.
 pub struct Upscaled {
     pub generation: u64,
     pub index: usize,
     pub target: Target,
     pub page: Option<Page>,
+    pub error: Option<String>,
 }
 
 /// Una pagina da migliorare.
@@ -193,10 +86,11 @@ struct Shared {
 }
 
 struct State {
-    dir: PathBuf,
     queue: VecDeque<Job>,
-    /// Il programma al lavoro: lo si ferma se l'app si chiude.
-    child: Option<Child>,
+    /// La pagina in lavorazione, e se non serve piu' (la coda nuova non la
+    /// vuole): allora la si lascia a meta'.
+    current: Option<Key>,
+    drop_current: bool,
     stop: bool,
 }
 
@@ -207,11 +101,11 @@ impl Shared {
 }
 
 impl Upscaler {
-    /// `dir`: dove sta (o stara') il programma; `deliver` riceve le pagine
-    /// migliorate, dal thread del modulo.
-    pub fn new(dir: PathBuf, deliver: impl Fn(Upscaled) + Send + Sync + 'static) -> Upscaler {
+    /// `engine` fa la rete (dal thread del modulo); `deliver` riceve le
+    /// pagine migliorate, dallo stesso thread.
+    pub fn new(engine: Engine, deliver: impl Fn(Upscaled) + Send + Sync + 'static) -> Upscaler {
         let shared = Arc::new(Shared {
-            state: Mutex::new(State { dir, queue: VecDeque::new(), child: None, stop: false }),
+            state: Mutex::new(State { queue: VecDeque::new(), current: None, drop_current: false, stop: false }),
             wake: Condvar::new(),
         });
         let worker = {
@@ -220,38 +114,29 @@ impl Upscaler {
                 .name("ingrandimento".into())
                 .spawn(move || {
                     let _ = thread_priority::set_current_thread_priority(thread_priority::ThreadPriority::Min);
-                    work(&shared, &deliver)
+                    work(&shared, engine, &deliver)
                 })
                 .expect("thread dell'ingrandimento")
         };
         Upscaler { shared, worker: Some(worker) }
     }
 
-    pub fn dir(&self) -> PathBuf {
-        self.shared.lock().dir.clone()
-    }
-
-    pub fn installed(&self) -> bool {
-        exe(&self.dir()).is_some()
-    }
-
     /// Sostituisce la coda: le pagine a schermo, dalla piu' urgente. Quella in
-    /// lavorazione finisce comunque.
+    /// lavorazione, se la coda nuova non la vuole, si lascia a meta'.
     pub fn request(&self, jobs: Vec<Job>) {
-        self.shared.lock().queue = jobs.into();
+        let mut s = self.shared.lock();
+        if let Some(current) = s.current {
+            s.drop_current = !jobs.iter().any(|j| key(j) == current);
+        }
+        s.queue = jobs.into();
+        drop(s);
         self.shared.wake.notify_all();
     }
 }
 
 impl Drop for Upscaler {
     fn drop(&mut self) {
-        let mut s = self.shared.lock();
-        s.stop = true;
-        // niente programmi orfani che occupano la scheda video
-        if let Some(child) = &mut s.child {
-            let _ = child.kill();
-        }
-        drop(s);
+        self.shared.lock().stop = true;
         self.shared.wake.notify_all();
         if let Some(w) = self.worker.take() {
             let _ = w.join();
@@ -262,104 +147,84 @@ impl Drop for Upscaler {
 /// La chiave di una pagina migliorata: stesso volume, pagina e ritocchi.
 type Key = (u64, usize, bool, u16);
 
-fn work(shared: &Shared, deliver: &dyn Fn(Upscaled)) {
-    let temp = std::env::temp_dir().join(format!("fumetto-ingrandimento-{}", std::process::id()));
+/// Una pagina migliorata ai suoi pixel, con la misura della pagina originale.
+type Big = ((u32, u32), Page);
+
+fn key(job: &Job) -> Key {
+    (job.generation, job.index, job.target.trim, job.target.rotation)
+}
+
+fn work(shared: &Shared, mut engine: Engine, deliver: &dyn Fn(Upscaled)) {
     let mut done: VecDeque<(Key, (u32, u32), Arc<Page>)> = VecDeque::new();
+    // il motore che non va lo si dice una volta sola
+    let mut broken = false;
     loop {
-        let (job, dir) = {
+        let job = {
             let mut s = shared.lock();
             loop {
                 if s.stop {
-                    let _ = std::fs::remove_dir_all(&temp);
                     return;
                 }
                 if let Some(job) = s.queue.pop_front() {
-                    break (job, s.dir.clone());
+                    s.current = Some(key(&job));
+                    s.drop_current = false;
+                    break job;
                 }
                 s = shared.wake.wait(s).unwrap_or_else(|e| e.into_inner());
             }
         };
-        let key = (job.generation, job.index, job.target.trim, job.target.rotation);
-        let big = match done.iter().find(|d| d.0 == key) {
+        let k = key(&job);
+        let mut error = None;
+        let big = match done.iter().find(|d| d.0 == k) {
             Some((_, native, page)) => Some((*native, page.clone())),
-            None => upscale(shared, &job, &dir, &temp).map(|(native, page)| {
-                let page = Arc::new(page);
-                done.push_back((key, native, page.clone()));
-                if done.len() > KEEP_DONE {
-                    done.pop_front();
+            None => match upscale(shared, &mut engine, &job) {
+                Ok(Some((native, page))) => {
+                    let page = Arc::new(page);
+                    done.push_back((k, native, page.clone()));
+                    if done.len() > KEEP_DONE {
+                        done.pop_front();
+                    }
+                    Some((native, page))
                 }
-                (native, page)
-            }),
+                Ok(None) => None,
+                Err(e) => {
+                    if !std::mem::replace(&mut broken, true) {
+                        error = Some(e);
+                    }
+                    None
+                }
+            },
         };
+        let dropped = {
+            let mut s = shared.lock();
+            s.current = None;
+            std::mem::take(&mut s.drop_current)
+        };
+        // lasciata a meta': non e' un fallimento, la si potra' richiedere
+        if dropped && big.is_none() && error.is_none() {
+            continue;
+        }
         let page = big.map(|(native, big)| {
             let copy = Page { width: big.width, height: big.height, rgba: big.rgba.clone(), opaque: big.opaque };
             to_screen(Decoded { native, page: copy, exact: false }, job.target)
         });
-        deliver(Upscaled { generation: job.generation, index: job.index, target: job.target, page });
+        deliver(Upscaled { generation: job.generation, index: job.index, target: job.target, page, error });
     }
 }
 
-/// La pagina rifatta da Real-ESRGAN, ai suoi pixel (2x, o 4x per le
-/// scansioni minuscole); con la misura di riferimento della pagina originale.
-fn upscale(shared: &Shared, job: &Job, dir: &Path, temp: &Path) -> Option<((u32, u32), Page)> {
-    let exe = exe(dir)?;
-    let d = decode_page(&job.book, job.index, job.target).ok()?;
+/// La pagina rifatta dalla rete, ai suoi pixel (2x, o 4x per le scansioni
+/// minuscole); con la misura di riferimento della pagina originale.
+fn upscale(shared: &Shared, engine: &mut Engine, job: &Job) -> Result<Option<Big>, String> {
+    let Ok(d) = decode_page(&job.book, job.index, job.target) else { return Ok(None) };
     if d.exact {
-        return None; // pagina PDF disegnata: ha gia' tutti i pixel che servono
+        return Ok(None); // pagina PDF disegnata: ha gia' tutti i pixel che servono
     }
-    std::fs::create_dir_all(temp).ok()?;
-    let (input, output) = (temp.join("pagina.png"), temp.join("migliorata.png"));
-    let _ = std::fs::remove_file(&output);
-    let (w, h) = (d.page.width, d.page.height);
-    // senza alfa il PNG pesa un quarto di meno, e si scrive prima
-    let saved = if d.page.opaque {
-        let rgb: Vec<u8> = d.page.rgba.as_chunks::<4>().0.iter().flat_map(|p| [p[0], p[1], p[2]]).collect();
-        image::save_buffer(&input, &rgb, w, h, image::ColorType::Rgb8)
-    } else {
-        image::save_buffer(&input, &d.page.rgba, w, h, image::ColorType::Rgba8)
+    let scale = if d.page.width.max(d.page.height) < 700 { 4 } else { 2 };
+    let go_on = || {
+        let s = shared.lock();
+        !s.stop && !s.drop_current
     };
-    saved.ok()?;
-    let scale = if w.max(h) < 700 { "4" } else { "2" };
-    let mut cmd = Command::new(&exe);
-    cmd.arg("-i")
-        .arg(&input)
-        .arg("-o")
-        .arg(&output)
-        .args(["-n", "realesr-animevideov3", "-s", scale])
-        .current_dir(dir)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    hide_window(&mut cmd);
-    {
-        let mut s = shared.lock();
-        if s.stop {
-            return None;
-        }
-        s.child = Some(cmd.spawn().ok()?);
-    }
-    let started = Instant::now();
-    let ok = loop {
-        std::thread::sleep(Duration::from_millis(40));
-        let mut s = shared.lock();
-        let go_on = !s.stop && started.elapsed() < TIMEOUT;
-        let Some(child) = &mut s.child else { break false };
-        match child.try_wait() {
-            Ok(Some(status)) => break status.success(),
-            Ok(None) if go_on => {}
-            _ => {
-                let _ = child.kill();
-                let _ = child.wait();
-                break false;
-            }
-        }
-    };
-    shared.lock().child = None;
-    if !ok {
-        return None;
-    }
-    let page = decode(&std::fs::read(&output).ok()?).ok()?;
-    Some((d.native, page))
+    Ok(engine(&d.page, scale, &go_on)?.map(|page| (d.native, page)))
 }
 
 #[cfg(test)]

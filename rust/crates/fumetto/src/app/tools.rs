@@ -37,7 +37,7 @@ impl App {
         }
     }
 
-    /// Accende o spegne l'ingranditore; la prima volta, chiede di scaricarlo.
+    /// Accende o spegne l'ingranditore.
     pub(super) fn toggle_upscale(&mut self) {
         let now = Instant::now();
         if self.settings.upscale {
@@ -53,25 +53,10 @@ impl App {
             self.ui.toast(t("Scansioni come sono", "Scans as they are"), now);
             return self.changed();
         }
-        if self.upscaler.installed() {
-            return self.upscale_ready();
-        }
-        if self.installing {
-            return self.ui.toast(t("Sto scaricando l'ingranditore\u{2026}", "Downloading the enhancer\u{2026}"), now);
-        }
-        if let Some(window) = &self.window
-            && !self.dialog
-        {
-            dialog::confirm_download(window, &self.upscaler.dir(), self.proxy.clone());
-            self.dialog = true;
-        }
-    }
-
-    pub(super) fn upscale_ready(&mut self) {
         self.settings.upscale = true;
         self.save_settings();
         self.upscale_failed.clear();
-        self.ui.toast(t("Scansioni migliorate con l'AI", "Scans enhanced with AI"), Instant::now());
+        self.ui.toast(t("Scansioni migliorate con l'AI", "Scans enhanced with AI"), now);
         self.changed();
     }
 

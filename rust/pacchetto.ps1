@@ -77,6 +77,8 @@ Copy-Item "$pdfium\bin\pdfium.dll" $dist
 Copy-Item "$pdfium\LICENSE" "$dist\licenze\pdfium\LICENSE.txt"
 Copy-Item "$pdfium\licenses\*" "$dist\licenze\pdfium\"
 Copy-Item "crates\fumetto-render\caratteri\OFL-*.txt" "$dist\licenze\"
+# i pesi di Real-ESRGAN, dentro l'eseguibile
+Copy-Item "crates\fumetto-render\modelli\LICENSE-Real-ESRGAN.txt" "$dist\licenze\"
 # la licenza di NicoReader stesso
 Copy-Item "..\LICENSE-MIT" "$dist\licenze\NicoReader-LICENSE-MIT.txt"
 Copy-Item "..\LICENSE-APACHE" "$dist\licenze\NicoReader-LICENSE-APACHE.txt"

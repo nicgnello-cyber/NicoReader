@@ -161,6 +161,15 @@ impl ApplicationHandler<UserEvent> for App {
                 }
             }
             UserEvent::Upscaled(u) => {
+                if let Some(e) = u.error {
+                    // nessuna scheda video adatta: lo si dice, e si spegne
+                    if self.settings.upscale {
+                        self.toggle_upscale();
+                    }
+                    let head =
+                        t("Il miglioramento con l'AI non si può usare qui.", "AI enhancement can't be used here.");
+                    return self.notify(format!("{head}\n\n{e}"));
+                }
                 let current = self.reader.as_ref().map(|r| r.target());
                 if u.generation != self.generation || !self.settings.upscale {
                     return;
@@ -187,33 +196,6 @@ impl ApplicationHandler<UserEvent> for App {
                         "{}\n\n{url}\n\n{e}",
                         t("Impossibile aprire la pagina.", "Can't open the page.")
                     ));
-                }
-            }
-            UserEvent::DownloadConfirmed(yes) => {
-                self.dialog = false;
-                if yes {
-                    self.installing = true;
-                    let dir = self.upscaler.dir();
-                    let proxy = self.proxy.clone();
-                    std::thread::Builder::new()
-                        .name("scarica-ingranditore".into())
-                        .spawn(move || {
-                            let _ = proxy.send_event(UserEvent::Installed(upscale::install(&dir)));
-                        })
-                        .expect("thread dello scaricamento");
-                    self.ui
-                        .toast(t("Scarico l'ingranditore\u{2026}", "Downloading the enhancer\u{2026}"), Instant::now());
-                    self.request_redraw();
-                }
-            }
-            UserEvent::Installed(result) => {
-                self.installing = false;
-                match result {
-                    Ok(()) => self.upscale_ready(),
-                    Err(e) => self.notify(format!(
-                        "{}\n\n{e}",
-                        t("Non sono riuscito a scaricare l'ingranditore.", "Couldn't download the enhancer.")
-                    )),
                 }
             }
             UserEvent::SaveTo(path) => {
