@@ -702,6 +702,16 @@ Il capitolo 7 ne tiene la memoria e i numeri.
         ora disegna l'icona (forme misurate su icona.png di prima, bordi
         sfumati in luce lineare) a ogni misura: icona.png, fumetto.ico e
         nicoreader.icns vengono tutti da li'.
+    [x] Errori e controlli (6 ottobre). Un panic (senza console non lasciava
+        traccia: la finestra spariva) finisce in errori.txt nella cartella
+        dei dati: messaggio, punto del codice, thread, versione, sistema
+        (crash.rs; niente backtrace, l'eseguibile e' senza simboli). Se ha
+        chiuso il programma, all'apertura dopo un avviso dice cosa e' successo
+        e dove sta il rapporto. Provato con un panic finto in Xvfb: registro e
+        segno giusti, l'avviso parte (qui il dialogo non si vede: manca il
+        portale dei dialoghi). Nelle Actions, dopo i pacchetti, clippy con
+        -D warnings su Linux e Windows x64 (il codice solo Mac l'ho passato
+        con clippy da qui).
     [ ] Su Windows ARM64 l'ingranditore AI scarica il Real-ESRGAN per x64,
         che Windows 11 esegue emulato: da provare su un PC ARM (Vulkan in
         emulazione). Per Linux ARM64 Real-ESRGAN non esiste: l'opzione
