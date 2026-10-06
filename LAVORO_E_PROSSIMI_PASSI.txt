@@ -262,6 +262,16 @@ Il capitolo 7 ne tiene la memoria e i numeri.
   collega alla finestra; fumetto-render disegna. Cosi' tutto si prova con
   i test e si fotografa con il probe.
 
+  I file piu' lunghi sono divisi per tema (6 ottobre), solo spostando il
+  codice: app.rs tiene lo stato (App e i suoi tipi, le macro) e in app\ c'e'
+  un blocco `impl App` per tema: volume.rs (aprire, chiudere, progressi),
+  shelf.rs (scansione della libreria), tools.rs (miniature, presentazione,
+  AI, lente, salva e copia), actions.rs (azioni, comandi, tasti e clic),
+  draw.rs (pagine in arrivo, scena, scheda video o processore), events.rs
+  (gli eventi di winit). ui.rs tiene la logica dell'interfaccia (Ui); in
+  ui\ i disegni: bar.rs (la barra e le icone), menu.rs (le voci dei menu),
+  panels.rs (didascalia, righello, vai a pagina, galleria vuota, avvisi).
+
   Linguaggi e librerie, e perche'
     - Rust: tutto l'impianto.
     - libwebp (C, compilata dentro): il 90% delle pagine di prova e' WebP,
