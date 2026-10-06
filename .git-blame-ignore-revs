@@ -1,0 +1,5 @@
+# Commit di sola forma, che "git blame" salta (GitHub lo fa da solo; in
+# locale: git config blame.ignoreRevsFile .git-blame-ignore-revs).
+
+# rustfmt su tutto il codice
+15fff0a92b5d54996cf0c5c3e7a5c31c376a2fa9

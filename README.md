@@ -80,6 +80,10 @@ Mac you also need the Xcode command line tools, `xcode-select --install`):
     cargo build --release
     cargo test --workspace
 
+Before a pull request, `cargo fmt --all` and
+`cargo clippy --workspace --all-targets -- -D warnings`: GitHub Actions
+checks both.
+
 On Linux and macOS the PDF tests need pdfium in `vendor/pdfium/`:
 `pacchetto.sh` and `pacchetto-mac.sh` download it the first time they run.
 
