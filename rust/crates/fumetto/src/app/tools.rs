@@ -26,7 +26,12 @@ impl App {
             .filter(|w| !self.upscale_failed.contains(w))
             .collect();
         if wanted != self.upscale_wanted {
-            let jobs = wanted.iter().map(|&(index, target)| Job { book: book.clone(), generation: self.generation, index, target });
+            let jobs = wanted.iter().map(|&(index, target)| Job {
+                book: book.clone(),
+                generation: self.generation,
+                index,
+                target,
+            });
             self.upscaler.request(jobs.collect());
             self.upscale_wanted = wanted;
         }
@@ -95,8 +100,11 @@ impl App {
             let secs = self.settings.slideshow.max(1);
             self.slideshow = Some(now + Duration::from_secs(secs as u64));
             self.slide_last = None;
-            let text = if fumetto_core::lingua::italian() { format!("Presentazione: una pagina ogni {secs} s") }
-                       else { format!("Slideshow: a page every {secs} s") };
+            let text = if fumetto_core::lingua::italian() {
+                format!("Presentazione: una pagina ogni {secs} s")
+            } else {
+                format!("Slideshow: a page every {secs} s")
+            };
             self.ui.toast(text, now);
         }
         self.update_title();
@@ -117,7 +125,10 @@ impl App {
         if !reader.ready(&self.prepared()) {
             return Some(now + Duration::from_millis(100));
         }
-        let here = { let s = reader.snapshot(); (s.page, s.strip_offset) };
+        let here = {
+            let s = reader.snapshot();
+            (s.page, s.strip_offset)
+        };
         if self.slide_last == Some(here) {
             // non ci si muove piu': la fine del volume
             self.slideshow = None;
@@ -139,7 +150,9 @@ impl App {
             return;
         }
         let index = reader.here();
-        let ext = Path::new(&book.names[index]).extension().map(|e| e.to_string_lossy().to_lowercase())
+        let ext = Path::new(&book.names[index])
+            .extension()
+            .map(|e| e.to_string_lossy().to_lowercase())
             .filter(|_| !book.path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf")))
             .unwrap_or_else(|| "png".into());
         let name = format!("{} - {} {:03}.{ext}", book.title, t("pagina", "page"), index + 1);
@@ -197,7 +210,13 @@ impl App {
         let under: Vec<Item> = items
             .iter()
             .filter(|it| it.x < cx + r && it.x + it.w > cx - r && it.y < cy + r && it.y + it.h > cy - r)
-            .map(|it| Item { page: it.page, x: cx + (it.x - cx) * m, y: cy + (it.y - cy) * m, w: it.w * m, h: it.h * m })
+            .map(|it| Item {
+                page: it.page,
+                x: cx + (it.x - cx) * m,
+                y: cy + (it.y - cy) * m,
+                w: it.w * m,
+                h: it.h * m,
+            })
             .collect();
         let reader = self.reader.as_ref()?;
         // ai pixel veri: la pagina intera, senza rimpicciolirla (fino ai limiti
@@ -259,7 +278,8 @@ fn copier(jobs: mpsc::Receiver<(Arc<Book>, usize, Target)>, proxy: EventLoopProx
             };
             clipboard.as_mut().expect("appena creata").set_image(image).map_err(|e| e.to_string())
         });
-        let done = done.map(|_| t("Pagina copiata", "Page copied"))
+        let done = done
+            .map(|_| t("Pagina copiata", "Page copied"))
             .map_err(|e| format!("{}\n\n{e}", t("Impossibile copiare la pagina.", "Can't copy the page.")));
         let _ = proxy.send_event(UserEvent::Done(done));
     }

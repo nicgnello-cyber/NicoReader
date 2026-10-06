@@ -262,8 +262,7 @@ fn ms(t: Instant) -> f32 {
 ///
 /// Prima quelle a schermo (`first..=last`), poi `ahead` pagine nella direzione
 /// di lettura, poi `behind` all'indietro per chi torna sui propri passi.
-pub fn prefetch_order(first: usize, last: usize, len: usize, forward: bool,
-                      ahead: usize, behind: usize) -> Vec<usize> {
+pub fn prefetch_order(first: usize, last: usize, len: usize, forward: bool, ahead: usize, behind: usize) -> Vec<usize> {
     if len == 0 {
         return Vec::new();
     }
@@ -288,14 +287,14 @@ mod tests {
     #[test]
     fn misure_a_schermo() {
         let contain = Fit::Contain { width: 1920, height: 1080 };
-        assert_eq!(contain.size(1600, 2400), (720, 1080));   // pagina verticale: conta l'altezza
-        assert_eq!(contain.size(4000, 1000), (1920, 480));   // doppia pagina larga: la larghezza
+        assert_eq!(contain.size(1600, 2400), (720, 1080)); // pagina verticale: conta l'altezza
+        assert_eq!(contain.size(4000, 1000), (1920, 480)); // doppia pagina larga: la larghezza
         assert_eq!(Fit::Width(1152).size(800, 20_000), (1152, 28_800));
-        assert_eq!(Fit::Width(10).size(5000, 1), (10, 1));   // mai zero pixel
+        assert_eq!(Fit::Width(10).size(5000, 1), (10, 1)); // mai zero pixel
         let spread = Fit::Spread { width: 1920, height: 1080 };
-        assert_eq!(spread.size(1600, 2400), (720, 1080));    // verticale: meta' larghezza
-        assert_eq!(spread.size(3200, 2400), (1440, 1080));   // tavola doppia: tutto
-        assert_eq!(spread.size(1000, 1000), (960, 960));     // quadrata: meta', limita la larghezza
+        assert_eq!(spread.size(1600, 2400), (720, 1080)); // verticale: meta' larghezza
+        assert_eq!(spread.size(3200, 2400), (1440, 1080)); // tavola doppia: tutto
+        assert_eq!(spread.size(1000, 1000), (960, 960)); // quadrata: meta', limita la larghezza
     }
 
     #[test]

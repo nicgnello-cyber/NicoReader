@@ -5,8 +5,8 @@
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use fumetto_core::{Book, Content, Fit, Loader, decode, is_image, natural_cmp};
@@ -44,19 +44,21 @@ pub fn run(root: &Path) -> Result<(), String> {
         let results = Mutex::new(Vec::with_capacity(book.len()));
         std::thread::scope(|s| {
             for _ in 0..threads {
-                s.spawn(|| loop {
-                    let i = next.fetch_add(1, Ordering::Relaxed);
-                    if i >= book.len() {
-                        break;
+                s.spawn(|| {
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        if i >= book.len() {
+                            break;
+                        }
+                        let t = Instant::now();
+                        let r = book.content(i, fit).map_err(|e| e.to_string()).and_then(|c| match c {
+                            Content::Encoded(b) => decode(&b).map_err(|e| e.to_string()),
+                            Content::Pixels(p) | Content::Exact(p, _) => Ok(p),
+                        });
+                        let ms = t.elapsed().as_secs_f64() * 1000.0;
+                        let r = r.map(|p| p.width.max(p.height));
+                        results.lock().unwrap().push((i, ms, r));
                     }
-                    let t = Instant::now();
-                    let r = book.content(i, fit).map_err(|e| e.to_string()).and_then(|c| match c {
-                        Content::Encoded(b) => decode(&b).map_err(|e| e.to_string()),
-                        Content::Pixels(p) | Content::Exact(p, _) => Ok(p),
-                    });
-                    let ms = t.elapsed().as_secs_f64() * 1000.0;
-                    let r = r.map(|p| p.width.max(p.height));
-                    results.lock().unwrap().push((i, ms, r));
                 });
             }
         });
@@ -66,8 +68,13 @@ pub fn run(root: &Path) -> Result<(), String> {
         let broken: Vec<_> = results.iter().filter_map(|r| r.2.as_ref().err().map(|e| (r.0, e))).collect();
         let side = results.iter().filter_map(|r| r.2.as_ref().ok()).max().copied().unwrap_or(0);
         let median = ms.get(ms.len() / 2).copied().unwrap_or(0.0);
-        println!("{name:<44} {:>6} {:>6.0} ms {:>6.1} ms {side:>6}  {}", book.len(), open_ms, median,
-                 if broken.is_empty() { "ok".to_string() } else { format!("{} PAGINE ROTTE", broken.len()) });
+        println!(
+            "{name:<44} {:>6} {:>6.0} ms {:>6.1} ms {side:>6}  {}",
+            book.len(),
+            open_ms,
+            median,
+            if broken.is_empty() { "ok".to_string() } else { format!("{} PAGINE ROTTE", broken.len()) }
+        );
         for (i, e) in broken.iter().take(3) {
             println!("{:46}! {}: {e}", "", book.names[*i]);
         }
@@ -77,12 +84,20 @@ pub fn run(root: &Path) -> Result<(), String> {
     }
     let secs = t0.elapsed().as_secs_f64();
     all_ms.sort_by(f64::total_cmp);
-    let pct = |p: f64| all_ms.get(((all_ms.len() as f64 * p) as usize).min(all_ms.len().saturating_sub(1)))
-        .copied().unwrap_or(0.0);
-    println!("\n{} volumi, {pages} pagine in {secs:.0} s ({:.0} pagine al secondo). Volumi con problemi: {broken_volumes}.",
-             volumes.len(), pages as f64 / secs);
-    println!("Lettura + decodifica di una pagina, su un thread: mediana {:.1} ms, 90% sotto {:.1} ms, peggiore {:.1} ms",
-             pct(0.5), pct(0.9), all_ms.last().copied().unwrap_or(0.0));
+    let pct = |p: f64| {
+        all_ms.get(((all_ms.len() as f64 * p) as usize).min(all_ms.len().saturating_sub(1))).copied().unwrap_or(0.0)
+    };
+    println!(
+        "\n{} volumi, {pages} pagine in {secs:.0} s ({:.0} pagine al secondo). Volumi con problemi: {broken_volumes}.",
+        volumes.len(),
+        pages as f64 / secs
+    );
+    println!(
+        "Lettura + decodifica di una pagina, su un thread: mediana {:.1} ms, 90% sotto {:.1} ms, peggiore {:.1} ms",
+        pct(0.5),
+        pct(0.9),
+        all_ms.last().copied().unwrap_or(0.0)
+    );
     Ok(())
 }
 

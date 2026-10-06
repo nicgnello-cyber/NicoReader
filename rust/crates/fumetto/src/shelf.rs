@@ -21,7 +21,10 @@ use fumetto_render::{Align, Face, Layer, Measure, Rect, Text};
 
 use crate::reader::Action;
 use crate::strip::glide_step;
-use crate::ui::{self, ACCENT, BLACK, Command, HAIR, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, TICK, alpha, caps, draw_icon, fit, rgb};
+use crate::ui::{
+    self, ACCENT, BLACK, Command, HAIR, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, TICK, alpha, caps, draw_icon,
+    fit, rgb,
+};
 
 /// Cio' che la libreria deve sapere, dall'app.
 pub struct ShelfData<'a> {
@@ -182,18 +185,24 @@ impl Shelf {
 
         if self.series.is_some() {
             visible.sort_by(|&a, &b| by_number(&d.entries[a], &d.entries[b]));
-            return vec![Section { title: String::new(), tiles: visible.into_iter().map(Tile::Volume).collect(), one_row: false }];
+            return vec![Section {
+                title: String::new(),
+                tiles: visible.into_iter().map(Tile::Volume).collect(),
+                one_row: false,
+            }];
         }
         if self.filter != Filter::All || !needle.is_empty() {
             if self.filter == Filter::Reading {
                 recent_first(&mut visible);
             }
-            let title = if needle.is_empty() { self.filter.label().to_owned() } else { t("Trovati", "Found").to_owned() };
+            let title =
+                if needle.is_empty() { self.filter.label().to_owned() } else { t("Trovati", "Found").to_owned() };
             return vec![Section { title, tiles: visible.into_iter().map(Tile::Volume).collect(), one_row: false }];
         }
 
         let mut sections = Vec::new();
-        let mut reading: Vec<usize> = visible.iter().copied().filter(|&i| matches!(d.status[i], Status::Reading(..))).collect();
+        let mut reading: Vec<usize> =
+            visible.iter().copied().filter(|&i| matches!(d.status[i], Status::Reading(..))).collect();
         if !reading.is_empty() {
             recent_first(&mut reading);
             sections.push(Section {
@@ -213,7 +222,8 @@ impl Shelf {
             if seen.contains(&name) {
                 continue;
             }
-            let mut members: Vec<usize> = visible.iter().copied().filter(|&j| d.entries[j].series.as_deref() == Some(name)).collect();
+            let mut members: Vec<usize> =
+                visible.iter().copied().filter(|&j| d.entries[j].series.as_deref() == Some(name)).collect();
             if members.len() < 2 {
                 tiles.push(Tile::Volume(i));
                 continue;
@@ -222,13 +232,18 @@ impl Shelf {
             members.sort_by(|&a, &b| by_number(&d.entries[a], &d.entries[b]));
             let done = members.iter().filter(|&&j| d.status[j] == Status::Done).count();
             // in copertina il volume che si sta leggendo, se c'e'; se no il primo
-            let cover = members.iter().copied().find(|&j| matches!(d.status[j], Status::Reading(..))).unwrap_or(members[0]);
+            let cover =
+                members.iter().copied().find(|&j| matches!(d.status[j], Status::Reading(..))).unwrap_or(members[0]);
             tiles.push(Tile::Series { name: name.to_owned(), cover, count: members.len(), done });
         }
         tiles.sort_by(|a, b| natural_cmp(&tile_name(d, a), &tile_name(d, b)));
         let n = d.entries.len();
         sections.push(Section {
-            title: if italian() { format!("Tutta la libreria \u{00b7} {n}") } else { format!("The whole library \u{00b7} {n}") },
+            title: if italian() {
+                format!("Tutta la libreria \u{00b7} {n}")
+            } else {
+                format!("The whole library \u{00b7} {n}")
+            },
             tiles,
             one_row: false,
         });
@@ -305,7 +320,9 @@ impl Shelf {
         }
         let lay = self.layout(d, &g);
         if let Some(top) = lay.series_head
-            && y >= top && y < top + 40.0 * s && x < g.pad + 200.0 * s
+            && y >= top
+            && y < top + 40.0 * s
+            && x < g.pad + 200.0 * s
         {
             return Some(Hit::Back);
         }
@@ -464,7 +481,13 @@ impl Shelf {
         let lay = self.layout(d, g);
         let Some(p) = lay.placed.get(k) else { return };
         let (lo, hi) = (g.top + 20.0 * g.s, g.view.1 - 20.0 * g.s);
-        let delta = if p.y < lo { p.y - lo } else if p.y + g.row_h > hi { p.y + g.row_h - hi } else { 0.0 };
+        let delta = if p.y < lo {
+            p.y - lo
+        } else if p.y + g.row_h > hi {
+            p.y + g.row_h - hi
+        } else {
+            0.0
+        };
         self.scroll = (self.scroll + delta).clamp(0.0, self.max_scroll(d, g));
         self.glide = 0.0;
     }
@@ -497,25 +520,51 @@ impl Shelf {
         match tile {
             Tile::Series { name, .. } => vec![
                 ui::Row::Head(t("Serie", "Series")),
-                ui::Row::Item { label: t("Apri la serie", "Open the series"), key: String::new(), on: false, cmd: Command::Series(name.clone()) },
+                ui::Row::Item {
+                    label: t("Apri la serie", "Open the series"),
+                    key: String::new(),
+                    on: false,
+                    cmd: Command::Series(name.clone()),
+                },
             ],
             Tile::Volume(i) => {
                 let path = d.entries[*i].path.clone();
-                let mut rows = vec![ui::Row::Item { label: t("Leggi", "Read"), key: String::new(), on: false, cmd: Command::Open(path.clone()) }];
+                let mut rows = vec![ui::Row::Item {
+                    label: t("Leggi", "Read"),
+                    key: String::new(),
+                    on: false,
+                    cmd: Command::Open(path.clone()),
+                }];
                 rows.push(ui::Row::Sep);
                 if d.status[*i] != Status::Done {
-                    rows.push(ui::Row::Item { label: t("Segna come letto", "Mark as read"), key: String::new(), on: false,
-                                              cmd: Command::MarkRead(path.clone(), true) });
+                    rows.push(ui::Row::Item {
+                        label: t("Segna come letto", "Mark as read"),
+                        key: String::new(),
+                        on: false,
+                        cmd: Command::MarkRead(path.clone(), true),
+                    });
                 }
                 if d.status[*i] != Status::New {
-                    rows.push(ui::Row::Item { label: t("Segna come da leggere", "Mark as unread"), key: String::new(), on: false,
-                                              cmd: Command::MarkRead(path.clone(), false) });
+                    rows.push(ui::Row::Item {
+                        label: t("Segna come da leggere", "Mark as unread"),
+                        key: String::new(),
+                        on: false,
+                        cmd: Command::MarkRead(path.clone(), false),
+                    });
                 }
                 rows.push(ui::Row::Sep);
-                rows.push(ui::Row::Item { label: t("Mostra nella cartella", "Show in folder"), key: String::new(), on: false,
-                                          cmd: Command::Reveal(path.clone()) });
-                rows.push(ui::Row::Item { label: t("Sposta nel cestino\u{2026}", "Move to trash\u{2026}"), key: String::new(), on: false,
-                                          cmd: Command::Trash(path) });
+                rows.push(ui::Row::Item {
+                    label: t("Mostra nella cartella", "Show in folder"),
+                    key: String::new(),
+                    on: false,
+                    cmd: Command::Reveal(path.clone()),
+                });
+                rows.push(ui::Row::Item {
+                    label: t("Sposta nel cestino\u{2026}", "Move to trash\u{2026}"),
+                    key: String::new(),
+                    on: false,
+                    cmd: Command::Trash(path),
+                });
                 rows
             }
         }
@@ -528,8 +577,12 @@ impl Shelf {
             rows.push(ui::Row::Folder { path: root.clone(), cmd: Command::RemoveFolder(root.clone()) });
         }
         rows.push(ui::Row::Sep);
-        rows.push(ui::Row::Item { label: t("Aggiungi una cartella\u{2026}", "Add a folder\u{2026}"), key: String::new(), on: false,
-                                  cmd: Command::Act(Action::AddLibraryFolder) });
+        rows.push(ui::Row::Item {
+            label: t("Aggiungi una cartella\u{2026}", "Add a folder\u{2026}"),
+            key: String::new(),
+            on: false,
+            cmd: Command::Act(Action::AddLibraryFolder),
+        });
         rows
     }
 
@@ -541,13 +594,26 @@ impl Shelf {
 
         if let Some(top) = lay.series_head {
             let back_hover = self.hover == Some(Hit::Back);
-            l.texts.push(caps(&format!("\u{2039}   {}", t("Libreria", "Library")), 11.0 * s, if back_hover { INK } else { MUTED })
-                .on_baseline(g.pad, top + 20.0 * s));
+            l.texts.push(
+                caps(
+                    &format!("\u{2039}   {}", t("Libreria", "Library")),
+                    11.0 * s,
+                    if back_hover { INK } else { MUTED },
+                )
+                .on_baseline(g.pad, top + 20.0 * s),
+            );
             let name = self.series.clone().unwrap_or_default();
-            l.texts.push(fit(m, Text::new(name, Face::Serif, 44.0 * s, INK), g.view.0 - 2.0 * g.pad).on_baseline(g.pad, top + 78.0 * s));
+            l.texts.push(
+                fit(m, Text::new(name, Face::Serif, 44.0 * s, INK), g.view.0 - 2.0 * g.pad)
+                    .on_baseline(g.pad, top + 78.0 * s),
+            );
             if let Some(Section { tiles, .. }) = self.sections(d).into_iter().next() {
                 let done = tiles.iter().filter(|t| d.status[t.cover()] == Status::Done).count();
-                let text = if italian() { format!("{} volumi \u{00b7} {done} letti", tiles.len()) } else { format!("{} volumes \u{00b7} {done} read", tiles.len()) };
+                let text = if italian() {
+                    format!("{} volumi \u{00b7} {done} letti", tiles.len())
+                } else {
+                    format!("{} volumes \u{00b7} {done} read", tiles.len())
+                };
                 l.texts.push(caps(&text, 11.0 * s, MUTED).on_baseline(g.pad, top + 104.0 * s));
             }
         }
@@ -566,7 +632,8 @@ impl Shelf {
             if !(d.covered)(&e.path) {
                 // la copertina non e' ancora pronta: una targa con il titolo
                 l.rects.push(Rect::new(x, y, w, h, rgb(0x17, 0x16, 0x14)));
-                let plate = Text::new(e.title.as_str(), Face::Serif, 18.0 * s, MUTED).boxed(w - 28.0 * s, Align::Center);
+                let plate =
+                    Text::new(e.title.as_str(), Face::Serif, 18.0 * s, MUTED).boxed(w - 28.0 * s, Align::Center);
                 l.texts.push(plate.on_baseline(x + 14.0 * s, y + h / 2.0));
             }
             if let Tile::Series { .. } = p.tile {
@@ -579,7 +646,9 @@ impl Shelf {
             }
             if self.selected == Some(k) {
                 let o = 5.0 * s;
-                l.rects.push(Rect::new(x - o, y - o, w + 2.0 * o, h + 2.0 * o, ACCENT).radius(4.0 * s).stroke((2.0 * s).round()));
+                l.rects.push(
+                    Rect::new(x - o, y - o, w + 2.0 * o, h + 2.0 * o, ACCENT).radius(4.0 * s).stroke((2.0 * s).round()),
+                );
             }
             // quanto se ne e' letto: un filo sotto la copertina
             let bar_y = (y + h + 7.0 * s).round();
@@ -596,12 +665,19 @@ impl Shelf {
                 Tile::Volume(i) => (d.entries[*i].title.clone(), meta_of(d.status[*i])),
                 Tile::Series { name, count, done, .. } => (
                     name.clone(),
-                    if italian() { format!("{count} volumi \u{00b7} {done} letti") } else { format!("{count} volumes \u{00b7} {done} read") },
+                    if italian() {
+                        format!("{count} volumi \u{00b7} {done} letti")
+                    } else {
+                        format!("{count} volumes \u{00b7} {done} read")
+                    },
                 ),
             };
             l.texts.push(fit(m, Text::new(title, Face::Serif, 18.0 * s, INK), w).on_baseline(x, y + h + 34.0 * s));
-            l.texts.push(Text::new(meta, Face::Sans, 12.0 * s, if hovered { INK } else { MUTED }).tabular()
-                .on_baseline(x, y + h + 54.0 * s));
+            l.texts.push(
+                Text::new(meta, Face::Sans, 12.0 * s, if hovered { INK } else { MUTED })
+                    .tabular()
+                    .on_baseline(x, y + h + 54.0 * s),
+            );
         }
 
         if lay.placed.is_empty() {
@@ -613,8 +689,11 @@ impl Shelf {
                 t("Nessun fumetto in queste cartelle", "No comics in these folders")
             };
             let wide = g.view.0;
-            l.texts.push(Text::new(text, Face::Serif, 28.0 * s, MUTED).boxed(wide, Align::Center)
-                .on_baseline(0.0, g.top + (g.view.1 - g.top) * 0.42));
+            l.texts.push(
+                Text::new(text, Face::Serif, 28.0 * s, MUTED)
+                    .boxed(wide, Align::Center)
+                    .on_baseline(0.0, g.top + (g.view.1 - g.top) * 0.42),
+            );
         }
         vec![l, self.bar(d, &g, m)]
     }
@@ -645,11 +724,19 @@ impl Shelf {
 
         // la ricerca: basta scrivere
         let (sx, sw) = (geo.search_x, geo.search_w);
-        l.rects.push(Rect::new(sx, (cy + 13.0 * s).round(), sw, s.round(), if self.search.is_empty() { HAIR } else { TICK }));
+        l.rects.push(Rect::new(
+            sx,
+            (cy + 13.0 * s).round(),
+            sw,
+            s.round(),
+            if self.search.is_empty() { HAIR } else { TICK },
+        ));
         draw_icon(&mut l, Icon::Search, (sx + 9.0 * s).round(), cy, s, MUTED_F);
         if self.search.is_empty() {
-            l.texts.push(Text::new(t("Scrivi per cercare", "Type to search"), Face::Sans, 13.5 * s, MUTED)
-                .on_baseline(sx + 26.0 * s, cy + 5.0 * s));
+            l.texts.push(
+                Text::new(t("Scrivi per cercare", "Type to search"), Face::Sans, 13.5 * s, MUTED)
+                    .on_baseline(sx + 26.0 * s, cy + 5.0 * s),
+            );
         } else {
             let text = fit(m, Text::new(self.search.as_str(), Face::Sans, 14.0 * s, INK).weight(450), sw - 60.0 * s);
             let tw = m.width(&text);
@@ -777,11 +864,14 @@ mod tests {
         let secs = Shelf::default().sections(&d);
         assert_eq!(secs.len(), 2);
         assert_eq!(secs[0].tiles, [Tile::Volume(2), Tile::Volume(3)], "in lettura, dal piu' recente");
-        assert_eq!(secs[1].tiles, [
-            Tile::Volume(0),
-            Tile::Series { name: "Nebbia sul Porto".into(), cover: 2, count: 2, done: 1 },
-            Tile::Volume(3), // una serie di un volume solo resta un volume
-        ]);
+        assert_eq!(
+            secs[1].tiles,
+            [
+                Tile::Volume(0),
+                Tile::Series { name: "Nebbia sul Porto".into(), cover: 2, count: 2, done: 1 },
+                Tile::Volume(3), // una serie di un volume solo resta un volume
+            ]
+        );
     }
 
     #[test]
@@ -813,7 +903,10 @@ mod tests {
         let view = (1920.0, 1080.0);
         shelf.key(Key::Right, &d, view, 1.0); // la prima cella: Nebbia v02, in lettura
         shelf.key(Key::Right, &d, view, 1.0); // Orbita Bassa
-        assert_eq!(shelf.key(Key::Enter, &d, view, 1.0), Handled::Yes(Some(Command::Open("Orbita Bassa #12.cbz".into()))));
+        assert_eq!(
+            shelf.key(Key::Enter, &d, view, 1.0),
+            Handled::Yes(Some(Command::Open("Orbita Bassa #12.cbz".into())))
+        );
         shelf.key(Key::Down, &d, view, 1.0); // sotto: la pila di Nebbia sul Porto
         assert_eq!(shelf.key(Key::Enter, &d, view, 1.0), Handled::Yes(None), "la serie si apre, non si legge");
         assert_eq!(shelf.series.as_deref(), Some("Nebbia sul Porto"));

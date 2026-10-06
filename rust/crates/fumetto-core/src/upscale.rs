@@ -131,7 +131,11 @@ fn unpack(zip_path: &Path, dir: &Path) -> Result<(), String> {
                 return Err(format!("{name}: {}", t("non è il file atteso", "not the expected file")));
             }
         }
-        let to = if name.ends_with(".bin") || name.ends_with(".param") { dir.join("models").join(&name) } else { dir.join(&name) };
+        let to = if name.ends_with(".bin") || name.ends_with(".param") {
+            dir.join("models").join(&name)
+        } else {
+            dir.join(&name)
+        };
         std::fs::write(&to, bytes).map_err(|e| e.to_string())?;
         #[cfg(unix)]
         if name == EXE {
@@ -140,8 +144,11 @@ fn unpack(zip_path: &Path, dir: &Path) -> Result<(), String> {
         }
     }
     exe(dir).map(|_| ()).ok_or_else(|| {
-        t("Il pacchetto scaricato non contiene il programma atteso.", "The downloaded package lacks the expected program.")
-            .to_owned()
+        t(
+            "Il pacchetto scaricato non contiene il programma atteso.",
+            "The downloaded package lacks the expected program.",
+        )
+        .to_owned()
     })
 }
 
@@ -314,7 +321,11 @@ fn upscale(shared: &Shared, job: &Job, dir: &Path, temp: &Path) -> Option<((u32,
     saved.ok()?;
     let scale = if w.max(h) < 700 { "4" } else { "2" };
     let mut cmd = Command::new(&exe);
-    cmd.arg("-i").arg(&input).arg("-o").arg(&output).args(["-n", "realesr-animevideov3", "-s", scale])
+    cmd.arg("-i")
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .args(["-n", "realesr-animevideov3", "-s", scale])
         .current_dir(dir)
         .stdin(Stdio::null())
         .stdout(Stdio::null())

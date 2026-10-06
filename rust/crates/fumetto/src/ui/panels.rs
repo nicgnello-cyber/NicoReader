@@ -30,8 +30,9 @@ pub(super) fn caption(ctx: &Context, b: &BookInfo, a: f32, toast: Option<(&str, 
     let title = Text::new(b.title, Face::Serif, 26.0 * s, fade(INK, a));
     let modes = caps(&b.modes.join("  \u{00b7}  "), 11.5 * s, fade(MUTED, a));
     let folio = Text::new(b.folio.as_str(), Face::Serif, FOLIO * s, fade(INK, a));
-    let of = caps(&if italian() { format!("di {}", b.pages) } else { format!("of {}", b.pages) }, 11.5 * s,
-                  fade(MUTED, a)).tabular();
+    let of =
+        caps(&if italian() { format!("di {}", b.pages) } else { format!("of {}", b.pages) }, 11.5 * s, fade(MUTED, a))
+            .tabular();
     // nei margini se ci stanno, il titolo anche su due righe come
     // un'etichetta da museo; se no le pagine arrivano ai bordi, e una
     // sfumatura dal basso rende leggibile cio' che ci si scrive sopra
@@ -64,7 +65,14 @@ pub(super) fn caption(ctx: &Context, b: &BookInfo, a: f32, toast: Option<(&str, 
             // accanto al numero di pagina, alto quanto le sue cifre
             let fw = m.width(&folio);
             let rh = (FOLIO * s * 0.62).round();
-            ribbon(&mut l, (vw - pad - fw - 26.0 * s).round(), (bottom - 24.0 * s - rh).round(), (9.0 * s).round(), rh, a);
+            ribbon(
+                &mut l,
+                (vw - pad - fw - 26.0 * s).round(),
+                (bottom - 24.0 * s - rh).round(),
+                (9.0 * s).round(),
+                rh,
+                a,
+            );
         }
         l.texts.push(folio.boxed(bw, Align::Right).on_baseline(bx, bottom - 24.0 * s));
         l.texts.push(of.boxed(bw, Align::Right).on_baseline(bx, bottom));
@@ -75,8 +83,12 @@ pub(super) fn caption(ctx: &Context, b: &BookInfo, a: f32, toast: Option<(&str, 
         let lw = 40.0 * s;
         l.rects.push(Rect::new((vw - pad - lw).round(), line_y, lw.round(), s.round(), alpha(TICK, ta)));
         let bw = 400.0 * s;
-        l.texts.push(Text::new(text, Face::Sans, 15.0 * s, fade(INK, ta)).weight(500)
-            .boxed(bw, Align::Right).on_baseline(vw - pad - bw, line_y - 15.0 * s));
+        l.texts.push(
+            Text::new(text, Face::Sans, 15.0 * s, fade(INK, ta))
+                .weight(500)
+                .boxed(bw, Align::Right)
+                .on_baseline(vw - pad - bw, line_y - 15.0 * s),
+        );
     }
     l
 }
@@ -97,14 +109,21 @@ pub(super) fn goto(ctx: &Context, g: &GoTo, m: &mut dyn Measure) -> Layer {
     let mut l = Layer::default();
     l.rects.push(Rect::new(0.0, 0.0, vw, vh, [0.0, 0.0, 0.0, 0.9]));
 
-    l.texts.push(caps(t("Vai a pagina", "Go to page"), 11.0 * s, MUTED).boxed(400.0 * s, Align::Center)
-        .on_baseline(cx - 200.0 * s, base - 150.0 * s));
+    l.texts.push(
+        caps(t("Vai a pagina", "Go to page"), 11.0 * s, MUTED)
+            .boxed(400.0 * s, Align::Center)
+            .on_baseline(cx - 200.0 * s, base - 150.0 * s),
+    );
     // numero, cursore e "di 212" centrati insieme, misurati
     let (digits, color) = if g.typed.is_empty() { (g.page().to_string(), MUTED) } else { (g.typed.clone(), INK) };
     let size = 156.0 * s;
     let number = Text::new(digits, Face::Serif, size, color);
-    let of = Text::new(if italian() { format!("di {}", g.pages) } else { format!("of {}", g.pages) },
-                       Face::Serif, 30.0 * s, MUTED);
+    let of = Text::new(
+        if italian() { format!("di {}", g.pages) } else { format!("of {}", g.pages) },
+        Face::Serif,
+        30.0 * s,
+        MUTED,
+    );
     let (wn, wo, gap) = (m.width(&number), m.width(&of), 34.0 * s);
     let x0 = (cx - (wn + gap + wo) / 2.0).round();
     l.texts.push(number.on_baseline(x0, base));
@@ -117,10 +136,8 @@ pub(super) fn goto(ctx: &Context, g: &GoTo, m: &mut dyn Measure) -> Layer {
     let at = |page: usize| (x0 + w * page as f32 / last).round();
     l.rects.push(Rect::new(x0, y, w, s.round(), HAIR));
     // una tacca per pagina se c'e' posto, altrimenti ogni 2, 5, 10...
-    let every = [1usize, 2, 5, 10, 20, 50, 100, 200, 500]
-        .into_iter()
-        .find(|&k| w / last * k as f32 >= 4.0 * s)
-        .unwrap_or(1000);
+    let every =
+        [1usize, 2, 5, 10, 20, 50, 100, 200, 500].into_iter().find(|&k| w / last * k as f32 >= 4.0 * s).unwrap_or(1000);
     for p in (0..g.pages).step_by(every) {
         let major = (p + 1) % (every * 10) == 0 || p == 0;
         let h = if major { 9.0 } else { 5.0 } * s;
@@ -131,8 +148,12 @@ pub(super) fn goto(ctx: &Context, g: &GoTo, m: &mut dyn Measure) -> Layer {
         .find(|&k| w / last * k as f32 >= 64.0 * s)
         .unwrap_or(5000);
     for p in (label_every..=g.pages).step_by(label_every) {
-        l.texts.push(Text::new(p.to_string(), Face::Sans, 10.5 * s, MUTED).tabular().boxed(60.0 * s, Align::Center)
-            .on_baseline(at(p - 1) - 30.0 * s, y + 26.0 * s));
+        l.texts.push(
+            Text::new(p.to_string(), Face::Sans, 10.5 * s, MUTED)
+                .tabular()
+                .boxed(60.0 * s, Align::Center)
+                .on_baseline(at(p - 1) - 30.0 * s, y + 26.0 * s),
+        );
     }
     // le pagine segnate: nastrini sotto il righello
     for &p in &g.bookmarks {
@@ -141,7 +162,9 @@ pub(super) fn goto(ctx: &Context, g: &GoTo, m: &mut dyn Measure) -> Layer {
     // dove si e' adesso, e dove si andra'
     let here = at(g.here);
     l.rects.push(Rect::new(here, y - 16.0 * s, s.round(), 16.0 * s, INK_F));
-    l.texts.push(caps(t("qui", "here"), 9.0 * s, INK).boxed(60.0 * s, Align::Center).on_baseline(here - 30.0 * s, y - 22.0 * s));
+    l.texts.push(
+        caps(t("qui", "here"), 9.0 * s, INK).boxed(60.0 * s, Align::Center).on_baseline(here - 30.0 * s, y - 22.0 * s),
+    );
     if g.valid() && g.page() - 1 != g.here {
         let x = at(g.page() - 1);
         l.rects.push(Rect::new(x - s, y - 24.0 * s, (2.0 * s).round(), 24.0 * s, ACCENT));
@@ -155,8 +178,11 @@ pub(super) fn goto(ctx: &Context, g: &GoTo, m: &mut dyn Measure) -> Layer {
     } else {
         (format!("This volume has {} pages", g.pages), ACCENT_TEXT)
     };
-    l.texts.push(Text::new(hint, Face::Sans, 12.5 * s, color).boxed(500.0 * s, Align::Center)
-        .on_baseline(cx - 250.0 * s, y + 70.0 * s));
+    l.texts.push(
+        Text::new(hint, Face::Sans, 12.5 * s, color)
+            .boxed(500.0 * s, Align::Center)
+            .on_baseline(cx - 250.0 * s, y + 70.0 * s),
+    );
     l
 }
 
@@ -168,47 +194,85 @@ pub(super) fn welcome(ctx: &Context, selected: Option<usize>, m: &mut dyn Measur
     let top = Ui::welcome_top(ctx);
     let mut l = Layer::default();
     let wide = 900.0 * s;
-    l.texts.push(Text::new("NicoReader", Face::Serif, 84.0 * s, INK).boxed(wide, Align::Center)
-        .on_baseline(cx - wide / 2.0, top + 70.0 * s));
-    l.texts.push(caps(t("Trascina qui un volume, o fai clic per aprirne uno",
-                        "Drop a volume here, or click to open one"), 10.5 * s, MUTED)
-        .boxed(wide, Align::Center).on_baseline(cx - wide / 2.0, top + 112.0 * s));
+    l.texts.push(
+        Text::new("NicoReader", Face::Serif, 84.0 * s, INK)
+            .boxed(wide, Align::Center)
+            .on_baseline(cx - wide / 2.0, top + 70.0 * s),
+    );
+    l.texts.push(
+        caps(
+            t("Trascina qui un volume, o fai clic per aprirne uno", "Drop a volume here, or click to open one"),
+            10.5 * s,
+            MUTED,
+        )
+        .boxed(wide, Align::Center)
+        .on_baseline(cx - wide / 2.0, top + 112.0 * s),
+    );
     // l'invito a creare la libreria, in rosso lacca: e' la cosa da fare
-    l.texts.push(caps(t("+   Aggiungi una cartella alla libreria", "+   Add a folder to the library"), 11.0 * s, ACCENT_TEXT)
-        .boxed(wide, Align::Center).on_baseline(cx - wide / 2.0, Ui::welcome_cta(ctx)));
+    l.texts.push(
+        caps(t("+   Aggiungi una cartella alla libreria", "+   Add a folder to the library"), 11.0 * s, ACCENT_TEXT)
+            .boxed(wide, Align::Center)
+            .on_baseline(cx - wide / 2.0, Ui::welcome_cta(ctx)),
+    );
     let recent = &ctx.recent[..ctx.recent.len().min(6)];
     if !recent.is_empty() {
-        l.rects.push(Rect::new((cx - 20.0 * s).round(), (top + 190.0 * s).round(), (40.0 * s).round(), s.round(), TICK));
-        l.texts.push(caps(t("Ultimi letti", "Recently read"), 10.0 * s, MUTED).boxed(wide, Align::Center)
-            .on_baseline(cx - wide / 2.0, top + 234.0 * s));
+        l.rects.push(Rect::new(
+            (cx - 20.0 * s).round(),
+            (top + 190.0 * s).round(),
+            (40.0 * s).round(),
+            s.round(),
+            TICK,
+        ));
+        l.texts.push(
+            caps(t("Ultimi letti", "Recently read"), 10.0 * s, MUTED)
+                .boxed(wide, Align::Center)
+                .on_baseline(cx - wide / 2.0, top + 234.0 * s),
+        );
         let x0 = cx - WELCOME_W * s / 2.0;
         let w = WELCOME_W * s;
         let rows_top = Ui::welcome_rows_top(ctx);
         for (i, r) in recent.iter().enumerate() {
             let y = rows_top + i as f32 * WELCOME_ROW * s;
             if selected == Some(i) {
-                l.rects.push(Rect::new(x0 - 14.0 * s, y + 3.0 * s, w + 28.0 * s, (WELCOME_ROW - 6.0) * s, [1.0, 1.0, 1.0, 0.05])
-                    .radius(8.0 * s));
+                l.rects.push(
+                    Rect::new(x0 - 14.0 * s, y + 3.0 * s, w + 28.0 * s, (WELCOME_ROW - 6.0) * s, [1.0, 1.0, 1.0, 0.05])
+                        .radius(8.0 * s),
+                );
             }
             if i > 0 {
                 l.rects.push(Rect::new(x0, y.round(), w, s.round(), alpha(HAIR, 0.7)));
             }
             let title = Text::new(r.title.as_str(), Face::Serif, 22.0 * s, INK);
             l.texts.push(fit(m, title, w - 130.0 * s).on_baseline(x0, y + 30.0 * s));
-            l.texts.push(Text::new(r.place.as_str(), Face::Sans, 12.5 * s, MUTED).tabular().boxed(110.0 * s, Align::Right)
-                .on_baseline(x0 + w - 110.0 * s, y + 29.0 * s));
+            l.texts.push(
+                Text::new(r.place.as_str(), Face::Sans, 12.5 * s, MUTED)
+                    .tabular()
+                    .boxed(110.0 * s, Align::Right)
+                    .on_baseline(x0 + w - 110.0 * s, y + 29.0 * s),
+            );
         }
     }
     let k = |b: Bind| ctx.keys.label(b);
     let keys = if italian() {
-        format!("{} apri   \u{00b7}   {} cartella   \u{00b7}   {} impostazioni   \u{00b7}   tasto destro per il menu",
-                k(Bind::Open), k(Bind::OpenFolder), k(Bind::Settings))
+        format!(
+            "{} apri   \u{00b7}   {} cartella   \u{00b7}   {} impostazioni   \u{00b7}   tasto destro per il menu",
+            k(Bind::Open),
+            k(Bind::OpenFolder),
+            k(Bind::Settings)
+        )
     } else {
-        format!("{} open   \u{00b7}   {} folder   \u{00b7}   {} settings   \u{00b7}   right click for the menu",
-                k(Bind::Open), k(Bind::OpenFolder), k(Bind::Settings))
+        format!(
+            "{} open   \u{00b7}   {} folder   \u{00b7}   {} settings   \u{00b7}   right click for the menu",
+            k(Bind::Open),
+            k(Bind::OpenFolder),
+            k(Bind::Settings)
+        )
     };
-    l.texts.push(Text::new(keys, Face::Sans, 12.0 * s, fade(MUTED, 0.75)).boxed(wide, Align::Center)
-        .on_baseline(cx - wide / 2.0, vh - 36.0 * s));
+    l.texts.push(
+        Text::new(keys, Face::Sans, 12.0 * s, fade(MUTED, 0.75))
+            .boxed(wide, Align::Center)
+            .on_baseline(cx - wide / 2.0, vh - 36.0 * s),
+    );
     l
 }
 
@@ -233,9 +297,18 @@ pub(super) fn toast_only(ctx: &Context, text: &str, a: f32) -> Layer {
     let mut l = Layer::default();
     let bw = 500.0 * s;
     let base = vh - 40.0 * s;
-    l.rects.push(Rect::new(vw - 460.0 * s, vh - 90.0 * s, 460.0 * s, 90.0 * s, [0.0, 0.0, 0.0, 0.0]).to([0.0, 0.0, 0.0, 0.7 * a]));
-    l.texts.push(Text::new(text, Face::Sans, 15.0 * s, fade(INK, a)).weight(500).boxed(bw, Align::Right)
-        .on_baseline(vw - 40.0 * s - bw, base));
+    l.rects.push(Rect::new(vw - 460.0 * s, vh - 90.0 * s, 460.0 * s, 90.0 * s, [0.0, 0.0, 0.0, 0.0]).to([
+        0.0,
+        0.0,
+        0.0,
+        0.7 * a,
+    ]));
+    l.texts.push(
+        Text::new(text, Face::Sans, 15.0 * s, fade(INK, a))
+            .weight(500)
+            .boxed(bw, Align::Right)
+            .on_baseline(vw - 40.0 * s - bw, base),
+    );
     l
 }
 

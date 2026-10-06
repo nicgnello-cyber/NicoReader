@@ -74,11 +74,17 @@ pub fn decode(data: &[u8]) -> Result<Page, DecodeError> {
 pub fn dimensions(data: &[u8]) -> Option<(u32, u32)> {
     if data.len() >= 12 && &data[..4] == b"RIFF" && &data[8..12] == b"WEBP" {
         let mut info = libwebp_sys::WebPBitstreamFeatures {
-            width: 0, height: 0, has_alpha: 0, has_animation: 0, format: 0, pad: [0; 5],
+            width: 0,
+            height: 0,
+            has_alpha: 0,
+            has_animation: 0,
+            format: 0,
+            pad: [0; 5],
         };
         // SAFETY: libwebp legge solo `data.len()` byte e scrive nella struttura.
         let status = unsafe { libwebp_sys::WebPGetFeatures(data.as_ptr(), data.len(), &mut info) };
-        return (status == libwebp_sys::VP8StatusCode::VP8_STATUS_OK).then_some((info.width as u32, info.height as u32));
+        return (status == libwebp_sys::VP8StatusCode::VP8_STATUS_OK)
+            .then_some((info.width as u32, info.height as u32));
     }
     image::ImageReader::new(std::io::Cursor::new(data)).with_guessed_format().ok()?.into_dimensions().ok()
 }
@@ -121,9 +127,8 @@ fn decode_jxl(data: &[u8]) -> Result<Page, DecodeError> {
 
 fn decode_webp(data: &[u8]) -> Result<Page, DecodeError> {
     use libwebp_sys as webp;
-    let mut info = webp::WebPBitstreamFeatures {
-        width: 0, height: 0, has_alpha: 0, has_animation: 0, format: 0, pad: [0; 5],
-    };
+    let mut info =
+        webp::WebPBitstreamFeatures { width: 0, height: 0, has_alpha: 0, has_animation: 0, format: 0, pad: [0; 5] };
     // SAFETY: libwebp legge solo `data.len()` byte e scrive nella struttura.
     let status = unsafe { webp::WebPGetFeatures(data.as_ptr(), data.len(), &mut info) };
     if status != webp::VP8StatusCode::VP8_STATUS_OK {
@@ -134,9 +139,8 @@ fn decode_webp(data: &[u8]) -> Result<Page, DecodeError> {
     let stride = w as usize * 4;
     let mut rgba = vec![0u8; stride * h as usize];
     // SAFETY: il buffer e' grande esattamente stride * h, come dichiarato.
-    let out = unsafe {
-        webp::WebPDecodeRGBAInto(data.as_ptr(), data.len(), rgba.as_mut_ptr(), rgba.len(), stride as i32)
-    };
+    let out =
+        unsafe { webp::WebPDecodeRGBAInto(data.as_ptr(), data.len(), rgba.as_mut_ptr(), rgba.len(), stride as i32) };
     if out.is_null() {
         return Err(DecodeError::Invalid("dati WebP".into()));
     }

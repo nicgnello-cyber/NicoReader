@@ -367,13 +367,16 @@ mod tests {
         mk("Singolo/pagina.png");
         let found = scan(std::slice::from_ref(&root));
         let got: Vec<(&str, Option<&str>)> = found.iter().map(|e| (e.title.as_str(), e.series.as_deref())).collect();
-        assert_eq!(got, [
-            ("Cap 1 - Vite", Some("Robo")),
-            ("Cap 2 - Dado", Some("Robo")),
-            ("Nebbia sul Porto v01", Some("Nebbia sul Porto")),
-            ("Nebbia sul Porto v02", Some("Nebbia sul Porto")),
-            ("Singolo", None),
-        ]);
+        assert_eq!(
+            got,
+            [
+                ("Cap 1 - Vite", Some("Robo")),
+                ("Cap 2 - Dado", Some("Robo")),
+                ("Nebbia sul Porto v01", Some("Nebbia sul Porto")),
+                ("Nebbia sul Porto v02", Some("Nebbia sul Porto")),
+                ("Singolo", None),
+            ]
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -411,25 +414,29 @@ mod tests {
         }
         mk("Artbook/Extra 1/001.jpg");
         let found = scan(std::slice::from_ref(&root));
-        let mut got: Vec<(&str, Option<&str>)> = found.iter().map(|e| (e.title.as_str(), e.series.as_deref())).collect();
+        let mut got: Vec<(&str, Option<&str>)> =
+            found.iter().map(|e| (e.title.as_str(), e.series.as_deref())).collect();
         got.sort();
-        assert_eq!(got, [
-            ("Artbook", None),
-            ("Chapter 1", Some("Solo Leveling")),
-            ("Chapter 2", Some("Solo Leveling")),
-            ("Episode 1", Some("Lore Olympus")),
-            ("Episode 1", Some("Tower of God")),
-            ("Episode 2", Some("Lore Olympus")),
-            ("Episode 2", Some("Tower of God")),
-            ("Extra 1", Some("Extra")), // dal nome, come prima; da solo resta una copertina singola
-            ("One Piece v01", Some("One Piece")),
-            ("One Piece v02", Some("One Piece")),
-            ("Vol 1 \u{00b7} Ch 1", Some("Berserk")),
-            ("Vol 1 \u{00b7} Ch 1", Some("Vagabond")),
-            ("Vol 1 \u{00b7} Ch 2", Some("Berserk")),
-            ("Vol 1 \u{00b7} Ch 2", Some("Vagabond")),
-            ("Vol 2 \u{00b7} Ch 1", Some("Berserk")),
-        ]);
+        assert_eq!(
+            got,
+            [
+                ("Artbook", None),
+                ("Chapter 1", Some("Solo Leveling")),
+                ("Chapter 2", Some("Solo Leveling")),
+                ("Episode 1", Some("Lore Olympus")),
+                ("Episode 1", Some("Tower of God")),
+                ("Episode 2", Some("Lore Olympus")),
+                ("Episode 2", Some("Tower of God")),
+                ("Extra 1", Some("Extra")), // dal nome, come prima; da solo resta una copertina singola
+                ("One Piece v01", Some("One Piece")),
+                ("One Piece v02", Some("One Piece")),
+                ("Vol 1 \u{00b7} Ch 1", Some("Berserk")),
+                ("Vol 1 \u{00b7} Ch 1", Some("Vagabond")),
+                ("Vol 1 \u{00b7} Ch 2", Some("Berserk")),
+                ("Vol 1 \u{00b7} Ch 2", Some("Vagabond")),
+                ("Vol 2 \u{00b7} Ch 1", Some("Berserk")),
+            ]
+        );
         // nella serie, i capitoli nei volumi in ordine
         let mut berserk: Vec<&Entry> = found.iter().filter(|e| e.series.as_deref() == Some("Berserk")).collect();
         berserk.sort_by(|a, b| by_number(a, b));
@@ -461,8 +468,10 @@ mod tests {
         let root = std::env::temp_dir().join(format!("fumetto-libreria-scheda-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         // nomi che da soli non direbbero niente, o direbbero altro
-        cbz(&root.join("scaricati/op_c001_hq [scan].cbz"),
-            Some(&scheda("One Piece", "1", "<Title>Romance Dawn</Title><Writer>Eiichiro Oda</Writer>")));
+        cbz(
+            &root.join("scaricati/op_c001_hq [scan].cbz"),
+            Some(&scheda("One Piece", "1", "<Title>Romance Dawn</Title><Writer>Eiichiro Oda</Writer>")),
+        );
         cbz(&root.join("scaricati/zzz.cbz"), Some(&scheda("One Piece", "2", "")));
         cbz(&root.join("Nebbia sul Porto v01.cbz"), None);
         cbz(&root.join("Nebbia sul Porto v02.cbz"), Some("<ComicInfo><Summary>niente</Summary></ComicInfo>"));
@@ -470,17 +479,21 @@ mod tests {
         let chapter = root.join("Mihon/Solo Leveling/Capitolo dodici");
         std::fs::create_dir_all(&chapter).unwrap();
         std::fs::write(chapter.join("001.jpg"), b"x").unwrap();
-        std::fs::write(chapter.join("ComicInfo.xml"), scheda("Solo Leveling", "12", "<Title>Chapter 12</Title>")).unwrap();
+        std::fs::write(chapter.join("ComicInfo.xml"), scheda("Solo Leveling", "12", "<Title>Chapter 12</Title>"))
+            .unwrap();
 
         let found = scan(std::slice::from_ref(&root));
         let got: Vec<_> = found.iter().map(|e| (e.title.as_str(), e.series.as_deref(), e.number)).collect();
-        assert_eq!(got, [
-            ("Nebbia sul Porto v01", Some("Nebbia sul Porto"), Some(1)),
-            ("Nebbia sul Porto v02", Some("Nebbia sul Porto"), Some(2)),
-            ("One Piece 1: Romance Dawn", Some("One Piece"), Some(1)),
-            ("One Piece 2", Some("One Piece"), Some(2)),
-            ("Solo Leveling: Chapter 12", Some("Solo Leveling"), Some(12)),
-        ]);
+        assert_eq!(
+            got,
+            [
+                ("Nebbia sul Porto v01", Some("Nebbia sul Porto"), Some(1)),
+                ("Nebbia sul Porto v02", Some("Nebbia sul Porto"), Some(2)),
+                ("One Piece 1: Romance Dawn", Some("One Piece"), Some(1)),
+                ("One Piece 2", Some("One Piece"), Some(2)),
+                ("Solo Leveling: Chapter 12", Some("Solo Leveling"), Some(12)),
+            ]
+        );
         assert_eq!(found[2].authors.as_deref(), Some("Eiichiro Oda"));
 
         // la cache: la seconda volta le schede vengono da li'
@@ -501,5 +514,4 @@ mod tests {
         assert!(!json.contains("zzz") && !json.contains("Dalla cache"), "{json}");
         let _ = std::fs::remove_dir_all(&root);
     }
-
 }

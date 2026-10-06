@@ -12,7 +12,9 @@ use fumetto_render::{Align, Face, Layer, Measure, Rect, Text};
 
 use crate::keys::{Bind, Combo, Keymap};
 use crate::reader::Action;
-use crate::ui::{ACCENT, Command, HAIR, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, TICK, alpha, caps, draw_icon, fit, rgb};
+use crate::ui::{
+    ACCENT, Command, HAIR, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, TICK, alpha, caps, draw_icon, fit, rgb,
+};
 
 /// Una scelta fatta nelle impostazioni.
 #[derive(Clone, Debug, PartialEq)]
@@ -233,25 +235,44 @@ impl Prefs {
                 Row::Slider { label: t("Contrasto", "Contrast"), which: Slider::Contrast },
                 Row::Slider { label: "Gamma", which: Slider::Gamma },
                 Row::Button { label: t("Ripristina", "Reset"), pref: Pref::ResetImage },
-                Row::Note(t("Valgono per tutte le pagine e si vedono subito. Si applicano dopo il \
+                Row::Note(t(
+                    "Valgono per tutte le pagine e si vedono subito. Si applicano dopo il \
                              rimpicciolimento in luce lineare, che resta com'è.",
-                            "They apply to every page, live, after the linear-light resampling, which stays as it is.")),
+                    "They apply to every page, live, after the linear-light resampling, which stays as it is.",
+                )),
             ],
             Tab::Reading => {
                 let secs = settings.slideshow.max(1);
                 vec![
-                    Row::Toggle { label: t("Riconosci i webtoon", "Detect webtoons"), on: settings.webtoon,
-                                  pref: Pref::Webtoon(!settings.webtoon) },
-                    Row::Note(t("Un volume mai aperto con le pagine a strisce si apre a nastro.",
-                                "A never-opened volume made of strips opens as a strip.")),
-                    Row::Toggle { label: t("Rifila i margini", "Trim margins"), on: settings.trim,
-                                  pref: Pref::Trim(!settings.trim) },
-                    Row::Toggle { label: t("Migliora le scansioni (AI)", "Enhance scans (AI)"), on: settings.upscale,
-                                  pref: Pref::Upscale(!settings.upscale) },
-                    Row::Note(t("Real-ESRGAN rifa le pagine mostrate più grandi dei loro pixel. Si scarica \
+                    Row::Toggle {
+                        label: t("Riconosci i webtoon", "Detect webtoons"),
+                        on: settings.webtoon,
+                        pref: Pref::Webtoon(!settings.webtoon),
+                    },
+                    Row::Note(t(
+                        "Un volume mai aperto con le pagine a strisce si apre a nastro.",
+                        "A never-opened volume made of strips opens as a strip.",
+                    )),
+                    Row::Toggle {
+                        label: t("Rifila i margini", "Trim margins"),
+                        on: settings.trim,
+                        pref: Pref::Trim(!settings.trim),
+                    },
+                    Row::Toggle {
+                        label: t("Migliora le scansioni (AI)", "Enhance scans (AI)"),
+                        on: settings.upscale,
+                        pref: Pref::Upscale(!settings.upscale),
+                    },
+                    Row::Note(t(
+                        "Real-ESRGAN rifa le pagine mostrate più grandi dei loro pixel. Si scarica \
                                  la prima volta (44 MB).",
-                                "Real-ESRGAN redoes pages shown larger than their pixels. Downloaded on first use (44 MB).")),
-                    Row::Toggle { label: t("Barra in alto", "Top bar"), on: settings.hud, pref: Pref::Hud(!settings.hud) },
+                        "Real-ESRGAN redoes pages shown larger than their pixels. Downloaded on first use (44 MB).",
+                    )),
+                    Row::Toggle {
+                        label: t("Barra in alto", "Top bar"),
+                        on: settings.hud,
+                        pref: Pref::Hud(!settings.hud),
+                    },
                     Row::Stepper {
                         label: t("Presentazione, una pagina ogni", "Slideshow, a page every"),
                         value: format!("{secs} s"),
@@ -263,14 +284,18 @@ impl Prefs {
             Tab::Lens => vec![
                 Row::Slider { label: t("Ingrandimento", "Magnification"), which: Slider::LensZoom },
                 Row::Slider { label: t("Grandezza", "Size"), which: Slider::LensSize },
-                Row::Note(t("La lente mostra i pixel veri della pagina. Con la lente accesa la rotella \
+                Row::Note(t(
+                    "La lente mostra i pixel veri della pagina. Con la lente accesa la rotella \
                              cambia l'ingrandimento.",
-                            "The magnifier shows the page's real pixels. While it is on, the wheel changes the magnification.")),
+                    "The magnifier shows the page's real pixels. While it is on, the wheel changes the magnification.",
+                )),
             ],
             Tab::Keys => {
-                let mut rows = vec![Row::Note(t("Fai clic su un comando e premi il tasto nuovo: Esc lascia \
+                let mut rows = vec![Row::Note(t(
+                    "Fai clic su un comando e premi il tasto nuovo: Esc lascia \
                                                  com'era, Backspace toglie il tasto.",
-                                                "Click a command and press the new key: Esc keeps it, Backspace removes it."))];
+                    "Click a command and press the new key: Esc keeps it, Backspace removes it.",
+                ))];
                 let mut group = "";
                 for b in Bind::ALL {
                     if b.group() != group {
@@ -279,7 +304,10 @@ impl Prefs {
                     }
                     rows.push(Row::Key { bind: b, keys: keys.keys(b).iter().map(Combo::shown).collect() });
                 }
-                rows.push(Row::Button { label: t("Tutti i tasti di serie", "All default keys"), pref: Pref::ResetKeys });
+                rows.push(Row::Button {
+                    label: t("Tutti i tasti di serie", "All default keys"),
+                    pref: Pref::ResetKeys,
+                });
                 rows
             }
         }
@@ -342,7 +370,9 @@ impl Prefs {
 
     /// Il tasto del mouse premuto: su una regolazione, la sposta subito (e
     /// comincia a trascinarla).
-    pub fn press(&mut self, settings: &Settings, keys: &Keymap, view: (f32, f32), s: f32, x: f32, y: f32) -> Option<Command> {
+    pub fn press(
+        &mut self, settings: &Settings, keys: &Keymap, view: (f32, f32), s: f32, x: f32, y: f32,
+    ) -> Option<Command> {
         let g = Geo::new(view, s);
         let rows = self.rows(settings, keys);
         let Some(Hit::Row(i)) = self.hit(&rows, &g, x, y) else { return None };
@@ -452,7 +482,9 @@ impl Prefs {
                         let v = which.value(settings) + if more { step } else { -step };
                         Some(Command::Pref(which.pref(v)))
                     }
-                    Some(Row::Stepper { less, more: plus, .. }) => Some(Command::Pref(if more { plus.clone() } else { less.clone() })),
+                    Some(Row::Stepper { less, more: plus, .. }) => {
+                        Some(Command::Pref(if more { plus.clone() } else { less.clone() }))
+                    }
                     Some(Row::Toggle { on, pref, .. }) if *on != more => Some(Command::Pref(pref.clone())),
                     _ => None,
                 }
@@ -474,11 +506,19 @@ impl Prefs {
         let top = self.tops(rows, g)[i];
         let h = rows[i].height() * g.s;
         let (lo, hi) = (HEADER * g.s, g.view.1 - 16.0 * g.s);
-        let delta = if top < lo { top - lo } else if top + h > hi { top + h - hi } else { 0.0 };
+        let delta = if top < lo {
+            top - lo
+        } else if top + h > hi {
+            top + h - hi
+        } else {
+            0.0
+        };
         self.scroll = (self.scroll + delta).clamp(0.0, self.max_scroll(rows, g));
     }
 
-    pub fn layers(&self, settings: &Settings, keys: &Keymap, view: (f32, f32), s: f32, m: &mut dyn Measure) -> Vec<Layer> {
+    pub fn layers(
+        &self, settings: &Settings, keys: &Keymap, view: (f32, f32), s: f32, m: &mut dyn Measure,
+    ) -> Vec<Layer> {
         let g = Geo::new(view, s);
         let rows = self.rows(settings, keys);
         let tops = self.tops(&rows, &g);
@@ -498,12 +538,18 @@ impl Prefs {
             }
             let hovered = self.hover == Some(Hit::Row(i));
             if (self.selected == Some(i) || hovered) && row.selectable() {
-                l.rects.push(Rect::new(x0 + 14.0 * s, top + 2.0 * s, w - 28.0 * s, h - 4.0 * s, [1.0, 1.0, 1.0, 0.055])
-                    .radius(8.0 * s));
+                l.rects.push(
+                    Rect::new(x0 + 14.0 * s, top + 2.0 * s, w - 28.0 * s, h - 4.0 * s, [1.0, 1.0, 1.0, 0.055])
+                        .radius(8.0 * s),
+                );
             }
-            let label = |text: &str, base: f32| Text::new(text, Face::Sans, 14.0 * s, INK).weight(450).on_baseline(x0 + pad, top + base * s);
+            let label = |text: &str, base: f32| {
+                Text::new(text, Face::Sans, 14.0 * s, INK).weight(450).on_baseline(x0 + pad, top + base * s)
+            };
             let value = |text: String, base: f32, color: [u8; 4]| {
-                Text::new(text, Face::Sans, 13.0 * s, color).tabular().boxed(140.0 * s, Align::Right)
+                Text::new(text, Face::Sans, 13.0 * s, color)
+                    .tabular()
+                    .boxed(140.0 * s, Align::Right)
                     .on_baseline(right - 140.0 * s, top + base * s)
             };
             match row {
@@ -515,7 +561,8 @@ impl Prefs {
                 Row::Slider { label: name, which } => {
                     let v = which.value(settings);
                     l.texts.push(label(name, 26.0));
-                    let changed = v != which.range().3 && matches!(which, Slider::Brightness | Slider::Contrast | Slider::Gamma);
+                    let changed =
+                        v != which.range().3 && matches!(which, Slider::Brightness | Slider::Contrast | Slider::Gamma);
                     l.texts.push(value(which.shown(v), 26.0, if changed { INK } else { MUTED }));
                     let (tx, tw, ty) = g.track(top);
                     let (lo, hi, _, start) = which.range();
@@ -536,30 +583,51 @@ impl Prefs {
                     l.texts.push(label(name, 28.0));
                     let (sw, sh) = ((34.0 * s).round(), (18.0 * s).round());
                     let (sx, sy) = (right - sw, (top + (h - sh) / 2.0).round());
-                    l.rects.push(Rect::new(sx, sy, sw, sh, if *on { ACCENT } else { rgb(0x3A, 0x37, 0x32) }).radius(sh / 2.0));
+                    l.rects.push(
+                        Rect::new(sx, sy, sw, sh, if *on { ACCENT } else { rgb(0x3A, 0x37, 0x32) }).radius(sh / 2.0),
+                    );
                     let d = sh - 4.0 * s;
                     let kx = if *on { sx + sw - 2.0 * s - d } else { sx + 2.0 * s };
                     l.rects.push(Rect::new(kx, sy + 2.0 * s, d, d, INK_F).radius(d / 2.0));
                 }
                 Row::Stepper { label: name, value: v, .. } => {
                     let room = w - 2.0 * pad - 130.0 * s;
-                    l.texts.push(fit(m, Text::new(*name, Face::Sans, 14.0 * s, INK).weight(450), room).on_baseline(x0 + pad, top + 28.0 * s));
-                    for (hit, icon, cx) in [(Hit::Less(i), Icon::Minus, right - 93.0 * s), (Hit::More(i), Icon::Plus, right - 14.0 * s)] {
+                    l.texts.push(
+                        fit(m, Text::new(*name, Face::Sans, 14.0 * s, INK).weight(450), room)
+                            .on_baseline(x0 + pad, top + 28.0 * s),
+                    );
+                    for (hit, icon, cx) in
+                        [(Hit::Less(i), Icon::Minus, right - 93.0 * s), (Hit::More(i), Icon::Plus, right - 14.0 * s)]
+                    {
                         let color = if self.hover == Some(hit) { INK_F } else { MUTED_F };
                         draw_icon(&mut l, icon, cx.round(), (top + h / 2.0).round(), s * 0.8, color);
                     }
-                    l.texts.push(Text::new(v.as_str(), Face::Sans, 13.0 * s, INK).tabular().boxed(52.0 * s, Align::Center)
-                        .on_baseline(right - 80.0 * s, top + 28.0 * s));
+                    l.texts.push(
+                        Text::new(v.as_str(), Face::Sans, 13.0 * s, INK)
+                            .tabular()
+                            .boxed(52.0 * s, Align::Center)
+                            .on_baseline(right - 80.0 * s, top + 28.0 * s),
+                    );
                 }
                 Row::Button { label: name, .. } => {
-                    l.texts.push(caps(name, 11.0 * s, if hovered || self.selected == Some(i) { INK } else { crate::ui::ACCENT_TEXT })
-                        .on_baseline(x0 + pad, top + 28.0 * s));
+                    l.texts.push(
+                        caps(
+                            name,
+                            11.0 * s,
+                            if hovered || self.selected == Some(i) { INK } else { crate::ui::ACCENT_TEXT },
+                        )
+                        .on_baseline(x0 + pad, top + 28.0 * s),
+                    );
                 }
                 Row::Key { bind, keys } => {
                     let name = Text::new(bind.label(), Face::Sans, 13.5 * s, INK).weight(450);
                     l.texts.push(fit(m, name, w - 2.0 * pad - 150.0 * s).on_baseline(x0 + pad, top + 24.0 * s));
                     if self.capture == Some(*bind) {
-                        l.texts.push(value(t("premi un tasto\u{2026}", "press a key\u{2026}").to_owned(), 24.0, crate::ui::ACCENT_TEXT));
+                        l.texts.push(value(
+                            t("premi un tasto\u{2026}", "press a key\u{2026}").to_owned(),
+                            24.0,
+                            crate::ui::ACCENT_TEXT,
+                        ));
                     } else {
                         // i tasti come piccole targhe, da destra
                         let mut kx = right;
@@ -568,7 +636,8 @@ impl Prefs {
                             let kw = (m.width(&text) + 16.0 * s).round();
                             kx -= kw;
                             let ky = (top + 8.0 * s).round();
-                            l.rects.push(Rect::new(kx, ky, kw, (22.0 * s).round(), [1.0, 1.0, 1.0, 0.07]).radius(5.0 * s));
+                            l.rects
+                                .push(Rect::new(kx, ky, kw, (22.0 * s).round(), [1.0, 1.0, 1.0, 0.07]).radius(5.0 * s));
                             l.texts.push(text.boxed(kw, Align::Center).on_baseline(kx, ky + 15.5 * s));
                             kx -= 6.0 * s;
                         }
@@ -584,9 +653,17 @@ impl Prefs {
         let mut head = Layer::default();
         head.rects.push(Rect::new(x0 + s, 0.0, w - s, HEADER * s, alpha(rgb(0x11, 0x10, 0x0E), 1.0)));
         head.rects.push(Rect::new(x0 + pad, (HEADER * s - 10.0 * s).round(), w - 2.0 * pad, s.round(), HAIR));
-        head.texts.push(Text::new(t("Impostazioni", "Settings"), Face::Serif, 30.0 * s, INK).on_baseline(x0 + pad, 54.0 * s));
+        head.texts
+            .push(Text::new(t("Impostazioni", "Settings"), Face::Serif, 30.0 * s, INK).on_baseline(x0 + pad, 54.0 * s));
         let close = self.hover == Some(Hit::Close);
-        draw_icon(&mut head, Icon::Close, (right - 12.0 * s).round(), (44.0 * s).round(), s, if close { INK_F } else { MUTED_F });
+        draw_icon(
+            &mut head,
+            Icon::Close,
+            (right - 12.0 * s).round(),
+            (44.0 * s).round(),
+            s,
+            if close { INK_F } else { MUTED_F },
+        );
         for (i, tab) in Tab::ALL.iter().enumerate() {
             let (tx, tw) = g.tab_x(i);
             let on = *tab == self.tab;
@@ -620,7 +697,11 @@ mod tests {
         let (tx, tw, ty) = g.track(top);
         // tre quarti della pista: +50
         assert_eq!(p.press(&st, &km, VIEW, 1.0, tx + tw * 0.75, ty), Some(Command::Pref(Pref::Brightness(50))));
-        assert_eq!(p.drag(&st, &km, VIEW, 1.0, tx - 100.0), Some(Command::Pref(Pref::Brightness(-100))), "oltre il bordo: il minimo");
+        assert_eq!(
+            p.drag(&st, &km, VIEW, 1.0, tx - 100.0),
+            Some(Command::Pref(Pref::Brightness(-100))),
+            "oltre il bordo: il minimo"
+        );
         assert_eq!(p.click(&st, &km, VIEW, 1.0, tx, ty), Handled::Yes(None), "rilasciando non cambia altro");
     }
 
@@ -657,8 +738,14 @@ mod tests {
         let i = rows.iter().position(|r| matches!(r, Row::Stepper { .. })).unwrap();
         let top = p.tops(&rows, &g)[i];
         let right = g.x + g.w - g.pad;
-        assert_eq!(p.click(&st, &km, VIEW, 1.0, right - 10.0, top + 20.0), Handled::Yes(Some(Command::Pref(Pref::Slideshow(6)))));
-        assert_eq!(p.click(&st, &km, VIEW, 1.0, right - 95.0, top + 20.0), Handled::Yes(Some(Command::Pref(Pref::Slideshow(4)))));
+        assert_eq!(
+            p.click(&st, &km, VIEW, 1.0, right - 10.0, top + 20.0),
+            Handled::Yes(Some(Command::Pref(Pref::Slideshow(6))))
+        );
+        assert_eq!(
+            p.click(&st, &km, VIEW, 1.0, right - 95.0, top + 20.0),
+            Handled::Yes(Some(Command::Pref(Pref::Slideshow(4))))
+        );
     }
 
     #[test]

@@ -143,7 +143,11 @@ impl Script {
                 Step::Done
             }
             Phase::Settling => {
-                eprintln!("[prova] {:5.1} s  in attesa: {}", self.started.elapsed().as_secs_f32(), app.describe_state());
+                eprintln!(
+                    "[prova] {:5.1} s  in attesa: {}",
+                    self.started.elapsed().as_secs_f32(),
+                    app.describe_state()
+                );
                 self.next_at = now + Duration::from_secs(1);
                 Step::Wait
             }

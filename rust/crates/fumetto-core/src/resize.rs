@@ -85,17 +85,14 @@ pub fn resize(page: &Page, width: u32, height: u32, linear: bool) -> Page {
 pub fn enlarge(page: &Page, width: u32, height: u32) -> Page {
     let src = ImageRef::new(page.width, page.height, &page.rgba, PixelType::U8x4).expect("buffer coerente");
     let mut dst = Image::new(width, height, PixelType::U8x4);
-    let options = ResizeOptions::new()
-        .resize_alg(ResizeAlg::Convolution(FilterType::CatmullRom))
-        .use_alpha(!page.opaque);
+    let options =
+        ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::CatmullRom)).use_alpha(!page.opaque);
     Resizer::new().resize(&src, &mut dst, &options).expect("stesso tipo di pixel");
     Page { width, height, rgba: dst.into_vec(), opaque: page.opaque }
 }
 
 fn lanczos(src: &ImageRef, dst: &mut Image, opaque: bool) {
-    let options = ResizeOptions::new()
-        .resize_alg(ResizeAlg::Convolution(FilterType::Lanczos3))
-        .use_alpha(!opaque);
+    let options = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::Lanczos3)).use_alpha(!opaque);
     Resizer::new().resize(src, dst, &options).expect("stesso tipo di pixel");
 }
 
@@ -134,7 +131,8 @@ impl Linear {
             let data: Vec<u16> = if gray {
                 pixels.iter().map(|p| lut[p[0] as usize]).collect()
             } else {
-                pixels.iter()
+                pixels
+                    .iter()
                     .flat_map(|p| [lut[p[0] as usize], lut[p[1] as usize], lut[p[2] as usize], u16::MAX])
                     .collect()
             };

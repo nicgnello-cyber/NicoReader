@@ -50,11 +50,8 @@ pub fn tavola(w: u32, h: u32) -> Page {
 
 /// Un punto di retino: 1 se (x, y) cade dentro il punto della sua cella.
 fn dot(x: f32, y: f32, period: f32, rotated: bool, coverage: f32) -> f32 {
-    let (u, v) = if rotated {
-        ((x + y) / std::f32::consts::SQRT_2, (x - y) / std::f32::consts::SQRT_2)
-    } else {
-        (x, y)
-    };
+    let (u, v) =
+        if rotated { ((x + y) / std::f32::consts::SQRT_2, (x - y) / std::f32::consts::SQRT_2) } else { (x, y) };
     let (cu, cv) = (u.rem_euclid(period) - period / 2.0, v.rem_euclid(period) - period / 2.0);
     let radius = period * (coverage / std::f32::consts::PI).sqrt();
     if cu * cu + cv * cv < radius * radius { 1.0 } else { 0.0 }
@@ -121,8 +118,11 @@ pub fn rms_by_band(a: &[u8], b: &[u8], w: u32, h: u32) -> [f32; 4] {
 pub fn montage(images: &[&[u8]], w: u32, crop: (u32, u32, u32, u32), zoom: u32) -> image::RgbaImage {
     let (cx, cy, cw, ch) = crop;
     let gap = 8;
-    let mut out = image::RgbaImage::from_pixel((cw * zoom + gap) * images.len() as u32 - gap,
-                                               ch * zoom, image::Rgba([40, 40, 40, 255]));
+    let mut out = image::RgbaImage::from_pixel(
+        (cw * zoom + gap) * images.len() as u32 - gap,
+        ch * zoom,
+        image::Rgba([40, 40, 40, 255]),
+    );
     for (n, img) in images.iter().enumerate() {
         for y in 0..ch * zoom {
             for x in 0..cw * zoom {

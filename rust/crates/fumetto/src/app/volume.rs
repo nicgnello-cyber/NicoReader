@@ -44,11 +44,7 @@ impl App {
             .into_iter()
             .filter(|(path, _)| Some(path) != open.as_ref() && path.exists())
             .take(6)
-            .map(|(path, saved)| Recent {
-                title: fumetto_core::title_of(&path),
-                place: place(saved),
-                path,
-            })
+            .map(|(path, saved)| Recent { title: fumetto_core::title_of(&path), place: place(saved), path })
             .collect();
     }
 

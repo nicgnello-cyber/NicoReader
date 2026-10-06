@@ -33,7 +33,9 @@ impl ComicInfo {
         let text = decode_text(bytes)?;
         let root = text.find("<ComicInfo")?;
         let text = &text[root..];
-        let tag = |name: &str| element(text, name).map(|s| unescape(&s)).map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
+        let tag = |name: &str| {
+            element(text, name).map(|s| unescape(&s)).map(|s| s.trim().to_owned()).filter(|s| !s.is_empty())
+        };
         let mut authors: Vec<String> = Vec::new();
         for role in ["Writer", "Penciller", "Artist"] {
             for name in tag(role).iter().flat_map(|s| s.split(',')) {
@@ -78,7 +80,8 @@ impl ComicInfo {
     /// titolo.
     pub fn display_title(&self) -> Option<String> {
         let number = self.number.clone().or_else(|| self.volume.map(|v| format!("Vol. {v}")));
-        let title = self.title.as_deref().filter(|t| !self.series.as_deref().is_some_and(|s| t.eq_ignore_ascii_case(s)));
+        let title =
+            self.title.as_deref().filter(|t| !self.series.as_deref().is_some_and(|s| t.eq_ignore_ascii_case(s)));
         match (self.series.as_deref(), number, title) {
             (Some(s), Some(n), Some(t)) if has_number(t, n.trim_start_matches("Vol. ")) => Some(format!("{s}: {t}")),
             (Some(s), Some(n), Some(t)) => Some(format!("{s} {n}: {t}")),
@@ -266,8 +269,14 @@ mod tests {
         assert_eq!(info(Some("Berserk"), None, Some(3), None).display_title().as_deref(), Some("Berserk Vol. 3"));
         assert_eq!(info(Some("Saga"), None, None, None).display_title().as_deref(), Some("Saga"));
         assert_eq!(info(Some("Saga"), Some("1"), None, Some("Saga")).display_title().as_deref(), Some("Saga 1"));
-        assert_eq!(info(Some("Solo"), Some("12"), None, Some("Ch. 012 - Re")).display_title().as_deref(), Some("Solo: Ch. 012 - Re"));
-        assert_eq!(info(Some("Solo"), Some("12"), None, Some("Chapter 120")).display_title().as_deref(), Some("Solo 12: Chapter 120"));
+        assert_eq!(
+            info(Some("Solo"), Some("12"), None, Some("Ch. 012 - Re")).display_title().as_deref(),
+            Some("Solo: Ch. 012 - Re")
+        );
+        assert_eq!(
+            info(Some("Solo"), Some("12"), None, Some("Chapter 120")).display_title().as_deref(),
+            Some("Solo 12: Chapter 120")
+        );
         assert_eq!(info(Some("Saga"), None, None, Some("Uno")).display_title().as_deref(), Some("Saga: Uno"));
         assert_eq!(info(None, None, None, None).display_title(), None);
     }

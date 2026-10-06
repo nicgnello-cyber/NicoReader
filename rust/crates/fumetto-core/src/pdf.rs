@@ -125,8 +125,13 @@ fn candidates() -> Vec<PathBuf> {
 }
 
 fn load() -> Result<Api, String> {
-    let path = candidates().into_iter().find(|p| p.is_file())
-        .ok_or_else(|| format!("{} {LIB_NAME} {}", t("Per i PDF serve", "PDFs need"), t("accanto al programma.", "next to the program.")))?;
+    let path = candidates().into_iter().find(|p| p.is_file()).ok_or_else(|| {
+        format!(
+            "{} {LIB_NAME} {}",
+            t("Per i PDF serve", "PDFs need"),
+            t("accanto al programma.", "next to the program.")
+        )
+    })?;
     // SAFETY: e' pdfium, dalla nostra cartella; le firme vengono dai suoi
     // header (versione 156.0.8066) e i nomi sono quelli esportati.
     unsafe {
@@ -239,7 +244,12 @@ impl PdfDoc {
         unsafe {
             let page = (api.load_page)(self.handle, index as c_int);
             if page.is_null() {
-                return Err(Error::Pdf(format!("{} {} {}", t("pagina", "page"), index + 1, t("illeggibile", "unreadable"))));
+                return Err(Error::Pdf(format!(
+                    "{} {} {}",
+                    t("pagina", "page"),
+                    index + 1,
+                    t("illeggibile", "unreadable")
+                )));
             }
             let content = match scanned_image(&api, page, self.sizes[index]) {
                 Some(c) => Ok(c),
@@ -480,11 +490,16 @@ mod tests {
         let bytes = pdf(&[
             ("/Type /Catalog /Pages 2 0 R", None),
             ("/Type /Pages /Kids [3 0 R] /Count 1", None),
-            ("/Type /Page /Parent 2 0 R /MediaBox [0 0 40 60] \
-              /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R", None),
+            (
+                "/Type /Page /Parent 2 0 R /MediaBox [0 0 40 60] \
+              /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R",
+                None,
+            ),
             ("", Some(b"q 40 0 0 60 0 0 cm /Im0 Do Q")),
-            ("/Type /XObject /Subtype /Image /Width 4 /Height 6 /ColorSpace /DeviceRGB /BitsPerComponent 8",
-             Some(&rgb)),
+            (
+                "/Type /XObject /Subtype /Image /Width 4 /Height 6 /ColorSpace /DeviceRGB /BitsPerComponent 8",
+                Some(&rgb),
+            ),
         ]);
         let (book, path) = open("scansione", &bytes);
         let Content::Pixels(page) = book.content(0, Fit::Contain { width: 1000, height: 1000 }).unwrap() else {
@@ -518,11 +533,17 @@ mod tests {
         let bytes = pdf(&[
             ("/Type /Catalog /Pages 2 0 R", None),
             ("/Type /Pages /Kids [3 0 R] /Count 1", None),
-            ("/Type /Page /Parent 2 0 R /MediaBox [0 0 160 240] \
-              /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R", None),
+            (
+                "/Type /Page /Parent 2 0 R /MediaBox [0 0 160 240] \
+              /Resources << /XObject << /Im0 5 0 R >> >> /Contents 4 0 R",
+                None,
+            ),
             ("", Some(b"q 160 0 0 240 0 0 cm /Im0 Do Q")),
-            ("/Type /XObject /Subtype /Image /Width 16 /Height 24 /ColorSpace /DeviceRGB \
-              /BitsPerComponent 8 /Filter /DCTDecode", Some(&data)),
+            (
+                "/Type /XObject /Subtype /Image /Width 16 /Height 24 /ColorSpace /DeviceRGB \
+              /BitsPerComponent 8 /Filter /DCTDecode",
+                Some(&data),
+            ),
         ]);
         let (book, path) = open("jpeg", &bytes);
         let Content::Encoded(raw) = book.content(0, Fit::Width(100)).unwrap() else {

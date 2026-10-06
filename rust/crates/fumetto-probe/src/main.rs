@@ -54,7 +54,8 @@ fn main() {
         }
         ["webtoon", volume] => webtoon(Path::new(volume)),
         _ => Err("uso: fumetto-probe retino [cartella] | ridimensiona | disegna | scansione <cartella> \
-                  [--integrata]".into()),
+                  [--integrata]"
+            .into()),
     };
     if let Err(e) = result {
         eprintln!("{e}");
@@ -72,8 +73,14 @@ fn migliora(volume: &Path, page: usize, view: (u32, u32)) -> Result<(), String> 
     let dir = dirs_cache().join("NicoReader").join("upscaler");
     let target = Target::plain(Fit::Contain { width: view.0, height: view.1 });
     let before = decode_page(&book, page, target)?;
-    println!("pagina {}: {} x {}, mostrata a {:?}; vale la pena: {}", page + 1, before.native.0, before.native.1,
-             target.fit.size(before.native.0, before.native.1), upscale::worth(before.native, target));
+    println!(
+        "pagina {}: {} x {}, mostrata a {:?}; vale la pena: {}",
+        page + 1,
+        before.native.0,
+        before.native.1,
+        target.fit.size(before.native.0, before.native.1),
+        upscale::worth(before.native, target)
+    );
     let normal = to_screen(before, target);
     save(Path::new("migliora-prima.png"), &normal.rgba, normal.width, normal.height)?;
     let (tx, rx) = std::sync::mpsc::channel();
@@ -90,11 +97,18 @@ fn migliora(volume: &Path, page: usize, view: (u32, u32)) -> Result<(), String> 
     println!("migliorata in {:.1} s: {} x {}", t.elapsed().as_secs_f32(), page.width, page.height);
     // di nuovo, dalla memoria: cambiando zoom non si rifa'
     let t = Instant::now();
-    up.request(vec![Job { book: std::sync::Arc::new(fumetto_core::Book::open(volume).map_err(|e| e.to_string())?),
-                          generation: 1, index: got.index, target: Target::plain(Fit::Width(view.0)) }]);
+    up.request(vec![Job {
+        book: std::sync::Arc::new(fumetto_core::Book::open(volume).map_err(|e| e.to_string())?),
+        generation: 1,
+        index: got.index,
+        target: Target::plain(Fit::Width(view.0)),
+    }]);
     let again = rx.recv_timeout(std::time::Duration::from_secs(200)).map_err(|_| "nessuna risposta".to_string())?;
-    println!("a un'altra misura, dalla memoria, in {:.0} ms: {:?}", t.elapsed().as_secs_f32() * 1000.0,
-             again.page.map(|p| (p.width, p.height)));
+    println!(
+        "a un'altra misura, dalla memoria, in {:.0} ms: {:?}",
+        t.elapsed().as_secs_f32() * 1000.0,
+        again.page.map(|p| (p.width, p.height))
+    );
     save(Path::new("migliora-dopo.png"), &page.rgba, page.width, page.height)
 }
 
@@ -171,8 +185,10 @@ fn retino(out: PathBuf, power: wgpu::PowerPreference) -> Result<(), String> {
     let gpu_image = r.upload(&small)?;
     let drawn = r.render_to_rgba((ow, oh), &[exact(&gpu_image)], |_, _| {});
     let differ = drawn.iter().zip(&small.rgba).filter(|(a, b)| a != b).count();
-    println!("copia esatta sulla scheda video: {}",
-             if differ == 0 { "identica, pixel per pixel".to_string() } else { format!("{differ} VALORI DIVERSI") });
+    println!(
+        "copia esatta sulla scheda video: {}",
+        if differ == 0 { "identica, pixel per pixel".to_string() } else { format!("{differ} VALORI DIVERSI") }
+    );
 
     for (name, rgba) in &shots {
         save(&out.join(format!("retino-{name}.png")), rgba, ow, oh)?;
@@ -231,8 +247,10 @@ fn save(path: &Path, rgba: &[u8], w: u32, h: u32) -> Result<(), String> {
 fn prepara(volume: &Path, n: usize) -> Result<(), String> {
     let book = fumetto_core::Book::open(volume).map_err(|e| e.to_string())?;
     let fit = fumetto_core::Fit::Contain { width: 1920, height: 1080 };
-    println!("{:>5} {:>11} {:>8} {:>6} {:>9} {:>9} {:>11}", "pag.", "misura", "KB", "grigio",
-             "lettura", "decodif.", "rimpicciol.");
+    println!(
+        "{:>5} {:>11} {:>8} {:>6} {:>9} {:>9} {:>11}",
+        "pag.", "misura", "KB", "grigio", "lettura", "decodif.", "rimpicciol."
+    );
     for i in 0..n.min(book.len()) {
         let t = Instant::now();
         let content = book.content(i, fit).map_err(|e| e.to_string())?;
@@ -246,25 +264,36 @@ fn prepara(volume: &Path, n: usize) -> Result<(), String> {
         };
         let decode = t.elapsed().as_secs_f64() * 1000.0;
         // quanto e' lontana dal bianco e nero: la differenza massima fra i canali
-        let chroma = page.rgba.as_chunks::<4>().0.iter()
+        let chroma = page
+            .rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|p| p[0].abs_diff(p[1]).max(p[1].abs_diff(p[2])))
-            .max().unwrap_or(0);
+            .max()
+            .unwrap_or(0);
         let (w, h) = fit.size(page.width, page.height);
         let t = Instant::now();
         let _ = resize(&page, w, h, true);
         let small = t.elapsed().as_secs_f64() * 1000.0;
-        println!("{:>5} {:>11} {:>8} {:>6} {read:>6.1} ms {decode:>6.1} ms {small:>8.1} ms", i + 1,
-                 format!("{}x{}", page.width, page.height), kb,
-                 if chroma == 0 { "si'".to_string() } else { format!("~{chroma}") });
+        println!(
+            "{:>5} {:>11} {:>8} {:>6} {read:>6.1} ms {decode:>6.1} ms {small:>8.1} ms",
+            i + 1,
+            format!("{}x{}", page.width, page.height),
+            kb,
+            if chroma == 0 { "si'".to_string() } else { format!("~{chroma}") }
+        );
     }
     Ok(())
 }
 
 /// Rimpicciolire una pagina sul processore, su un solo thread.
 fn ridimensiona() -> Result<(), String> {
-    for (what, w, h, ow, oh) in [("tavola 3840x5400 -> 768x1080", 3840, 5400, 768, 1080),
-                                 ("tavola 1600x2400 -> 720x1080", 1600, 2400, 720, 1080),
-                                 ("striscia 800x20000 -> 540x13500", 800, 20_000, 540, 13_500)] {
+    for (what, w, h, ow, oh) in [
+        ("tavola 3840x5400 -> 768x1080", 3840, 5400, 768, 1080),
+        ("tavola 1600x2400 -> 720x1080", 1600, 2400, 720, 1080),
+        ("striscia 800x20000 -> 540x13500", 800, 20_000, 540, 13_500),
+    ] {
         let page = chart::tavola(w, h);
         for linear in [true, false] {
             let _ = resize(&page, ow, oh, linear);
@@ -331,8 +360,7 @@ fn disegna(power: wgpu::PowerPreference) -> Result<(), String> {
     let strip = r.upload(&chart::tavola(800, 12_000))?;
     let scenes: [(&str, Vec<Placement>); 2] = [
         ("pagina gia' alla misura (copia)", vec![at(&page, 600.0, 0.0, 720.0, 1080.0)]),
-        ("nastro webtoon ingrandito 1,44x (bicubico)",
-         vec![at(&strip, 384.0, -5000.3, 1152.0, 17_280.0)]),
+        ("nastro webtoon ingrandito 1,44x (bicubico)", vec![at(&strip, 384.0, -5000.3, 1152.0, 17_280.0)]),
     ];
     for (what, items) in &scenes {
         frame(items);

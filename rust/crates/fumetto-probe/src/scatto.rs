@@ -26,7 +26,9 @@ impl Pages for Ready {
     }
 }
 
-pub fn run(volume: &Path, out: &Path, size: (u32, u32), scale: f32, power: wgpu::PowerPreference) -> Result<(), String> {
+pub fn run(
+    volume: &Path, out: &Path, size: (u32, u32), scale: f32, power: wgpu::PowerPreference,
+) -> Result<(), String> {
     std::fs::create_dir_all(out).map_err(|e| e.to_string())?;
     let (gpu, renderer) = crate::gpu(power)?;
     let t = Instant::now();
@@ -50,8 +52,13 @@ pub fn run(volume: &Path, out: &Path, size: (u32, u32), scale: f32, power: wgpu:
     // `hud`: con la barra in alto (le pagine stanno sotto)
     // `st`: le impostazioni (regolazioni dell'immagine, lente); `lens`: dove
     // sta la lente, come frazione della finestra
-    let mut shot = |name: &str, hud: bool, st: &Settings, lens: Option<(f32, f32)>, mode: &dyn Fn(&mut Reader),
-                    dress: &dyn Fn(&mut Ui, &Context)| -> Result<(), String> {
+    let mut shot = |name: &str,
+                    hud: bool,
+                    st: &Settings,
+                    lens: Option<(f32, f32)>,
+                    mode: &dyn Fn(&mut Reader),
+                    dress: &dyn Fn(&mut Ui, &Context)|
+     -> Result<(), String> {
         let top = if hud { ui::hud_height(scale) } else { 0.0 };
         let mut reader = Reader::new(n, start);
         reader.set_view(w, h - top as u32);
@@ -62,7 +69,8 @@ pub fn run(volume: &Path, out: &Path, size: (u32, u32), scale: f32, power: wgpu:
             let (target, order) = reader.prefetch(&ready);
             loader.set_target(target);
             loader.request(&order);
-            let l = rx.recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            let l = rx
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
                 .map_err(|_| format!("{name}: le pagine non arrivano"))?;
             let page = l.page?;
             reader.known(l.index, l.native);
@@ -74,7 +82,9 @@ pub fn run(volume: &Path, out: &Path, size: (u32, u32), scale: f32, power: wgpu:
         }
         let placements: Vec<Placement> = items
             .iter()
-            .filter_map(|it| ready.0.get(&it.page).map(|(image, _)| Placement { image, x: it.x, y: it.y, w: it.w, h: it.h }))
+            .filter_map(|it| {
+                ready.0.get(&it.page).map(|(image, _)| Placement { image, x: it.x, y: it.y, w: it.w, h: it.h })
+            })
             .collect();
         let left = items.iter().map(|i| i.x).fold(f32::INFINITY, f32::min).max(0.0);
         let right = (view.0 - items.iter().map(|i| i.x + i.w).fold(0.0, f32::max)).max(0.0);
@@ -111,7 +121,9 @@ pub fn run(volume: &Path, out: &Path, size: (u32, u32), scale: f32, power: wgpu:
         let mut native = Vec::new();
         if let Some((cx, cy, r)) = ctx.lens {
             let m = st.lens_zoom;
-            for it in items.iter().filter(|it| it.x < cx + r && it.x + it.w > cx - r && it.y < cy + r && it.y + it.h > cy - r) {
+            for it in
+                items.iter().filter(|it| it.x < cx + r && it.x + it.w > cx - r && it.y < cy + r && it.y + it.h > cy - r)
+            {
                 let target = Target { fit: Fit::Contain { width: 8192, height: 1 << 16 }, ..reader.target() };
                 let page = to_screen(decode_page(&book, it.page, target)?, target);
                 native.push((renderer.upload(&page)?, cx + (it.x - cx) * m, cy + (it.y - cy) * m, it.w * m, it.h * m));
@@ -123,47 +135,87 @@ pub fn run(volume: &Path, out: &Path, size: (u32, u32), scale: f32, power: wgpu:
         let mut ui = Ui::new();
         dress(&mut ui, &ctx);
         let scene = ui.scene(&ctx, later, &mut overlay);
-        let rgba = renderer.render_to_rgba_with(size, &placements, Pass { adjust, ..Pass::PLAIN }, |encoder, target| {
-            if let Some(circle) = ctx.lens {
-                renderer.draw(encoder, target, OFFSCREEN_FORMAT, size, &lens_placements,
-                              Pass { clear: false, adjust, clip: Some(circle) });
-            }
-            if let Err(e) = overlay.draw(encoder, target, size, &scene) {
-                eprintln!("{name}: {e}");
-            }
-        });
+        let rgba =
+            renderer.render_to_rgba_with(size, &placements, Pass { adjust, ..Pass::PLAIN }, |encoder, target| {
+                if let Some(circle) = ctx.lens {
+                    renderer.draw(
+                        encoder,
+                        target,
+                        OFFSCREEN_FORMAT,
+                        size,
+                        &lens_placements,
+                        Pass { clear: false, adjust, clip: Some(circle) },
+                    );
+                }
+                if let Err(e) = overlay.draw(encoder, target, size, &scene) {
+                    eprintln!("{name}: {e}");
+                }
+            });
         crate::save(&out.join(format!("{name}.png")), &rgba, w, h)?;
         println!("{name}.png");
         Ok(())
     };
 
     let now = Instant::now();
-    shot("barra-doppia", true, &DEFAULTS, None, &|r| {
-        r.act(Action::ToggleDouble, now);
-    }, &|ui, ctx| {
-        // il mouse sopra "doppia pagina": si vede il suo nome
-        let x = ctx.view.0 - 350.0 * ctx.scale;
-        ui.motion(x, 20.0, ctx, now);
-        ui.toast("Doppia pagina", now);
-    })?;
-    shot("barra-zoom", true, &DEFAULTS, None, &|r| {
-        r.act(Action::ZoomTo(Zoom::Width), now);
-    }, &|ui, ctx| {
-        // un clic sulla percentuale: i livelli di zoom
-        let x = ctx.view.0 - 10.0 * ctx.scale - 36.0 * ctx.scale * 3.0 - 2.0 * ctx.scale - 17.0 * ctx.scale - 32.0 * ctx.scale;
-        ui.click(x, 20.0, ctx);
-        ui.key(Key::Down, ctx);
-        ui.key(Key::Down, ctx);
-    })?;
-    shot("lettura-doppia", false, &DEFAULTS, None, &|r| {
-        r.act(Action::ToggleDouble, now);
-    }, &|ui, _| {
-        ui.poke(now);
-        ui.toast("Doppia pagina", now);
-    })?;
-    shot("lettura-nastro", true, &DEFAULTS, None, &|r| {
-        r.act(Action::ToggleStrip, now);
-    }, &|ui, _| ui.poke(now))?;
+    shot(
+        "barra-doppia",
+        true,
+        &DEFAULTS,
+        None,
+        &|r| {
+            r.act(Action::ToggleDouble, now);
+        },
+        &|ui, ctx| {
+            // il mouse sopra "doppia pagina": si vede il suo nome
+            let x = ctx.view.0 - 350.0 * ctx.scale;
+            ui.motion(x, 20.0, ctx, now);
+            ui.toast("Doppia pagina", now);
+        },
+    )?;
+    shot(
+        "barra-zoom",
+        true,
+        &DEFAULTS,
+        None,
+        &|r| {
+            r.act(Action::ZoomTo(Zoom::Width), now);
+        },
+        &|ui, ctx| {
+            // un clic sulla percentuale: i livelli di zoom
+            let x = ctx.view.0
+                - 10.0 * ctx.scale
+                - 36.0 * ctx.scale * 3.0
+                - 2.0 * ctx.scale
+                - 17.0 * ctx.scale
+                - 32.0 * ctx.scale;
+            ui.click(x, 20.0, ctx);
+            ui.key(Key::Down, ctx);
+            ui.key(Key::Down, ctx);
+        },
+    )?;
+    shot(
+        "lettura-doppia",
+        false,
+        &DEFAULTS,
+        None,
+        &|r| {
+            r.act(Action::ToggleDouble, now);
+        },
+        &|ui, _| {
+            ui.poke(now);
+            ui.toast("Doppia pagina", now);
+        },
+    )?;
+    shot(
+        "lettura-nastro",
+        true,
+        &DEFAULTS,
+        None,
+        &|r| {
+            r.act(Action::ToggleStrip, now);
+        },
+        &|ui, _| ui.poke(now),
+    )?;
     // qualche segno: sulla pagina a schermo e piu' avanti
     let mark = |r: &mut Reader| {
         let (here, n) = (r.here(), r.pages());
@@ -207,8 +259,19 @@ pub fn run(volume: &Path, out: &Path, size: (u32, u32), scale: f32, power: wgpu:
     shot("lente", true, &DEFAULTS, Some((0.47, 0.42)), &|_| {}, &|_, _| {})?;
     miniature(&book, &renderer, &mut overlay, out, size, scale, start)?;
     // la galleria vuota: nessun volume
-    let ctx = Context { view, scale, book: None, recent: &recent, hud: true, fullscreen: false, shelf: None, thumbs: None,
-                        settings: &DEFAULTS, keys: Keymap::defaults(), lens: None };
+    let ctx = Context {
+        view,
+        scale,
+        book: None,
+        recent: &recent,
+        hud: true,
+        fullscreen: false,
+        shelf: None,
+        thumbs: None,
+        settings: &DEFAULTS,
+        keys: Keymap::defaults(),
+        lens: None,
+    };
     let mut ui = Ui::new();
     ui.key(Key::Down, &ctx);
     ui.key(Key::Down, &ctx);
@@ -224,14 +287,20 @@ pub fn run(volume: &Path, out: &Path, size: (u32, u32), scale: f32, power: wgpu:
 }
 
 /// Le miniature di tutte le pagine, preparate come le prepara l'app.
-fn miniature(book: &Arc<Book>, renderer: &fumetto_render::Renderer, overlay: &mut Overlay, out: &Path, size: (u32, u32),
-             scale: f32, here: usize) -> Result<(), String> {
+fn miniature(
+    book: &Arc<Book>, renderer: &fumetto_render::Renderer, overlay: &mut Overlay, out: &Path, size: (u32, u32),
+    scale: f32, here: usize,
+) -> Result<(), String> {
     let (w, h) = size;
     let view = (w as f32, h as f32);
     let marks = [here, here + 3, here + 11];
     // la forma tipica delle pagine: dalle prime, come la conoscerebbe l'app
     let dims: Vec<(u32, u32)> = book.sample_sizes(7).into_iter().map(|s| s.1).collect();
-    let ratio = if dims.is_empty() { 1.5 } else { dims.iter().map(|d| d.1 as f32 / d.0 as f32).sum::<f32>() / dims.len() as f32 };
+    let ratio = if dims.is_empty() {
+        1.5
+    } else {
+        dims.iter().map(|d| d.1 as f32 / d.0 as f32).sum::<f32>() / dims.len() as f32
+    };
     fn always(_: usize) -> bool {
         true
     }
@@ -263,8 +332,19 @@ fn miniature(book: &Arc<Book>, renderer: &fumetto_render::Renderer, overlay: &mu
             Some(Placement { image, x: (x + (cw - iw) / 2.0).round(), y: (y + ch - ih).round(), w: iw, h: ih })
         })
         .collect();
-    let ctx = Context { view, scale, book: None, recent: &[], hud: true, fullscreen: false, shelf: None,
-                        thumbs: Some(d), settings: &DEFAULTS, keys: Keymap::defaults(), lens: None };
+    let ctx = Context {
+        view,
+        scale,
+        book: None,
+        recent: &[],
+        hud: true,
+        fullscreen: false,
+        shelf: None,
+        thumbs: Some(d),
+        settings: &DEFAULTS,
+        keys: Keymap::defaults(),
+        lens: None,
+    };
     let mut ui = Ui::new();
     ui.thumbs.open(here);
     ui.key(Key::Right, &ctx);
@@ -291,7 +371,9 @@ fn neighbours(volume: &Path) -> Vec<Recent> {
     };
     // da soli in una cartella: i vicini della cartella
     let mut v = siblings(volume);
-    if v.len() < 3 && let Some(parent) = volume.parent() {
+    if v.len() < 3
+        && let Some(parent) = volume.parent()
+    {
         v.extend(siblings(parent));
     }
     v.into_iter()
@@ -306,7 +388,9 @@ fn neighbours(volume: &Path) -> Vec<Recent> {
 }
 
 /// La libreria vera di una cartella: copertine, serie, ricerca, menu.
-pub fn libreria(root: &Path, out: &Path, size: (u32, u32), scale: f32, power: wgpu::PowerPreference) -> Result<(), String> {
+pub fn libreria(
+    root: &Path, out: &Path, size: (u32, u32), scale: f32, power: wgpu::PowerPreference,
+) -> Result<(), String> {
     use fumetto::shelf::{Shelf, ShelfData};
     use fumetto_core::library::{self, Status};
     std::fs::create_dir_all(out).map_err(|e| e.to_string())?;
@@ -332,11 +416,29 @@ pub fn libreria(root: &Path, out: &Path, size: (u32, u32), scale: f32, power: wg
     let t = Instant::now();
 
     let mut shot = |name: &str, dress: &dyn Fn(&mut Ui, &Context)| -> Result<(), String> {
-        let d = ShelfData { entries: &entries, status: &status, read_at: &read_at, scanning: false, roots: &roots,
-                            covered: &|_| true, reading: false };
+        let d = ShelfData {
+            entries: &entries,
+            status: &status,
+            read_at: &read_at,
+            scanning: false,
+            roots: &roots,
+            covered: &|_| true,
+            reading: false,
+        };
         let mut ui = Ui::new();
-        let ctx = Context { view, scale, book: None, recent: &[], hud: true, fullscreen: false, shelf: Some(d), thumbs: None,
-                            settings: &DEFAULTS, keys: Keymap::defaults(), lens: None };
+        let ctx = Context {
+            view,
+            scale,
+            book: None,
+            recent: &[],
+            hud: true,
+            fullscreen: false,
+            shelf: Some(d),
+            thumbs: None,
+            settings: &DEFAULTS,
+            keys: Keymap::defaults(),
+            lens: None,
+        };
         dress(&mut ui, &ctx);
         let slots = ui.shelf.cover_slots(ctx.shelf.as_ref().unwrap(), view, scale);
         for (path, _, _, cw, ch, _) in slots.iter().filter(|s| s.5) {
@@ -352,14 +454,26 @@ pub fn libreria(root: &Path, out: &Path, size: (u32, u32), scale: f32, power: wg
             }
         }
         let covered = |p: &Path| covers.contains_key(p);
-        let d = ShelfData { covered: &covered, ..ShelfData { entries: &entries, status: &status, read_at: &read_at,
-                            scanning: false, roots: &roots, covered: &|_| true, reading: false } };
+        let d = ShelfData {
+            covered: &covered,
+            ..ShelfData {
+                entries: &entries,
+                status: &status,
+                read_at: &read_at,
+                scanning: false,
+                roots: &roots,
+                covered: &|_| true,
+                reading: false,
+            }
+        };
         let ctx = Context { shelf: Some(d), ..ctx };
         let scene = ui.scene(&ctx, Instant::now() + Duration::from_millis(700), &mut overlay);
         let placements: Vec<Placement> = slots
             .iter()
             .filter(|s| s.5)
-            .filter_map(|(p, x, y, cw, ch, _)| covers.get(p).map(|image| Placement { image, x: *x, y: *y, w: *cw, h: *ch }))
+            .filter_map(|(p, x, y, cw, ch, _)| {
+                covers.get(p).map(|image| Placement { image, x: *x, y: *y, w: *cw, h: *ch })
+            })
             .collect();
         let rgba = renderer.render_to_rgba(size, &placements, |encoder, target| {
             if let Err(e) = overlay.draw(encoder, target, size, &scene) {

@@ -48,7 +48,11 @@ pub enum Action {
     ToggleLinear,
     StripWider(f32),
     /// Ingrandisce di `factor` tenendo fermo il punto (x, y) della finestra.
-    Zoom { factor: f32, x: f32, y: f32 },
+    Zoom {
+        factor: f32,
+        x: f32,
+        y: f32,
+    },
     ZoomReset,
     /// Un passo di zoom al centro della finestra; nel nastro, la sua larghezza.
     ZoomIn,
@@ -546,10 +550,23 @@ impl Reader {
                     Err(at) => self.bookmarks.insert(at, here),
                 }
             }
-            Action::ToggleFullscreen | Action::Open | Action::OpenFolder | Action::Close | Action::AskPage
-            | Action::ToggleHud | Action::ToggleLibrary | Action::AddLibraryFolder | Action::Quit
-            | Action::ToggleThumbs | Action::ToggleSlideshow | Action::ToggleUpscale | Action::ToggleWebtoon
-            | Action::SavePage | Action::CopyPage | Action::ToggleLens | Action::ToggleSettings => {}
+            Action::ToggleFullscreen
+            | Action::Open
+            | Action::OpenFolder
+            | Action::Close
+            | Action::AskPage
+            | Action::ToggleHud
+            | Action::ToggleLibrary
+            | Action::AddLibraryFolder
+            | Action::Quit
+            | Action::ToggleThumbs
+            | Action::ToggleSlideshow
+            | Action::ToggleUpscale
+            | Action::ToggleWebtoon
+            | Action::SavePage
+            | Action::CopyPage
+            | Action::ToggleLens
+            | Action::ToggleSettings => {}
         }
         self.clamp_center();
         let turned = self.mode != Mode::Strip && (self.page, self.mode) != before && before.1 == self.mode;
@@ -709,11 +726,7 @@ impl Reader {
 
     fn paged_items(&self, start: usize) -> Vec<Item> {
         if self.mode == Mode::Single {
-            return self
-                .single_rect(start)
-                .map(|(x, y, w, h)| Item { page: start, x, y, w, h })
-                .into_iter()
-                .collect();
+            return self.single_rect(start).map(|(x, y, w, h)| Item { page: start, x, y, w, h }).into_iter().collect();
         }
         let (s, n) = self.group_of(start);
         let mut order: Vec<usize> = (s..s + n).collect();
@@ -729,7 +742,13 @@ impl Reader {
             .into_iter()
             .zip(sizes)
             .map(|(i, (w, h))| {
-                let item = Item { page: i, x: x as f32, y: (self.view.1.saturating_sub(h) / 2) as f32, w: w as f32, h: h as f32 };
+                let item = Item {
+                    page: i,
+                    x: x as f32,
+                    y: (self.view.1.saturating_sub(h) / 2) as f32,
+                    w: w as f32,
+                    h: h as f32,
+                };
                 x += w;
                 item
             })
@@ -857,7 +876,6 @@ impl Reader {
         self.native.get(i).copied().flatten()
     }
 
-
     /// Lo stato da ricordare per la prossima volta.
     pub fn snapshot(&self) -> Saved {
         let strip = self.strip_now();
@@ -911,8 +929,14 @@ impl Reader {
 
     /// Per la prova automatica, quando qualcosa si incastra.
     pub fn describe(&self, pages: &impl Pages) -> String {
-        format!("modo {:?}, pagina {}, nastro {:?}, scorrimento da fare {:.1} px, pronta {}",
-                self.mode, self.page + 1, self.strip_now(), self.glide, self.ready(pages))
+        format!(
+            "modo {:?}, pagina {}, nastro {:?}, scorrimento da fare {:.1} px, pronta {}",
+            self.mode,
+            self.page + 1,
+            self.strip_now(),
+            self.glide,
+            self.ready(pages)
+        )
     }
 }
 
@@ -1097,8 +1121,10 @@ mod tests {
         let (px, py) = (x + w * 0.45, y + h * 0.45);
         r.act(Action::Zoom { factor: 3.0, x: px, y: py }, now());
         let (x2, y2, w2, h2) = r.single_rect(0).unwrap();
-        assert!(((px - x2) / w2 - 0.45).abs() < 1e-3 && ((py - y2) / h2 - 0.45).abs() < 1e-3,
-                "il punto e' scivolato via");
+        assert!(
+            ((px - x2) / w2 - 0.45).abs() < 1e-3 && ((py - y2) / h2 - 0.45).abs() < 1e-3,
+            "il punto e' scivolato via"
+        );
         assert!(r.zoomed());
     }
 

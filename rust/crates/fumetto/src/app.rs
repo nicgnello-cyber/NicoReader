@@ -12,16 +12,16 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
-use fumetto_core::lingua::t;
-use fumetto_core::upscale::{self, Job, Upscaled, Upscaler};
-use fumetto_core::{Book, Content, Fit, Loaded, Loader, Page, Progress, Target};
-use fumetto::shelf::ShelfData;
 use fumetto::keys::{self, Bind, Combo, KeyContext, Keymap};
 use fumetto::prefs::Pref;
+use fumetto::shelf::ShelfData;
 use fumetto::thumbs::{Thumbs, ThumbsData};
 use fumetto::ui::{self, BookInfo, Command, Context, Handled, Recent, Ui};
 use fumetto_core::covers::{Cover, CoverLoader};
 use fumetto_core::library::{self, Entry, Status};
+use fumetto_core::lingua::t;
+use fumetto_core::upscale::{self, Job, Upscaled, Upscaler};
+use fumetto_core::{Book, Content, Fit, Loaded, Loader, Page, Progress, Target};
 use fumetto_core::{Saved, Settings};
 use fumetto_render::{Adjust, Estimate, Gpu, GpuImage, Measure, Overlay, Pass, Placement, Renderer, Scene, wgpu};
 use winit::application::ApplicationHandler;
@@ -34,10 +34,10 @@ use winit::window::{Fullscreen, Window, WindowId};
 use crate::cpu_view::{self, CpuView};
 use crate::dialog;
 use crate::gpu_start::{self, GpuStart};
-use fumetto::reader::{Action, Item, Mode, Pages, Reader, webtoon_width};
 use crate::script::{Script, Step};
 use crate::stats::Stats;
 use crate::system;
+use fumetto::reader::{Action, Item, Mode, Pages, Reader, webtoon_width};
 
 /// Il contesto dell'interfaccia per un tasto o un clic: senza le pagine a
 /// schermo (non servono) e, nella libreria, senza sapere delle copertine.
@@ -324,8 +324,10 @@ pub struct App {
 
 impl App {
     #[allow(clippy::too_many_arguments)]
-    pub fn new(proxy: EventLoopProxy<UserEvent>, progress: Progress, settings: Settings, settings_path: Option<PathBuf>,
-               covers_dir: PathBuf, upscaler_dir: PathBuf, started: Instant, script: Option<Script>) -> App {
+    pub fn new(
+        proxy: EventLoopProxy<UserEvent>, progress: Progress, settings: Settings, settings_path: Option<PathBuf>,
+        covers_dir: PathBuf, upscaler_dir: PathBuf, started: Instant, script: Option<Script>,
+    ) -> App {
         let thumb_loader = {
             let proxy = proxy.clone();
             Loader::new(2, move |loaded| {
@@ -359,8 +361,8 @@ impl App {
             }
         };
         // ponytail: variabile solo per le prove, la scelta vera arriva dalle misure
-        let threads = std::env::var("FUMETTO_THREADS").ok().and_then(|t| t.parse().ok())
-            .unwrap_or_else(Loader::default_threads);
+        let threads =
+            std::env::var("FUMETTO_THREADS").ok().and_then(|t| t.parse().ok()).unwrap_or_else(Loader::default_threads);
         let mut app = App {
             loader: Loader::new(threads, deliver),
             book: None,

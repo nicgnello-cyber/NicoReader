@@ -8,10 +8,7 @@ impl ApplicationHandler<UserEvent> for App {
         if self.window.is_some() {
             return;
         }
-        let attrs = Window::default_attributes()
-            .with_title("NicoReader")
-            .with_maximized(true)
-            .with_visible(false);
+        let attrs = Window::default_attributes().with_title("NicoReader").with_maximized(true).with_visible(false);
         // su Linux il nome con cui il desktop trova nicoreader.desktop, e con lui
         // icona e nome: su Wayland senza non c'e' (su X11 sarebbe il nome
         // dell'eseguibile, qui uguale)
@@ -19,7 +16,9 @@ impl ApplicationHandler<UserEvent> for App {
         let attrs = winit::platform::wayland::WindowAttributesExtWayland::with_name(attrs, "nicoreader", "nicoreader");
         let window = match event_loop.create_window(attrs) {
             Ok(w) => Arc::new(w),
-            Err(e) => crate::fatal(&format!("{}\n\n{e}", t("Impossibile creare la finestra.", "Can't create the window."))),
+            Err(e) => {
+                crate::fatal(&format!("{}\n\n{e}", t("Impossibile creare la finestra.", "Can't create the window.")))
+            }
         };
         #[cfg(windows)]
         set_icons(&window);
@@ -93,7 +92,10 @@ impl ApplicationHandler<UserEvent> for App {
                         self.ui.toast(t("Spostato nel cestino", "Moved to the trash"), Instant::now());
                         self.rescan();
                     }
-                    Err(e) => self.notify(format!("{}\n\n{e}", t("Impossibile spostarlo nel cestino.", "Can't move it to the trash."))),
+                    Err(e) => self.notify(format!(
+                        "{}\n\n{e}",
+                        t("Impossibile spostarlo nel cestino.", "Can't move it to the trash.")
+                    )),
                 }
             }
             UserEvent::Scanned(roots, entries) => {
@@ -189,7 +191,8 @@ impl ApplicationHandler<UserEvent> for App {
                             let _ = proxy.send_event(UserEvent::Installed(upscale::install(&dir)));
                         })
                         .expect("thread dello scaricamento");
-                    self.ui.toast(t("Scarico l'ingranditore\u{2026}", "Downloading the enhancer\u{2026}"), Instant::now());
+                    self.ui
+                        .toast(t("Scarico l'ingranditore\u{2026}", "Downloading the enhancer\u{2026}"), Instant::now());
                     self.request_redraw();
                 }
             }
@@ -197,8 +200,10 @@ impl ApplicationHandler<UserEvent> for App {
                 self.installing = false;
                 match result {
                     Ok(()) => self.upscale_ready(),
-                    Err(e) => self.notify(format!("{}\n\n{e}",
-                        t("Non sono riuscito a scaricare l'ingranditore.", "Couldn't download the enhancer."))),
+                    Err(e) => self.notify(format!(
+                        "{}\n\n{e}",
+                        t("Non sono riuscito a scaricare l'ingranditore.", "Couldn't download the enhancer.")
+                    )),
                 }
             }
             UserEvent::SaveTo(path) => {
@@ -262,7 +267,8 @@ impl ApplicationHandler<UserEvent> for App {
                 }
                 // prima l'interfaccia: con un menu aperto o nella galleria
                 // vuota le frecce e Invio sono sue
-                let command = if cfg!(target_os = "macos") { self.modifiers.super_key() } else { self.modifiers.control_key() };
+                let command =
+                    if cfg!(target_os = "macos") { self.modifiers.super_key() } else { self.modifiers.control_key() };
                 if !command && (self.ui.modal() || self.reader.is_none() || self.shelf_shown() || self.thumbs_shown()) {
                     let ctx = input_context!(self);
                     let handled = ui_key(&event.logical_key).map_or(Handled::No, |k| self.ui.key(k, &ctx));
@@ -390,7 +396,9 @@ impl ApplicationHandler<UserEvent> for App {
                 self.request_redraw();
             }
             WindowEvent::DroppedFile(path) => self.open(&path),
-            WindowEvent::Focused(on) => self.stats.note(if on { "finestra in primo piano" } else { "finestra sullo sfondo" }),
+            WindowEvent::Focused(on) => {
+                self.stats.note(if on { "finestra in primo piano" } else { "finestra sullo sfondo" })
+            }
             _ => {}
         }
     }

@@ -65,11 +65,8 @@ fn main() {
     // la prova automatica non tocca i progressi veri, ne' li usa (a meno di
     // darle una cartella tutta sua con FUMETTO_DATI)
     let own_dir = std::env::var_os("FUMETTO_DATI").is_some();
-    let progress = if prova && !own_dir {
-        Progress::in_memory()
-    } else {
-        Progress::load(data_dir().join("progressi.json"))
-    };
+    let progress =
+        if prova && !own_dir { Progress::in_memory() } else { Progress::load(data_dir().join("progressi.json")) };
     let volume = asked.clone().or_else(|| if prova { None } else { resume(&progress) });
     // la prima volta la galleria e' vuota: si chiede subito cosa aprire.
     // Dopo, la galleria mostra gli ultimi letti e si sceglie da li'
@@ -82,8 +79,16 @@ fn main() {
         settings.webtoon = false;
     }
     let script = prova.then(script::Script::new);
-    let mut app = app::App::new(event_loop.create_proxy(), progress, settings, settings_path, cache_dir(),
-                                upscaler_dir(), started, script);
+    let mut app = app::App::new(
+        event_loop.create_proxy(),
+        progress,
+        settings,
+        settings_path,
+        cache_dir(),
+        upscaler_dir(),
+        started,
+        script,
+    );
     if let Some(text) = crash::last_crash(&data_dir()).filter(|_| !prova) {
         app.notify(text);
     }
@@ -185,10 +190,6 @@ fn attach_console() {}
 /// blocca dentro il ciclo degli eventi e' sicuro solo cosi' (vedi `dialog`).
 pub fn fatal(text: &str) -> ! {
     eprintln!("{text}");
-    rfd::MessageDialog::new()
-        .set_level(rfd::MessageLevel::Error)
-        .set_title("NicoReader")
-        .set_description(text)
-        .show();
+    rfd::MessageDialog::new().set_level(rfd::MessageLevel::Error).set_title("NicoReader").set_description(text).show();
     std::process::exit(1);
 }
