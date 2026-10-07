@@ -652,8 +652,8 @@ Il capitolo 7 ne tiene la memoria e i numeri.
        non le date (Kavita non dice il fuso), ma l'ultimo valore visto sul
        server per ogni volume (server-letture.json accanto ai progressi).
        Uguale: vale il locale, e lo si manda; diverso: qualcuno ha letto
-       altrove, vale il suo (non per il volume aperto). Scrittura al massimo ogni 3 s dopo
-       l'ultimo giro di pagina, e alla chiusura.
+       altrove, vale il suo (non per il volume aperto). Si scrive al
+       server al massimo ogni 3 s mentre si sfoglia, e alla chiusura.
      - Senza rete (remote\offline.rs): "Scarica per leggere senza rete" nel
        menu del volume; il file intero (il collegamento acquisition del
        catalogo) va in <dati>\scaricati, con il nome dall'indirizzo delle
