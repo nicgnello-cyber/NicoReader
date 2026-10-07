@@ -128,6 +128,8 @@ pub enum UserEvent {
     /// Un volume di un server aperto in sottofondo; `true`: se non si apre,
     /// non lo si dice (era la ripresa all'avvio).
     Opened(PathBuf, Box<Result<Book, fumetto_core::Error>>, bool),
+    /// Un volume di un server scaricato (o l'errore).
+    Downloaded(PathBuf, Result<(), String>),
     /// La prova del collegamento a un server: quanti volumi ha, o l'errore.
     ServerChecked(Server, Result<usize, String>),
     /// Una copertina pronta.
@@ -157,6 +159,8 @@ pub struct Scan {
     /// I volumi dei server: `None` se non li si e' ancora letti (arrivano
     /// dopo, con una seconda Scan).
     remote: Option<Vec<Entry>>,
+    /// Dove si e' arrivati secondo ogni server, e quando lo si e' chiesto.
+    reads: Vec<(Vec<remote::sync::Read>, Instant)>,
     /// I server che non hanno risposto, con il perche'.
     failed: Vec<String>,
 }
@@ -168,6 +172,8 @@ struct Lib {
     entries: Vec<Entry>,
     /// I volumi dei server, a parte: le cartelle si rileggono prima.
     remote: Vec<Entry>,
+    /// Quali volumi dei server sono scaricati (si leggono senza rete).
+    offline: Vec<bool>,
     status: Vec<Status>,
     read_at: Vec<u64>,
     scanning: bool,
@@ -354,6 +360,12 @@ impl App {
     ) -> App {
         // nome e password per le pagine dei server, prima di aprire qualsiasi volume
         remote::set_servers(&settings.servers);
+        // i punti di lettura visti sui server e i volumi scaricati: accanto ai
+        // progressi (la prova automatica, senza cartella sua, non ne ha)
+        if let Some(data) = settings_path.as_deref().and_then(Path::parent) {
+            remote::sync::set_file(data.join("server-letture.json"));
+            remote::offline::set_folders(data.to_owned(), covers_dir.parent().unwrap_or(&covers_dir).to_owned());
+        }
         let thumb_loader = {
             let proxy = proxy.clone();
             Loader::new(2, move |loaded| {

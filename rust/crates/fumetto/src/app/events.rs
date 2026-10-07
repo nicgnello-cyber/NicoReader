@@ -58,6 +58,7 @@ impl ApplicationHandler<UserEvent> for App {
     // senza tornare da run_app: il punto di lettura si salva qui
     fn exiting(&mut self, _: &ActiveEventLoop) {
         self.save_progress();
+        remote::sync::flush();
     }
 
     fn user_event(&mut self, _: &ActiveEventLoop, event: UserEvent) {
@@ -101,6 +102,7 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::Scanned(scan) => self.scanned(*scan),
             UserEvent::ServerChecked(server, found) => self.server_checked(server, found),
             UserEvent::Opened(path, book, quiet) => self.opened(&path, *book, quiet),
+            UserEvent::Downloaded(path, result) => self.downloaded(&path, result),
             UserEvent::Cover(c) => match (&self.gfx, c.page) {
                 (Some(gfx), Ok(page)) => {
                     if let Ok(image) = gfx.renderer.upload(&page) {

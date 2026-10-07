@@ -1,5 +1,5 @@
 NICOREADER (prima: Fumetto) - lettore di fumetti, manga e webtoon
-Stato del progetto al 27 settembre 2026
+Stato del progetto al 7 ottobre 2026 (versione 0.3.0)
 =====================================================================
 
 Dal 27 settembre il programma si chiama NicoReader e il progetto e'
@@ -641,8 +641,31 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      collegamento, e il server entra solo se risponde con dei volumi).
      Provato su Komga 1.x e Kavita veri (in locale): libreria, copertine,
      lettura, progressi, ripresa, password sbagliata, server spento.
-     Da fare, se serve: il punto di lettura mandato anche al server
-     (Komga e Kavita hanno le loro API), la ricerca sul server.
+     Dopo (7 ottobre, versione 0.3.0):
+     - Punto di lettura condiviso (remote\sync.rs). Si legge da
+       pse:lastRead nel catalogo; si scrive con l'API di Komga (PATCH
+       read-progress, pagine da 1, "completed") e, per Kavita, chiedendo
+       dal catalogo la pagina a cui si e' (lui la segna; da 0, il numero di
+       pagine vuol dire finito). Le pagine di Kavita si leggono invece da
+       /api/reader/image con la chiave: non toccano il punto di lettura
+       (lettura anticipata e miniature lo sposterebbero). Chi ha ragione:
+       non le date (Kavita non dice il fuso), ma l'ultimo valore visto sul
+       server per ogni volume (server-letture.json accanto ai progressi).
+       Uguale: vale il locale, e lo si manda; diverso: qualcuno ha letto
+       altrove, vale il suo (non per il volume aperto). Si scrive al
+       server al massimo ogni 3 s mentre si sfoglia, e alla chiusura.
+     - Senza rete (remote\offline.rs): "Scarica per leggere senza rete" nel
+       menu del volume; il file intero (il collegamento acquisition del
+       catalogo) va in <dati>\scaricati, con il nome dall'indirizzo delle
+       pagine; aprendo il volume, se la copia c'e' si legge quella. Il
+       catalogo si tiene nella cache (server-<hash>.json): server spento, la
+       libreria mostra i volumi dell'ultima volta.
+     - Password nel portachiavi (keychain.rs, crate keyring 3): Gestione
+       credenziali su Windows (provato sotto wine), Portachiavi su macOS. Se
+       il portachiavi non la prende resta nel file; su Linux resta nel file,
+       che ha permessi 0600.
+     Da fare, se serve: la ricerca sul server, le raccolte e le liste di
+     lettura di Komga/Kavita.
   5. Il peso dell'eseguibile: da 15,3 a 20,7 MB con AVIF, JPEG XL e appunti
      (vedi 5, Tecnici).
   6. Distribuzione (capitolo 5).

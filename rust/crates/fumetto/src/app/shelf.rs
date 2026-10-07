@@ -32,7 +32,7 @@ impl App {
             .name("libreria".into())
             .spawn(move || {
                 let local = library::scan_cached(&roots, &cache);
-                let mut scan = Scan { roots, servers, local, remote: None, failed: Vec::new() };
+                let mut scan = Scan { roots, servers, local, remote: None, reads: Vec::new(), failed: Vec::new() };
                 if scan.servers.is_empty() {
                     scan.remote = Some(Vec::new());
                     let _ = proxy.send_event(UserEvent::Scanned(Box::new(scan)));
@@ -43,13 +43,21 @@ impl App {
                     servers: scan.servers.clone(),
                     local: scan.local.clone(),
                     remote: None,
+                    reads: Vec::new(),
                     failed: Vec::new(),
                 };
                 let _ = proxy.send_event(UserEvent::Scanned(Box::new(first)));
                 let mut remote = Vec::new();
                 for s in &scan.servers {
                     match remote::volumes(s) {
-                        Ok(found) => remote.extend(found),
+                        Ok(catalog) => {
+                            // senza rete: i volumi dell'ultima volta (gli scaricati si leggono)
+                            if let Some(e) = &catalog.stale {
+                                scan.failed.push(format!("{}: {e}", remote::shown(&s.url)));
+                            }
+                            remote.extend(catalog.entries);
+                            scan.reads.push((catalog.reads, catalog.fetched));
+                        }
                         Err(e) => scan.failed.push(format!("{}: {e}", remote::shown(&s.url))),
                     }
                 }
@@ -70,6 +78,15 @@ impl App {
             self.lib.remote = remote;
             self.lib.scanning = false;
         }
+        // dove si e' arrivati letto altrove (sul telefono, nel browser)
+        let open = self.book.as_ref().map(|b| b.path.clone());
+        let mut moved = false;
+        for (reads, fetched) in &scan.reads {
+            moved |= remote::sync::incoming(reads, *fetched, &mut self.progress, open.as_deref());
+        }
+        if moved {
+            self.refresh_recent();
+        }
         let mut entries = scan.local;
         entries.extend(self.lib.remote.iter().cloned());
         entries.sort_by(|a, b| fumetto_core::natural_cmp(&a.title, &b.title).then_with(|| a.path.cmp(&b.path)));
@@ -82,6 +99,62 @@ impl App {
         self.changed();
     }
 
+    /// Scarica un volume del server, in sottofondo.
+    pub(super) fn download(&mut self, path: PathBuf) {
+        let title = fumetto_core::title_of(&path);
+        let note = if fumetto_core::lingua::italian() {
+            format!("Scarico \u{ab}{title}\u{bb}\u{2026}")
+        } else {
+            format!("Downloading \u{201c}{title}\u{201d}\u{2026}")
+        };
+        self.ui.toast(note, Instant::now());
+        let proxy = self.proxy.clone();
+        std::thread::Builder::new()
+            .name("scaricamento".into())
+            .spawn(move || {
+                let result = remote::offline::download(&path).map(|_| ());
+                let _ = proxy.send_event(UserEvent::Downloaded(path, result));
+            })
+            .expect("thread dello scaricamento");
+        self.changed();
+    }
+
+    pub(super) fn downloaded(&mut self, path: &Path, result: Result<(), String>) {
+        let title = fumetto_core::title_of(path);
+        match result {
+            Ok(()) => {
+                let note = if fumetto_core::lingua::italian() {
+                    format!("\u{ab}{title}\u{bb} si legge anche senza rete")
+                } else {
+                    format!("\u{201c}{title}\u{201d} can now be read offline")
+                };
+                self.ui.toast(note, Instant::now());
+                self.refresh_shelf();
+            }
+            Err(e) => {
+                let head = t("Impossibile scaricare", "Can't download");
+                self.notify(format!("{head} \u{ab}{title}\u{bb}.\n\n{e}"));
+            }
+        }
+        self.changed();
+    }
+
+    /// Toglie la copia scaricata (il volume resta nella libreria, dal server).
+    pub(super) fn forget_download(&mut self, path: &Path) {
+        // aperto, il file e' in uso (e Windows non lo lascia cancellare)
+        if self.book.as_ref().is_some_and(|b| b.path == path) {
+            self.close_book();
+        }
+        match remote::offline::forget(path) {
+            Ok(()) => {
+                self.ui.toast(t("Copia scaricata tolta", "Downloaded copy removed"), Instant::now());
+                self.refresh_shelf();
+            }
+            Err(e) => self.notify(format!("{}\n\n{e}", t("Impossibile togliere la copia.", "Can't remove the copy."))),
+        }
+        self.changed();
+    }
+
     /// Prova il collegamento a un server, in sottofondo: entra nella
     /// libreria solo se risponde e ha dei volumi.
     pub(super) fn check_server(&mut self, server: Server) {
@@ -89,7 +162,11 @@ impl App {
         std::thread::Builder::new()
             .name("server".into())
             .spawn(move || {
-                let found = remote::volumes(&server).map(|v| v.len());
+                // l'elenco dell'ultima volta non vale: deve rispondere adesso
+                let found = remote::volumes(&server).and_then(|c| match c.stale {
+                    Some(e) => Err(e),
+                    None => Ok(c.entries.len()),
+                });
                 let _ = proxy.send_event(UserEvent::ServerChecked(server, found));
             })
             .expect("thread del server");
@@ -134,6 +211,8 @@ impl App {
         let progress = &self.progress;
         self.lib.status = self.lib.entries.iter().map(|e| Status::of(progress, &e.path)).collect();
         self.lib.read_at = self.lib.entries.iter().map(|e| progress.get(&e.path).map_or(0, |s| s.read_at)).collect();
+        let downloads = remote::offline::downloads();
+        self.lib.offline = self.lib.entries.iter().map(|e| downloads.has(&e.path)).collect();
     }
 }
 
@@ -144,6 +223,7 @@ pub(super) fn shelf_data<'a>(
     ShelfData {
         entries: &lib.entries,
         status: &lib.status,
+        offline: &lib.offline,
         read_at: &lib.read_at,
         scanning: lib.scanning,
         roots,

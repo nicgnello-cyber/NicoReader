@@ -37,6 +37,12 @@ unrar = "0.5.8"
 # solo lettura, solo deflate: nei CBZ non si trova altro
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
+# le password dei server nel portachiavi del sistema: Gestione credenziali di
+# Windows, Portachiavi di macOS. Su Linux il servizio dei segreti non c'e'
+# sempre: la password resta nelle impostazioni, leggibili solo da chi le ha
+[target.'cfg(any(windows, target_os = "macos"))'.dependencies]
+keyring = { version = "3.6", default-features = false, features = ["apple-native", "windows-native"] }
+
 # AV1 per le pagine AVIF: dav1d riscritto in Rust, con le sue routine SIMD
 # (in assembly, servono nasm per compilarle); solo la decodifica a 8 e 10 bit
 [target.'cfg(not(target_arch = "aarch64"))'.dependencies]

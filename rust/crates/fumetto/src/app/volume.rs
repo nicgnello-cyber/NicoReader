@@ -262,6 +262,8 @@ fn keep_position(progress: &mut Progress, marked: &mut Option<(PathBuf, Saved)>,
         }
         *marked = None;
     }
+    // un volume di un server: anche lui sapra' dove si e' arrivati
+    remote::sync::report(path, now.page, now.pages);
     progress.set(path, now);
 }
 

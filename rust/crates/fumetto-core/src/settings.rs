@@ -71,15 +71,39 @@ impl Default for Settings {
 
 impl Settings {
     pub fn load(path: &PathBuf) -> Settings {
-        std::fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+        let mut s: Settings =
+            std::fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
+        // le password dei server stanno nel portachiavi (vedi keychain)
+        for server in &mut s.servers {
+            if server.password.is_empty()
+                && !server.user.is_empty()
+                && let Some(password) = crate::keychain::load(&server.url, &server.user)
+            {
+                server.password = password;
+            }
+        }
+        s
     }
 
     pub fn save(&self, path: &PathBuf) -> io::Result<()> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
+        // nel file le password che il portachiavi non ha preso, e basta
+        let mut written = self.clone();
+        for server in &mut written.servers {
+            if !server.password.is_empty() && crate::keychain::store(&server.url, &server.user, &server.password) {
+                server.password.clear();
+            }
+        }
         let tmp = path.with_extension("tmp");
-        std::fs::write(&tmp, serde_json::to_vec_pretty(self).map_err(io::Error::other)?)?;
+        std::fs::write(&tmp, serde_json::to_vec_pretty(&written).map_err(io::Error::other)?)?;
+        // con una password dentro, il file e' solo di chi lo possiede
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
+        }
         std::fs::rename(&tmp, path)
     }
 }

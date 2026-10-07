@@ -223,6 +223,7 @@ impl App {
                 match pages {
                     Some(n) => {
                         self.progress.mark(&path, read, n);
+                        remote::sync::report_mark(&path, read);
                         // il volume aperto: da qui il lettore non lo riscrive, finche' non ci si muove
                         let same = |a: &Path| fumetto_core::absolute(a) == fumetto_core::absolute(&path);
                         if let (Some(book), Some(reader)) = (&self.book, &self.reader)
@@ -278,6 +279,10 @@ impl App {
             // quelli interni li ha gia' fatti l'interfaccia
             Command::AddServer(server) => self.check_server(server),
             Command::RemoveServer(url) => {
+                // la sua password esce anche dal portachiavi
+                for s in self.settings.servers.iter().filter(|s| s.url == url && !s.user.is_empty()) {
+                    fumetto_core::keychain::delete(&s.url, &s.user);
+                }
                 self.settings.servers.retain(|s| s.url != url);
                 remote::set_servers(&self.settings.servers);
                 self.save_settings();
@@ -285,6 +290,8 @@ impl App {
                 self.ui.toast(t("Server tolto dalla libreria", "Server removed from the library"), now);
                 self.changed();
             }
+            Command::Download(path) => self.download(path),
+            Command::ForgetDownload(path) => self.forget_download(&path),
             Command::Series(_) | Command::FoldersMenu(..) | Command::AskServer => {}
         }
         self.request_redraw();

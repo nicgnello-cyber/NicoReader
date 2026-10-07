@@ -72,11 +72,20 @@ con nome e password; per Kavita il link OPDS che c'è nelle impostazioni
 dell'utente (dentro c'è la chiave, la password non serve). Il server entra
 nella libreria solo se risponde; serie e volumi compaiono accanto a quelli
 dei file, e le pagine si chiedono una alla volta (lo "streaming" delle
-pagine di OPDS): il volume si apre subito. Il punto di lettura resta su
-questo computer, come per i file. Nome e password stanno in
-`impostazioni.json`, nella cartella dei dati di NicoReader, come le altre
-impostazioni, e curl li riceve dallo standard input, mai dalla riga di
-comando.
+pagine di OPDS): il volume si apre subito.
+
+Il punto di lettura è lo stesso del server: si legge un capitolo sul
+telefono con l'app di Komga o Kavita e NicoReader riparte da lì, e
+viceversa. Per leggere fuori casa: tasto destro su un volume → Scarica per
+leggere senza rete. Nella libreria compare "scaricato", e si apre anche se
+il server non si raggiunge (la libreria continua a mostrare i volumi del
+server com'erano l'ultima volta). Quello che si legge senza rete arriva al
+server appena risponde.
+
+Su Windows e macOS la password va nel portachiavi del sistema (Gestione
+credenziali, Portachiavi), non nel file delle impostazioni; su Linux resta
+in `impostazioni.json`, leggibile solo da te. In ogni caso curl la riceve
+dallo standard input, mai dalla riga di comando.
 
 Una volta al giorno NicoReader chiede a GitHub qual è l'ultima versione (non
 manda nient'altro); se ne è uscita una nuova, propone di aprirne la pagina,
@@ -120,13 +129,13 @@ e per le pull request che toccano il codice.
 
 Una nuova versione, con i link di "Scarica" che la seguono da soli: si alza
 `version` in `rust/Cargo.toml`, e dopo il merge si crea il tag, dal sito di
-GitHub (Releases -> Draft a new release -> tag `v0.2.0`, "create on publish"
+GitHub (Releases -> Draft a new release -> tag `v0.3.0`, "create on publish"
 -> Publish release) oppure con
 
-    git tag v0.2.0
-    git push origin v0.2.0
+    git tag v0.3.0
+    git push origin v0.3.0
 
-Actions fa i pacchetti di tutti i sistemi e li pubblica nella Release `v0.2.0`,
+Actions fa i pacchetti di tutti i sistemi e li pubblica nella Release `v0.3.0`,
 con i nomi senza versione dei link (se il tag non e' la versione di
 Cargo.toml si ferma), e con le note di `.github/note-release.md` se la
 Release non ne ha. Per riscrivere solo le note della versione attuale: Run

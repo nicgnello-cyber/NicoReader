@@ -33,6 +33,8 @@ pub struct ShelfData<'a> {
     /// Allineati con `entries`: dove si e' arrivati, e quando.
     pub status: &'a [Status],
     pub read_at: &'a [u64],
+    /// Scaricato dal server: si legge anche senza rete (puo' essere vuoto).
+    pub offline: &'a [bool],
     /// La scansione delle cartelle e' in corso.
     pub scanning: bool,
     pub roots: &'a [PathBuf],
@@ -553,8 +555,18 @@ impl Shelf {
                         cmd: Command::MarkRead(path.clone(), false),
                     });
                 }
-                // un volume su un server non ha cartella ne' cestino
+                // un volume su un server non ha cartella ne' cestino: si puo'
+                // scaricare per leggerlo senza rete
                 if remote::is_remote(&path) {
+                    let (label, cmd) = if remote::offline::downloaded(&path).is_some() {
+                        (t("Togli la copia scaricata", "Remove the downloaded copy"), Command::ForgetDownload(path))
+                    } else if remote::offline::can_download(&path) {
+                        (t("Scarica per leggere senza rete", "Download to read offline"), Command::Download(path))
+                    } else {
+                        return rows;
+                    };
+                    rows.push(ui::Row::Sep);
+                    rows.push(ui::Row::Item { label, key: String::new(), on: false, cmd });
                     return rows;
                 }
                 rows.push(ui::Row::Sep);
@@ -683,7 +695,16 @@ impl Shelf {
                 _ => {}
             }
             let (title, meta) = match &p.tile {
-                Tile::Volume(i) => (d.entries[*i].title.clone(), meta_of(d.status[*i])),
+                Tile::Volume(i) => {
+                    let meta = meta_of(d.status[*i]);
+                    // scaricato: si legge anche senza rete
+                    let meta = if d.offline.get(*i) == Some(&true) {
+                        format!("{meta} \u{b7} {}", t("scaricato", "downloaded"))
+                    } else {
+                        meta
+                    };
+                    (d.entries[*i].title.clone(), meta)
+                }
                 Tile::Series { name, count, done, .. } => (
                     name.clone(),
                     if italian() {
@@ -864,7 +885,16 @@ mod tests {
     }
 
     fn data<'a>(entries: &'a [Entry], status: &'a [Status], read_at: &'a [u64]) -> ShelfData<'a> {
-        ShelfData { entries, status, read_at, scanning: false, roots: &[], covered: &|_| true, reading: false }
+        ShelfData {
+            entries,
+            status,
+            read_at,
+            offline: &[],
+            scanning: false,
+            roots: &[],
+            covered: &|_| true,
+            reading: false,
+        }
     }
 
     fn library() -> (Vec<Entry>, Vec<Status>, Vec<u64>) {
