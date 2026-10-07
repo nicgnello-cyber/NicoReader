@@ -13,12 +13,13 @@ mod loader;
 mod natural;
 mod pdf;
 mod progress;
+pub mod remote;
 mod resize;
 mod settings;
 pub mod update;
 pub mod upscale;
 
-pub use book::{Book, Content, Error, is_image, read_info, title_of};
+pub use book::{Book, Content, Error, absolute, exists, is_image, read_info, title_of};
 pub use decode::{DecodeError, MAX_PIXELS, Page, decode, dimensions};
 pub use loader::{Decoded, Fit, Loaded, Loader, Target, decode_page, prefetch_order, to_screen};
 pub use natural::natural_cmp;

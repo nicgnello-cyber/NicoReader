@@ -141,7 +141,8 @@ impl App {
             .filter(|_| !book.path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf")))
             .unwrap_or_else(|| "png".into());
         let name = format!("{} - {} {:03}.{ext}", book.title, t("pagina", "page"), index + 1);
-        let near = std::path::absolute(&book.path).ok();
+        // di un volume su un server non c'e' una cartella da proporre
+        let near = (!book.is_remote()).then(|| fumetto_core::absolute(&book.path));
         dialog::save(window, name, near.as_deref().and_then(Path::parent), self.proxy.clone());
         self.to_save = Some((book.clone(), index));
         self.dialog = true;

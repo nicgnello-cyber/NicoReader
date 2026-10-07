@@ -16,6 +16,7 @@ use crate::lingua::t;
 use crate::loader::Fit;
 use crate::natural::natural_cmp;
 use crate::pdf::PdfDoc;
+use crate::remote::{self, Volume};
 
 const IMAGE_EXT: &[&str] = &["jpg", "jpeg", "jpe", "jfif", "png", "gif", "bmp", "webp", "tif", "tiff", "avif", "jxl"];
 
@@ -33,6 +34,8 @@ pub enum Error {
     Io(io::Error),
     Archive(String),
     Pdf(String),
+    /// Un volume su un server (Komga, Kavita) che non risponde come dovrebbe.
+    Remote(String),
 }
 
 impl fmt::Display for Error {
@@ -50,6 +53,11 @@ impl fmt::Display for Error {
             Error::Io(e) => write!(f, "{e}"),
             Error::Archive(e) => write!(f, "{} ({e})", t("Archivio rovinato o illeggibile", "Damaged or unreadable archive")),
             Error::Pdf(e) => write!(f, "PDF: {e}"),
+            // "il server non risponde..." in testa alla frase
+            Error::Remote(e) => {
+                let mut c = e.chars();
+                write!(f, "{}{}.", c.next().map(|c| c.to_uppercase().to_string()).unwrap_or_default(), c.as_str())
+            }
         }
     }
 }
@@ -89,6 +97,9 @@ enum Store {
     /// TAR: non compresso, ogni pagina e' un tratto del file. Si legge da li'.
     Tar(PathBuf, HashMap<String, (u64, u64)>),
     Pdf(PdfDoc),
+    /// Su un server: ogni pagina e' una richiesta. Si tiene l'ultima letta,
+    /// che spesso si chiede due volte di fila (la misura, poi la pagina).
+    Remote(Volume, Mutex<Option<(usize, Vec<u8>)>>),
 }
 
 pub struct Book {
@@ -107,12 +118,32 @@ pub struct Book {
 /// Il nome di un volume per chi legge: il file senza estensione, la cartella
 /// com'e' (in "Vol.01 Ch.001 - Screw" il ".001 - Screw" non e' un'estensione).
 pub fn title_of(path: &Path) -> String {
+    if let Some(v) = Volume::from_path(path) {
+        return v.title;
+    }
     let name = if path.is_dir() { path.file_name() } else { path.file_stem() };
     name.unwrap_or(path.as_os_str()).to_string_lossy().into_owned()
 }
 
+/// Il percorso intero, per confrontarlo e ricordarlo; quello di un volume
+/// remoto lo e' gia'.
+pub fn absolute(path: &Path) -> PathBuf {
+    if remote::is_remote(path) {
+        return path.to_owned();
+    }
+    std::path::absolute(path).unwrap_or_else(|_| path.to_owned())
+}
+
+/// Il volume c'e' ancora. Di uno remoto si sapra' aprendolo.
+pub fn exists(path: &Path) -> bool {
+    remote::is_remote(path) || path.exists()
+}
+
 impl Book {
     pub fn open(path: &Path) -> Result<Book, Error> {
+        if let Some(volume) = Volume::from_path(path) {
+            return Book::open_remote(path, volume);
+        }
         if !path.exists() {
             return Err(Error::NotFound);
         }
@@ -150,6 +181,25 @@ impl Book {
             _ => read_info(path),
         };
         Ok(Book { path: path.to_owned(), title, names, start_at: 0, info, store })
+    }
+
+    /// Un volume su un server: si chiede subito la prima pagina, per sapere
+    /// adesso (e non pagina per pagina) se il server risponde.
+    fn open_remote(path: &Path, volume: Volume) -> Result<Book, Error> {
+        let first = volume.page(0, true).map_err(Error::Remote)?;
+        Ok(Book {
+            path: path.to_owned(),
+            title: volume.title.clone(),
+            names: (1..=volume.count).map(|n| n.to_string()).collect(),
+            start_at: 0,
+            info: None,
+            store: Store::Remote(volume, Mutex::new(Some((0, first)))),
+        })
+    }
+
+    /// Il volume sta su un server.
+    pub fn is_remote(&self) -> bool {
+        matches!(self.store, Store::Remote(..))
     }
 
     pub fn len(&self) -> usize {
@@ -192,7 +242,7 @@ impl Book {
                 zip.by_name(name).ok()?.take(max as u64).read_to_end(&mut out).ok()?;
             }
             Store::Memory(files) => out.extend_from_slice(&files[name][..files[name].len().min(max)]),
-            Store::Tar(..) | Store::Rar(_) => {
+            Store::Tar(..) | Store::Rar(_) | Store::Remote(..) => {
                 // il TAR legge solo il suo tratto; il RAR non sa fermarsi a meta'
                 out = self.read(index).ok()?;
                 out.truncate(max);
@@ -206,15 +256,19 @@ impl Book {
     pub fn sample_sizes(&self, count: usize) -> Vec<(usize, (u32, u32))> {
         let n = self.len();
         let count = count.min(n);
-        (0..count)
-            .map(|k| if count > 1 { k * (n - 1) / (count - 1) } else { 0 })
-            .filter_map(|i| {
-                // 256 KB: un JPEG con dentro una miniatura EXIF o un profilo colore
-                // tiene la misura anche a qualche decina di KB dall'inizio
-                let head = self.head(i, 256 << 10)?;
-                crate::decode::dimensions(&head).map(|size| (i, size))
-            })
-            .collect()
+        let picked = (0..count).map(|k| if count > 1 { k * (n - 1) / (count - 1) } else { 0 });
+        // 256 KB: un JPEG con dentro una miniatura EXIF o un profilo colore
+        // tiene la misura anche a qualche decina di KB dall'inizio
+        let size = |i: usize| self.head(i, 256 << 10).and_then(|h| crate::decode::dimensions(&h)).map(|s| (i, s));
+        if !self.is_remote() {
+            return picked.filter_map(size).collect();
+        }
+        // da un server, tutte insieme: una dopo l'altra si aspetterebbe la
+        // rete sette volte
+        std::thread::scope(|s| {
+            let asked: Vec<_> = picked.map(|i| s.spawn(move || size(i))).collect();
+            asked.into_iter().filter_map(|h| h.join().ok().flatten()).collect()
+        })
     }
 
     /// I byte della pagina, cosi' come sono nell'archivio (ancora da decodificare).
@@ -233,6 +287,16 @@ impl Book {
             }
             Store::Rar(path) => rar_read(path, name),
             Store::Memory(files) => Ok(files[name].clone()),
+            Store::Remote(volume, last) => {
+                if let Some((i, bytes)) = &*last.lock().unwrap_or_else(|e| e.into_inner())
+                    && *i == index
+                {
+                    return Ok(bytes.clone());
+                }
+                let bytes = volume.page(index, false).map_err(Error::Remote)?;
+                *last.lock().unwrap_or_else(|e| e.into_inner()) = Some((index, bytes.clone()));
+                Ok(bytes)
+            }
             Store::Tar(path, index) => {
                 use std::io::{Seek, SeekFrom};
                 let (offset, size) = index[name];
@@ -397,6 +461,9 @@ fn open_rar(path: &Path) -> Result<(Vec<String>, Store), Error> {
 /// Dai CB7 e dai CBR solidi si avrebbe solo decomprimendo cio' che le sta
 /// davanti, cioe' quasi tutto: per loro `None`, la si legge con le pagine.
 pub fn read_info(path: &Path) -> Option<ComicInfo> {
+    if remote::is_remote(path) {
+        return None;
+    }
     let bytes = if path.is_dir() {
         let file = std::fs::read_dir(path).ok()?.flatten().find(|e| is_comic_info(&e.file_name().to_string_lossy()))?;
         if file.metadata().ok()?.len() > comicinfo::MAX_BYTES {

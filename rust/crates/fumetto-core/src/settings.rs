@@ -15,6 +15,8 @@ pub struct Settings {
     pub hud: bool,
     /// Le cartelle della libreria.
     pub library: Vec<PathBuf>,
+    /// I server della libreria (Komga, Kavita), con nome e password.
+    pub servers: Vec<crate::remote::Server>,
     /// Riconoscere i webtoon (strisce molto piu' alte che larghe) all'apertura
     /// e leggerli a nastro.
     pub webtoon: bool,
@@ -49,6 +51,7 @@ impl Default for Settings {
         Settings {
             hud: true,
             library: Vec::new(),
+            servers: Vec::new(),
             webtoon: true,
             trim: false,
             upscale: false,

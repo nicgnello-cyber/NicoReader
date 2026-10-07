@@ -13,7 +13,8 @@ JPEG, PNG, WebP, GIF, BMP, AVIF e JPEG XL. Ha la libreria con le serie
 da destra a sinistra da soli), miniature, segnalibri, doppia pagina, nastro per i webtoon (riconosciuti da
 soli), zoom, lente, luminosità/contrasto/gamma, tasti personalizzabili, e un
 ingrandimento AI facoltativo (Real-ESRGAN, sulla scheda video, senza niente
-da scaricare). In
+da scaricare). La libreria può mostrare anche i volumi di un server Komga o
+Kavita, letti pagina per pagina senza scaricarli. In
 italiano e in inglese.
 
 ## Scarica
@@ -64,6 +65,18 @@ pacchetti.
 Si apre un volume dal menu (tasto destro), con Ctrl+O (Cmd+O sul Mac), dalla
 libreria o con doppio clic sul file. Senza volume riprende l'ultimo letto.
 Ctrl+, apre le impostazioni (anche i tasti).
+
+Per leggere da un server Komga o Kavita: tasto destro → Aggiungi un server…
+(o l'icona della cartella nella libreria). Per Komga l'indirizzo del server,
+con nome e password; per Kavita il link OPDS che c'è nelle impostazioni
+dell'utente (dentro c'è la chiave, la password non serve). Il server entra
+nella libreria solo se risponde; serie e volumi compaiono accanto a quelli
+dei file, e le pagine si chiedono una alla volta (lo "streaming" delle
+pagine di OPDS): il volume si apre subito. Il punto di lettura resta su
+questo computer, come per i file. Nome e password stanno in
+`impostazioni.json`, nella cartella dei dati di NicoReader, come le altre
+impostazioni, e curl li riceve dallo standard input, mai dalla riga di
+comando.
 
 Una volta al giorno NicoReader chiede a GitHub qual è l'ultima versione (non
 manda nient'altro); se ne è uscita una nuova, propone di aprirne la pagina,

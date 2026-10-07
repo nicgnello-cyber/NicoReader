@@ -104,6 +104,7 @@ fn main() {
         }
     };
     match volume {
+        Some(path) if asked.is_none() => app.resume(&path),
         Some(path) => app.open(&path),
         None => app.ask_open = !prova && first_time,
     }
@@ -122,7 +123,7 @@ fn resume(progress: &Progress) -> Option<PathBuf> {
     // l'ultimo letto, anche se finito, e nessun altro: riaprirne uno piu'
     // vecchio sorprenderebbe. Se non c'e' piu' si chiede, e la finestra di
     // sistema riparte dall'ultima cartella usata, dove di solito sta il seguito
-    progress.recent().into_iter().next().map(|(path, _)| path).filter(|p| p.exists())
+    progress.recent().into_iter().next().map(|(path, _)| path).filter(|p| fumetto_core::exists(p))
 }
 
 /// La cartella di NicoReader dentro `base`. Il programma prima si chiamava

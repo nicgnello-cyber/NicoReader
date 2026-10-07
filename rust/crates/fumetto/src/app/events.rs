@@ -50,7 +50,7 @@ impl ApplicationHandler<UserEvent> for App {
         #[cfg(target_os = "macos")]
         self.open_from_finder();
         if let Some(path) = self.resume_later.take() {
-            self.open(&path);
+            self.resume(&path);
         }
     }
 
@@ -98,15 +98,9 @@ impl ApplicationHandler<UserEvent> for App {
                     )),
                 }
             }
-            UserEvent::Scanned(roots, entries) => {
-                // una scansione di cartelle che nel frattempo sono cambiate non vale
-                if roots == self.settings.library {
-                    self.lib.entries = entries;
-                    self.lib.scanning = false;
-                    self.refresh_shelf();
-                    self.changed();
-                }
-            }
+            UserEvent::Scanned(scan) => self.scanned(*scan),
+            UserEvent::ServerChecked(server, found) => self.server_checked(server, found),
+            UserEvent::Opened(path, book, quiet) => self.opened(&path, *book, quiet),
             UserEvent::Cover(c) => match (&self.gfx, c.page) {
                 (Some(gfx), Ok(page)) => {
                     if let Ok(image) = gfx.renderer.upload(&page) {
@@ -261,6 +255,19 @@ impl ApplicationHandler<UserEvent> for App {
                 // vuota le frecce e Invio sono sue
                 let command =
                     if cfg!(target_os = "macos") { self.modifiers.super_key() } else { self.modifiers.control_key() };
+                // il modulo del server: Ctrl+V incolla, e Ctrl+Alt (AltGr su
+                // Windows, per la @ della tastiera italiana) scrive
+                if self.ui.server_open() && command && !self.modifiers.alt_key() {
+                    if event.key_without_modifiers() == Key::Character("v".into()) {
+                        let text = arboard::Clipboard::new().and_then(|mut c| c.get_text());
+                        if let Ok(text) = text {
+                            self.ui.paste(&text);
+                            self.request_redraw();
+                        }
+                    }
+                    return;
+                }
+                let command = command && !self.ui.server_open();
                 if !command && (self.ui.modal() || self.reader.is_none() || self.shelf_shown() || self.thumbs_shown()) {
                     let ctx = input_context!(self);
                     let handled = ui_key(&event.logical_key).map_or(Handled::No, |k| self.ui.key(k, &ctx));

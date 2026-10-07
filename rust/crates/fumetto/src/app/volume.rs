@@ -37,12 +37,12 @@ impl App {
     /// Gli ultimi letti, dal piu' recente: quelli che ci sono ancora, e non
     /// quello aperto.
     pub(super) fn refresh_recent(&mut self) {
-        let open = self.book.as_ref().map(|b| std::path::absolute(&b.path).unwrap_or_else(|_| b.path.clone()));
+        let open = self.book.as_ref().map(|b| fumetto_core::absolute(&b.path));
         self.recent = self
             .progress
             .recent()
             .into_iter()
-            .filter(|(path, _)| Some(path) != open.as_ref() && path.exists())
+            .filter(|(path, _)| Some(path) != open.as_ref() && fumetto_core::exists(path))
             .take(6)
             .map(|(path, saved)| Recent { title: fumetto_core::title_of(&path), place: place(saved), path })
             .collect();
@@ -50,6 +50,29 @@ impl App {
 
     /// Apre un volume; se non si puo', lo dice e resta quello di prima.
     pub fn open(&mut self, path: &Path) {
+        self.open_volume(path, false);
+    }
+
+    /// Riapre l'ultimo letto all'avvio: se sta su un server che adesso non
+    /// risponde (si e' fuori casa), non lo si dice a ogni avvio.
+    pub fn resume(&mut self, path: &Path) {
+        self.open_volume(path, true);
+    }
+
+    fn open_volume(&mut self, path: &Path, quiet: bool) {
+        // da un server si chiede la prima pagina: in sottofondo, la finestra
+        // non si ferma ad aspettare la rete
+        if fumetto_core::remote::is_remote(path) {
+            let (proxy, path) = (self.proxy.clone(), path.to_owned());
+            std::thread::Builder::new()
+                .name("apertura".into())
+                .spawn(move || {
+                    let book = Book::open(&path);
+                    let _ = proxy.send_event(UserEvent::Opened(path, Box::new(book), quiet));
+                })
+                .expect("thread dell'apertura");
+            return;
+        }
         match Book::open(path) {
             Ok(book) => self.set_book(book),
             Err(e) => {
@@ -62,6 +85,15 @@ impl App {
                 }
                 self.notify(dialog::cant_open(path, &e));
             }
+        }
+    }
+
+    /// Un volume remoto aperto in sottofondo (o l'errore).
+    pub(super) fn opened(&mut self, path: &Path, book: Result<Book, fumetto_core::Error>, quiet: bool) {
+        match book {
+            Ok(book) => self.set_book(book),
+            Err(e) if quiet => eprintln!("{}", dialog::cant_open(path, &e)),
+            Err(e) => self.notify(dialog::cant_open(path, &e)),
         }
     }
 
@@ -143,7 +175,7 @@ impl App {
         if self.dialog {
             return;
         }
-        let near = self.book.as_ref().and_then(|b| std::path::absolute(&b.path).ok());
+        let near = self.book.as_ref().filter(|b| !b.is_remote()).map(|b| fumetto_core::absolute(&b.path));
         dialog::open(window, folder, near.as_deref().and_then(Path::parent), false, self.proxy.clone());
         self.dialog = true;
     }

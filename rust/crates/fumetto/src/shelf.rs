@@ -17,6 +17,7 @@ use std::time::Instant;
 use fumetto_core::library::{Entry, Status, by_number};
 use fumetto_core::lingua::{italian, t};
 use fumetto_core::natural_cmp;
+use fumetto_core::remote::{self, Server};
 use fumetto_render::{Align, Face, Layer, Measure, Rect, Text};
 
 use crate::reader::Action;
@@ -469,7 +470,7 @@ impl Shelf {
                 self.search.push((b'0' + dg) as char);
                 self.reset_view();
             }
-            Key::Char(_) => {}
+            Key::Char(_) | Key::Tab => {}
         }
         self.reveal_selected(d, &g);
         Handled::Yes(None)
@@ -552,6 +553,10 @@ impl Shelf {
                         cmd: Command::MarkRead(path.clone(), false),
                     });
                 }
+                // un volume su un server non ha cartella ne' cestino
+                if remote::is_remote(&path) {
+                    return rows;
+                }
                 rows.push(ui::Row::Sep);
                 rows.push(ui::Row::Item {
                     label: t("Mostra nella cartella", "Show in folder"),
@@ -571,10 +576,20 @@ impl Shelf {
     }
 
     /// Le righe del menu delle cartelle della libreria.
-    pub(crate) fn folders_menu(d: &ShelfData) -> Vec<ui::Row> {
-        let mut rows = vec![ui::Row::Head(t("Cartelle della libreria", "Library folders"))];
+    pub(crate) fn folders_menu(d: &ShelfData, servers: &[Server]) -> Vec<ui::Row> {
+        let mut rows = Vec::new();
+        if !d.roots.is_empty() || servers.is_empty() {
+            rows.push(ui::Row::Head(t("Cartelle della libreria", "Library folders")));
+        }
         for root in d.roots {
-            rows.push(ui::Row::Folder { path: root.clone(), cmd: Command::RemoveFolder(root.clone()) });
+            let label = root.to_string_lossy().into_owned();
+            rows.push(ui::Row::Folder { label, cmd: Command::RemoveFolder(root.clone()) });
+        }
+        if !servers.is_empty() {
+            rows.push(ui::Row::Head(t("Server", "Servers")));
+        }
+        for s in servers {
+            rows.push(ui::Row::Folder { label: remote::shown(&s.url), cmd: Command::RemoveServer(s.url.clone()) });
         }
         rows.push(ui::Row::Sep);
         rows.push(ui::Row::Item {
@@ -582,6 +597,12 @@ impl Shelf {
             key: String::new(),
             on: false,
             cmd: Command::Act(Action::AddLibraryFolder),
+        });
+        rows.push(ui::Row::Item {
+            label: t("Aggiungi un server\u{2026}", "Add a server\u{2026}"),
+            key: String::new(),
+            on: false,
+            cmd: Command::AskServer,
         });
         rows
     }

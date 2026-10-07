@@ -32,11 +32,13 @@ use crate::thumbs::{Thumbs, ThumbsData};
 mod bar;
 mod menu;
 mod panels;
+mod server;
 
 use bar::{Hover, hud, hud_hit};
 pub(crate) use bar::{Icon, draw_icon, tooltip};
 use menu::{main_rows, zoom_rows};
 use panels::{caption, goto, lens_ring, ruler, to_u8, toast_only, welcome};
+use server::{Outcome, ServerForm};
 
 pub(crate) const INK: [u8; 4] = [0xED, 0xE8, 0xDF, 0xFF];
 pub(crate) const MUTED: [u8; 4] = [0x9D, 0x97, 0x8B, 0xFF];
@@ -166,13 +168,19 @@ pub enum Command {
     Trash(PathBuf),
     /// Toglie una cartella dalla libreria (i file restano dove sono).
     RemoveFolder(PathBuf),
+    /// Prova il collegamento a un server e, se risponde, lo aggiunge.
+    AddServer(fumetto_core::remote::Server),
+    /// Toglie un server dalla libreria (per indirizzo).
+    RemoveServer(String),
     /// Dalle miniature: va alla pagina (da 0) e torna a leggere.
     Page(usize),
     /// Una scelta fatta nelle impostazioni.
     Pref(crate::prefs::Pref),
-    /// Interni all'interfaccia: aprire una serie, il menu delle cartelle.
+    /// Interni all'interfaccia: aprire una serie, il menu delle cartelle,
+    /// il modulo per aggiungere un server.
     Series(String),
     FoldersMenu(f32, f32),
+    AskServer,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -188,6 +196,7 @@ pub enum Key {
     Enter,
     Escape,
     Backspace,
+    Tab,
     Digit(u8),
     /// Un carattere scritto (la ricerca della libreria).
     Char(char),
@@ -277,9 +286,10 @@ pub(crate) enum Row {
         place: String,
         cmd: Command,
     },
-    /// Una cartella della libreria: il suo percorso, e un clic la toglie.
+    /// Una cartella o un server della libreria: come si mostra, e un clic
+    /// lo toglie.
     Folder {
-        path: PathBuf,
+        label: String,
         cmd: Command,
     },
     Head(&'static str),
@@ -322,6 +332,8 @@ pub struct Ui {
     toast: Option<(String, Show)>,
     goto: Option<GoTo>,
     menu: Option<Menu>,
+    /// Il modulo per aggiungere un server, se e' aperto.
+    server: Option<ServerForm>,
     pointer: (f32, f32),
     /// Nella galleria vuota: l'ultimo letto scelto con le frecce.
     selected: Option<usize>,
@@ -342,7 +354,32 @@ impl Ui {
 
     /// Una finestra dell'interfaccia e' aperta: tasti e clic vanno a lei.
     pub fn modal(&self) -> bool {
-        self.goto.is_some() || self.menu.is_some() || self.prefs.is_some()
+        self.goto.is_some() || self.menu.is_some() || self.prefs.is_some() || self.server.is_some()
+    }
+
+    /// Il modulo per aggiungere un server e' aperto: i tasti sono per lui.
+    pub fn server_open(&self) -> bool {
+        self.server.is_some()
+    }
+
+    /// Testo incollato (Ctrl+V), nel campo scelto del modulo del server.
+    pub fn paste(&mut self, text: &str) {
+        if let Some(f) = &mut self.server {
+            f.type_text(text);
+        }
+    }
+
+    /// Com'e' andata la prova del collegamento: se bene il modulo si chiude,
+    /// se no dice perche'.
+    pub fn server_checked(&mut self, result: Result<(), String>) {
+        match result {
+            Ok(()) => self.server = None,
+            Err(e) => {
+                if let Some(f) = &mut self.server {
+                    f.failed(e);
+                }
+            }
+        }
     }
 
     /// Apre o chiude le impostazioni.
@@ -370,7 +407,7 @@ impl Ui {
     /// Il tasto del mouse premuto: nelle impostazioni puo' cominciare a
     /// trascinare una regolazione.
     pub fn press(&mut self, x: f32, y: f32, ctx: &Context) -> Option<Command> {
-        if self.menu.is_some() || self.goto.is_some() {
+        if self.menu.is_some() || self.goto.is_some() || self.server.is_some() {
             return None;
         }
         self.prefs.as_mut()?.press(ctx.settings, ctx.keys, ctx.view, ctx.scale, x, y)
@@ -432,9 +469,16 @@ impl Ui {
                     x: x - width + 36.0 * ctx.scale,
                     y: y + 6.0 * ctx.scale,
                     selected: None,
-                    rows: Shelf::folders_menu(d),
+                    rows: Shelf::folders_menu(d, &ctx.settings.servers),
                     width,
                 });
+                None
+            }
+            Command::AskServer => {
+                self.menu = None;
+                self.goto = None;
+                self.prefs = None;
+                self.server = Some(ServerForm::new());
                 None
             }
             other => Some(other),
@@ -529,6 +573,11 @@ impl Ui {
     }
 
     pub fn click(&mut self, x: f32, y: f32, ctx: &Context) -> Handled {
+        if let Some(f) = &mut self.server {
+            // fuori dai campi non si chiude: si perderebbe cio' che si e' scritto
+            f.click(ctx, x, y);
+            return Handled::Yes(None);
+        }
         if let Some(m) = &self.menu {
             let hit = self.menu_hit(ctx, x, y);
             let cmd = hit.and_then(|i| m.rows[i].command().cloned());
@@ -594,6 +643,20 @@ impl Ui {
     }
 
     pub fn key(&mut self, key: Key, ctx: &Context) -> Handled {
+        if let Some(f) = &mut self.server {
+            return Handled::Yes(match f.key(key) {
+                Outcome::Stay => None,
+                Outcome::Close => {
+                    self.server = None;
+                    None
+                }
+                Outcome::Submit(server) => Some(Command::AddServer(server)),
+            });
+        }
+        // Tab serve solo al modulo: altrove resta ai tasti scelti da chi legge
+        if key == Key::Tab {
+            return Handled::No;
+        }
         if let Some(g) = &mut self.goto {
             match key {
                 Key::Digit(d) => {
@@ -618,7 +681,7 @@ impl Ui {
                         return Handled::Yes(Some(Command::Act(Action::GoTo(page))));
                     }
                 }
-                Key::Left | Key::Right | Key::Char(_) => {}
+                Key::Left | Key::Right | Key::Tab | Key::Char(_) => {}
             }
             return Handled::Yes(None);
         }
@@ -743,6 +806,9 @@ impl Ui {
         if let Some(p) = &self.prefs {
             scene.layers.extend(p.layers(ctx.settings, ctx.keys, ctx.view, ctx.scale, m));
         }
+        if let Some(f) = &self.server {
+            scene.layers.push(f.layer(ctx, m));
+        }
     }
 
     // -- il menu ---------------------------------------------------------
@@ -824,8 +890,8 @@ impl Ui {
                     l.texts.push(fit(m, title, cw - 34.0 * s - 100.0 * s).on_baseline(left, top + 23.0 * s));
                     l.texts.push(right_box(Text::new(place.as_str(), Face::Sans, 12.0 * s, MUTED).tabular(), 22.0));
                 }
-                Row::Folder { path, .. } => {
-                    let shown = Text::new(path.to_string_lossy(), Face::Sans, 13.0 * s, INK);
+                Row::Folder { label, .. } => {
+                    let shown = Text::new(label.as_str(), Face::Sans, 13.0 * s, INK);
                     l.texts.push(fit(m, shown, cw - 34.0 * s - 70.0 * s).on_baseline(left, top + 22.0 * s));
                     let hint = if menu.selected == Some(i) { t("togli", "remove") } else { "" };
                     l.texts.push(right_box(Text::new(hint, Face::Sans, 12.0 * s, ACCENT_TEXT), 22.0));
@@ -981,6 +1047,39 @@ mod tests {
     }
 
     #[test]
+    fn il_modulo_del_server() {
+        let mut ui = Ui::new();
+        let c = ctx(None, &[]);
+        assert_eq!(ui.internal(Some(Command::AskServer), &c), None);
+        assert!(ui.modal() && ui.server_open());
+        assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(None), "senza indirizzo non si va avanti");
+        ui.paste("casa:25600\n");
+        ui.key(Key::Tab, &c);
+        for ch in "io@casa".chars() {
+            ui.key(Key::Char(ch), &c);
+        }
+        ui.key(Key::Down, &c);
+        ui.paste("pa ss");
+        ui.key(Key::Digit(7), &c);
+        ui.key(Key::Backspace, &c);
+        let server = fumetto_core::remote::Server {
+            url: "http://casa:25600".into(),
+            user: "io@casa".into(),
+            password: "pa ss".into(),
+        };
+        assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::AddServer(server))));
+        ui.key(Key::Char('x'), &c);
+        ui.server_checked(Err("nome o password sbagliati".into()));
+        assert!(ui.server_open(), "se non va, si corregge");
+        ui.server_checked(Ok(()));
+        assert!(!ui.server_open());
+        ui.internal(Some(Command::AskServer), &c);
+        assert_eq!(ui.key(Key::Escape, &c), Handled::Yes(None));
+        assert!(!ui.server_open());
+        assert_eq!(ui.key(Key::Tab, &c), Handled::No, "fuori dal modulo Tab non e' dell'interfaccia");
+    }
+
+    #[test]
     fn il_menu_salta_titoli_e_separatori() {
         let recent = [Recent { path: "a.cbz".into(), title: "A".into(), place: "3 / 10".into() }];
         let mut ui = Ui::new();
@@ -989,6 +1088,7 @@ mod tests {
         ui.key(Key::Down, &c); // Apri
         ui.key(Key::Down, &c); // Apri cartella
         ui.key(Key::Down, &c); // Libreria
+        ui.key(Key::Down, &c); // Aggiungi un server
         ui.key(Key::Down, &c); // oltre separatore e titolo: il volume recente
         assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::Open("a.cbz".into()))));
         ui.open_menu(100.0, 100.0, &c);

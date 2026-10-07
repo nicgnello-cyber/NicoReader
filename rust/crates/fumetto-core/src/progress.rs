@@ -64,7 +64,7 @@ impl Progress {
 
     /// La chiave di un volume: il percorso assoluto, cosi' com'e' scritto.
     fn key(volume: &Path) -> String {
-        std::path::absolute(volume).unwrap_or_else(|_| volume.to_owned()).to_string_lossy().into_owned()
+        crate::book::absolute(volume).to_string_lossy().into_owned()
     }
 
     pub fn get(&self, volume: &Path) -> Option<&Saved> {

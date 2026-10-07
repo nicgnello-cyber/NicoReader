@@ -224,7 +224,7 @@ impl App {
                     Some(n) => {
                         self.progress.mark(&path, read, n);
                         // il volume aperto: da qui il lettore non lo riscrive, finche' non ci si muove
-                        let same = |a: &Path| std::path::absolute(a).ok() == std::path::absolute(&path).ok();
+                        let same = |a: &Path| fumetto_core::absolute(a) == fumetto_core::absolute(&path);
                         if let (Some(book), Some(reader)) = (&self.book, &self.reader)
                             && same(&book.path)
                         {
@@ -276,7 +276,16 @@ impl App {
                 self.act(Action::GoTo(p), event_loop);
             }
             // quelli interni li ha gia' fatti l'interfaccia
-            Command::Series(_) | Command::FoldersMenu(..) => {}
+            Command::AddServer(server) => self.check_server(server),
+            Command::RemoveServer(url) => {
+                self.settings.servers.retain(|s| s.url != url);
+                remote::set_servers(&self.settings.servers);
+                self.save_settings();
+                self.rescan();
+                self.ui.toast(t("Server tolto dalla libreria", "Server removed from the library"), now);
+                self.changed();
+            }
+            Command::Series(_) | Command::FoldersMenu(..) | Command::AskServer => {}
         }
         self.request_redraw();
     }
@@ -428,6 +437,7 @@ pub(super) fn ui_key(key: &Key) -> Option<ui::Key> {
         Key::Named(NamedKey::Enter) => ui::Key::Enter,
         Key::Named(NamedKey::Escape) => ui::Key::Escape,
         Key::Named(NamedKey::Backspace) => ui::Key::Backspace,
+        Key::Named(NamedKey::Tab) => ui::Key::Tab,
         Key::Named(NamedKey::ArrowLeft) => ui::Key::Left,
         Key::Named(NamedKey::ArrowRight) => ui::Key::Right,
         Key::Named(NamedKey::Space) => ui::Key::Char(' '),
