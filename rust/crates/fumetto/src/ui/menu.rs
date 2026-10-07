@@ -15,6 +15,12 @@ pub(super) fn main_rows(ctx: &Context) -> Vec<Row> {
         i(t("Apri\u{2026}", "Open\u{2026}"), Bind::Open, false, Action::Open),
         i(t("Apri cartella\u{2026}", "Open folder\u{2026}"), Bind::OpenFolder, false, Action::OpenFolder),
         i(t("Libreria", "Library"), Bind::Library, ctx.shelf.is_some(), Action::ToggleLibrary),
+        Row::Item {
+            label: t("Aggiungi un server\u{2026}", "Add a server\u{2026}"),
+            key: String::new(),
+            on: false,
+            cmd: Command::AskServer,
+        },
     ];
     let recent = if ctx.book.is_some() { 3 } else { 5 };
     if !ctx.recent.is_empty() {

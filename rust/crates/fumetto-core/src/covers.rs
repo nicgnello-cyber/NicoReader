@@ -27,11 +27,17 @@ pub const COVER_H: u32 = 480;
 /// misura e data. Stabile fra versioni del programma (l'hash della libreria
 /// standard non lo e').
 pub fn cache_name(path: &Path) -> Option<String> {
-    let meta = std::fs::metadata(path).ok()?;
-    let modified = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs();
-    let abs = std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
+    // un volume remoto non ha misura ne' data: basta l'indirizzo (con il
+    // numero di pagine dentro, che cambia se il volume cambia)
+    let (len, modified) = if crate::remote::is_remote(path) {
+        (0, 0)
+    } else {
+        let meta = std::fs::metadata(path).ok()?;
+        (meta.len(), meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs())
+    };
+    let abs = crate::book::absolute(path);
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in abs.to_string_lossy().bytes().chain(meta.len().to_le_bytes()).chain(modified.to_le_bytes()) {
+    for b in abs.to_string_lossy().bytes().chain(len.to_le_bytes()).chain(modified.to_le_bytes()) {
         h ^= b as u64;
         h = h.wrapping_mul(0x0000_0100_0000_01b3);
     }
@@ -60,6 +66,10 @@ pub fn cover(path: &Path, cache: &Path) -> Result<Page, String> {
 
 /// La copertina di un volume, 320x480, senza cache.
 pub fn make(path: &Path) -> Result<Page, String> {
+    // la copertina gia' pronta sul server pesa meno della prima pagina
+    if let Some(page) = crate::remote::cover(path).and_then(|bytes| decode(&bytes).ok()) {
+        return Ok(resize(&crop_to_cover(&page), COVER_W, COVER_H, true));
+    }
     let book = Book::open(path).map_err(|e| e.to_string())?;
     let page =
         match book.content(0, Fit::Contain { width: COVER_W * 3, height: COVER_H * 3 }).map_err(|e| e.to_string())? {

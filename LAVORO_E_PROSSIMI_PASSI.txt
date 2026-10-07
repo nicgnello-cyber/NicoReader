@@ -620,9 +620,32 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      valore). Velocita' su lavapipe (scheda software, 288x216 a 4x): 3,0 s,
      contro 4,4 s di ncnn sulla stessa scheda. Su una scheda vera da
      misurare (FUMETTO_ESRGAN=px,per per provare altre combinazioni).
-  4. Il peso dell'eseguibile: da 15,3 a 20,7 MB con AVIF, JPEG XL e appunti
+  4. [x] Server Komga e Kavita (7 ottobre): fumetto-core\src\remote.rs.
+     Il catalogo OPDS (Atom, letto con quick-xml per i namespace) si legge
+     con curl, nome e password sullo stdin (mai sulla riga di comando).
+     Dalla radice si scende da "allSeries" (Komga) o "allLibraries"
+     (Kavita); altrimenti da ogni voce. La serie e' il titolo della voce
+     che porta al feed dei volumi; si seguono le pagine "next"; 6
+     richieste insieme; il catalogo letto vale 5 minuti. I volumi sono
+     quelli con le pagine una per una (OPDS-PSE, da 0): il percorso e'
+     "<indirizzo con {pageNumber}>#<pagine>:<titolo>", cosi' progressi,
+     copertine e recenti li trattano come file. Dal titolo si tolgono il
+     segno di lettura di Kavita e il nome della serie; il volume ripetuto
+     da "Continue Reading from:" resta uno. Copertine: quelle del server
+     (piu' leggere della prima pagina). Aprire un volume remoto chiede la
+     prima pagina in sottofondo (la finestra non aspetta la rete); la
+     ripresa all'avvio, se il server non risponde, non avvisa. Nella
+     libreria le cartelle si mostrano subito, i server quando rispondono.
+     Interfaccia: "Aggiungi un server..." nel menu e in quello delle
+     cartelle (indirizzo, nome, password; Ctrl+V incolla; Invio prova il
+     collegamento, e il server entra solo se risponde con dei volumi).
+     Provato su Komga 1.x e Kavita veri (in locale): libreria, copertine,
+     lettura, progressi, ripresa, password sbagliata, server spento.
+     Da fare, se serve: il punto di lettura mandato anche al server
+     (Komga e Kavita hanno le loro API), la ricerca sul server.
+  5. Il peso dell'eseguibile: da 15,3 a 20,7 MB con AVIF, JPEG XL e appunti
      (vedi 5, Tecnici).
-  5. Distribuzione (capitolo 5).
+  6. Distribuzione (capitolo 5).
 
   Da decidere tu, quando vuoi:
     - Le cartelle degli autori (tipo "ANRAKUGAI - AUTORE" con 6 titoli

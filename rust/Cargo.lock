@@ -848,6 +848,7 @@ dependencies = [
  "jxl-oxide",
  "libloading 0.9.0",
  "libwebp-sys",
+ "quick-xml",
  "rav1d",
  "serde",
  "serde_json",

@@ -12,7 +12,9 @@ organized by series (from ComicInfo.xml when a volume has one, so manga also
 open right to left on their own), thumbnails, bookmarks, two-page spreads, a vertical strip
 for webtoons (detected automatically), zoom, a magnifier,
 brightness/contrast/gamma, customizable keys, and optional AI upscaling
-(Real-ESRGAN, on the graphics card, nothing to download). The interface is
+(Real-ESRGAN, on the graphics card, nothing to download). The library can
+also show the volumes of a Komga or Kavita server, read page by page
+without downloading them. The interface is
 in English and
 Italian.
 
@@ -67,6 +69,17 @@ The code also builds for Linux ARM64, but there are no packages for it yet.
 Open a volume from the menu (right click), with Ctrl+O (Cmd+O on a Mac), from
 the library, or by double-clicking the file. With no volume, it resumes the
 last one you read. Ctrl+, opens the settings (keys included).
+
+To read from a Komga or Kavita server: right click → Add a server… (or the
+folder icon in the library). For Komga, the server address with your user
+name and password; for Kavita, the OPDS link from your user settings (it
+contains the key, so no password is needed). The server enters the library
+only if it answers; its series and volumes appear next to the local ones,
+and pages are fetched one at a time (OPDS page streaming), so a volume opens
+right away. The reading position stays on this computer, as for files.
+User name and password are kept in `impostazioni.json` in NicoReader's data
+folder, like the other settings, and are handed to curl on its standard
+input, never on the command line.
 
 Once a day NicoReader asks GitHub which version is the latest (nothing else
 is sent); when a newer one is out, it offers to open its page, once per

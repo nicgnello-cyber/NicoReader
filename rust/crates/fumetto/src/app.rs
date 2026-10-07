@@ -20,6 +20,7 @@ use fumetto::ui::{self, BookInfo, Command, Context, Handled, Recent, Ui};
 use fumetto_core::covers::{Cover, CoverLoader};
 use fumetto_core::library::{self, Entry, Status};
 use fumetto_core::lingua::t;
+use fumetto_core::remote::{self, Server};
 use fumetto_core::update::Release;
 use fumetto_core::upscale::{self, Job, Upscaled, Upscaler};
 use fumetto_core::{Book, Content, Fit, Loaded, Loader, Page, Progress, Target};
@@ -122,8 +123,13 @@ pub enum UserEvent {
     DialogClosed,
     /// Si', spostalo nel cestino.
     Confirmed(PathBuf),
-    /// La scansione delle cartelle della libreria (quali, e cosa c'era).
-    Scanned(Vec<PathBuf>, Vec<Entry>),
+    /// La scansione della libreria: prima le cartelle, poi i server.
+    Scanned(Box<Scan>),
+    /// Un volume di un server aperto in sottofondo; `true`: se non si apre,
+    /// non lo si dice (era la ripresa all'avvio).
+    Opened(PathBuf, Box<Result<Book, fumetto_core::Error>>, bool),
+    /// La prova del collegamento a un server: quanti volumi ha, o l'errore.
+    ServerChecked(Server, Result<usize, String>),
     /// Una copertina pronta.
     Cover(Cover),
     /// Una miniatura pronta.
@@ -142,10 +148,26 @@ pub enum UserEvent {
     Done(Result<&'static str, String>),
 }
 
-/// La libreria trovata nelle cartelle, e dove si e' arrivati in ogni volume.
+/// Cosa ha trovato una scansione della libreria, e in quali cartelle e
+/// server: se nel frattempo sono cambiati, non vale.
+pub struct Scan {
+    roots: Vec<PathBuf>,
+    servers: Vec<Server>,
+    local: Vec<Entry>,
+    /// I volumi dei server: `None` se non li si e' ancora letti (arrivano
+    /// dopo, con una seconda Scan).
+    remote: Option<Vec<Entry>>,
+    /// I server che non hanno risposto, con il perche'.
+    failed: Vec<String>,
+}
+
+/// La libreria trovata nelle cartelle e sui server, e dove si e' arrivati in
+/// ogni volume.
 #[derive(Default)]
 struct Lib {
     entries: Vec<Entry>,
+    /// I volumi dei server, a parte: le cartelle si rileggono prima.
+    remote: Vec<Entry>,
     status: Vec<Status>,
     read_at: Vec<u64>,
     scanning: bool,
@@ -330,6 +352,8 @@ impl App {
         proxy: EventLoopProxy<UserEvent>, progress: Progress, settings: Settings, settings_path: Option<PathBuf>,
         covers_dir: PathBuf, started: Instant, script: Option<Script>,
     ) -> App {
+        // nome e password per le pagine dei server, prima di aprire qualsiasi volume
+        remote::set_servers(&settings.servers);
         let thumb_loader = {
             let proxy = proxy.clone();
             Loader::new(2, move |loaded| {

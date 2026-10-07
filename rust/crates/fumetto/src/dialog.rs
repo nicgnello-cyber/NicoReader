@@ -129,7 +129,11 @@ pub fn confirm_trash(window: &Window, path: std::path::PathBuf, proxy: EventLoop
 
 /// Il testo per un volume che non si apre.
 pub fn cant_open(path: &Path, e: &fumetto_core::Error) -> String {
-    let name = path.file_name().unwrap_or(path.as_os_str()).to_string_lossy();
+    let name = if fumetto_core::remote::is_remote(path) {
+        fumetto_core::title_of(path)
+    } else {
+        path.file_name().unwrap_or(path.as_os_str()).to_string_lossy().into_owned()
+    };
     let head = if fumetto_core::lingua::italian() {
         format!("Impossibile aprire «{name}».")
     } else {
