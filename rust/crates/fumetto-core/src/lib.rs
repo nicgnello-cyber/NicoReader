@@ -7,6 +7,7 @@ mod book;
 pub mod comicinfo;
 pub mod covers;
 mod decode;
+pub mod keychain;
 pub mod library;
 pub mod lingua;
 mod loader;

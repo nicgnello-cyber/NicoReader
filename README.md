@@ -76,10 +76,20 @@ name and password; for Kavita, the OPDS link from your user settings (it
 contains the key, so no password is needed). The server enters the library
 only if it answers; its series and volumes appear next to the local ones,
 and pages are fetched one at a time (OPDS page streaming), so a volume opens
-right away. The reading position stays on this computer, as for files.
-User name and password are kept in `impostazioni.json` in NicoReader's data
-folder, like the other settings, and are handed to curl on its standard
-input, never on the command line.
+right away.
+
+The reading position is shared with the server: read a chapter on your
+phone with Komga's or Kavita's app and NicoReader picks up from there, and
+the other way round. To read away from home, right click a volume →
+Download to read offline: the library marks it "downloaded", and it opens
+even when the server can't be reached (the library keeps showing the
+server's volumes as they were last time). What you read offline reaches the
+server the next time it answers.
+
+On Windows and macOS the password goes to the system keychain (Credential
+Manager, Keychain), not to the settings file; on Linux it stays in
+`impostazioni.json`, readable only by you. Either way it is handed to curl
+on its standard input, never on the command line.
 
 Once a day NicoReader asks GitHub which version is the latest (nothing else
 is sent); when a newer one is out, it offers to open its page, once per
@@ -124,13 +134,13 @@ every `v*` tag, and for pull requests that touch the code.
 To publish a new version, with the Download links following it
 automatically: raise `version` in `rust/Cargo.toml`, merge, then create the
 tag, either from the GitHub website (Releases → Draft a new release → tag
-`v0.2.0`, create on publish → Publish release) or with
+`v0.3.0`, create on publish → Publish release) or with
 
-    git tag v0.2.0
-    git push origin v0.2.0
+    git tag v0.3.0
+    git push origin v0.3.0
 
 Actions builds the packages for every system and publishes them in the
-`v0.2.0` Release, under the version-less names the links use (it stops if the
+`v0.3.0` Release, under the version-less names the links use (it stops if the
 tag doesn't match the version in Cargo.toml), with the notes from
 `.github/note-release.md` if the Release has none. To rewrite only the notes
 of the current version: Run workflow with "note" checked.

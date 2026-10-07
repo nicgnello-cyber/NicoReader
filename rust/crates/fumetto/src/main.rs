@@ -112,6 +112,8 @@ fn main() {
         eprintln!("{e}");
     }
     app.save_progress();
+    // il punto di lettura ai server, se aspetta ancora
+    fumetto_core::remote::sync::flush();
     if prova {
         println!("{}", app.stats.report(&app.gpu_name()));
     }

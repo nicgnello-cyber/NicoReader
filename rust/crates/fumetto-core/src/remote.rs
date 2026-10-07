@@ -15,6 +15,12 @@
 //! poi `#`, il numero di pagine, `:` e il titolo
 //! (`http://casa:25600/opds/v1.2/books/0RV8/pages/{pageNumber}#6:Volume 1`).
 //! Nome e password restano nelle impostazioni, non nel percorso.
+//!
+//! Il punto di lettura si tiene uguale a quello del server (vedi `sync`), e
+//! un volume si puo' scaricare per leggerlo senza rete (vedi `offline`).
+
+pub mod offline;
+pub mod sync;
 
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
@@ -67,12 +73,82 @@ pub struct Server {
 /// chiede una pagina.
 static SERVERS: RwLock<Vec<Server>> = RwLock::new(Vec::new());
 
-/// Le copertine gia' pronte sul server (piu' leggere della prima pagina), per
-/// indirizzo delle pagine. Le trova la lettura del catalogo.
-static COVERS: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
+/// Cio' che il catalogo dice di ogni volume oltre alle pagine, per indirizzo
+/// delle pagine: la copertina gia' pronta (piu' leggera della prima pagina) e
+/// il file intero da scaricare.
+static LINKS: Mutex<Option<HashMap<String, Links>>> = Mutex::new(None);
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Links {
+    pub cover: Option<String>,
+    pub download: Option<String>,
+}
 
 /// I cataloghi letti di recente.
-static CRAWLED: Mutex<Vec<(Server, Instant, Vec<Entry>)>> = Mutex::new(Vec::new());
+static CRAWLED: Mutex<Vec<(Server, Catalog)>> = Mutex::new(Vec::new());
+
+/// Cio' che si sa di un server: i volumi, dove ciascuno e' arrivato secondo il
+/// server, copertine e file.
+#[derive(Clone, Debug)]
+pub struct Catalog {
+    pub entries: Vec<Entry>,
+    pub reads: Vec<sync::Read>,
+    pub links: HashMap<String, Links>,
+    /// Quando lo si e' letto.
+    pub fetched: Instant,
+    /// Il server non ha risposto (il perche'): e' il catalogo dell'ultima
+    /// volta, tenuto su disco, per leggere i volumi scaricati.
+    pub stale: Option<String>,
+}
+
+fn remember_links(links: &HashMap<String, Links>) {
+    let mut all = LINKS.lock().unwrap_or_else(|e| e.into_inner());
+    all.get_or_insert_with(HashMap::new).extend(links.iter().map(|(k, v)| (k.clone(), v.clone())));
+}
+
+fn links_of(path: &Path) -> Option<Links> {
+    let v = Volume::from_path(path)?;
+    LINKS.lock().unwrap_or_else(|e| e.into_inner()).as_ref()?.get(&v.template).cloned()
+}
+
+/// Il file intero del volume sul server, se il catalogo lo offre.
+pub fn download_url(path: &Path) -> Option<String> {
+    links_of(path)?.download
+}
+
+/// Komga, Kavita o un altro server: cambia come si chiede una pagina senza
+/// toccare il punto di lettura, e come lo si scrive.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Flavor {
+    Komga { book: String },
+    Kavita { key: String, chapter: String },
+    Other,
+}
+
+impl Flavor {
+    pub(crate) fn of(template: &str) -> Flavor {
+        if let Some((_, rest)) = template.split_once("/opds/v1.2/books/")
+            && let Some((book, _)) = rest.split_once('/')
+        {
+            return Flavor::Komga { book: book.to_owned() };
+        }
+        if let Some((_, rest)) = template.split_once("/api/opds/")
+            && let Some((key, rest)) = rest.split_once('/')
+            && rest.starts_with("image?")
+            && let Some(chapter) = query_value(rest, "chapterId")
+        {
+            return Flavor::Kavita { key: key.to_owned(), chapter: chapter.to_owned() };
+        }
+        Flavor::Other
+    }
+}
+
+/// Il valore di un parametro nell'indirizzo ("chapterId=4").
+fn query_value<'a>(url: &'a str, name: &str) -> Option<&'a str> {
+    let query = url.split_once('?')?.1;
+    query.split('&').find_map(|kv| kv.strip_prefix(name)?.strip_prefix('='))
+}
 
 /// Da chiamare all'avvio e a ogni cambio dei server nelle impostazioni.
 pub fn set_servers(servers: &[Server]) {
@@ -144,17 +220,30 @@ impl Volume {
     /// I byte della pagina `index`. `quick`: per sapere se il server c'e', si
     /// aspetta poco.
     pub fn page(&self, index: usize, quick: bool) -> Result<Vec<u8>, String> {
-        let url = self.page_url(index);
-        let login = login_for(&url);
-        fetch(&url, login.as_ref().map(|(u, p)| (u.as_str(), p.as_str())), if quick { 20 } else { 90 })
+        let login = login_for(&self.template);
+        let login = login.as_ref().map(|(u, p)| (u.as_str(), p.as_str()));
+        let max_time = if quick { 20 } else { 90 };
+        // Kavita segna come punto di lettura ogni pagina chiesta dal catalogo:
+        // la lettura anticipata e le miniature lo sposterebbero avanti e
+        // indietro. Il suo lettore le da' uguali senza segnare niente
+        if let Flavor::Kavita { key, chapter } = Flavor::of(&self.template) {
+            let quiet =
+                format!("{}/api/reader/image?chapterId={chapter}&apiKey={key}&page={index}", origin(&self.template));
+            match fetch(&quiet, login, max_time) {
+                Ok(bytes) => return Ok(bytes),
+                // un Kavita che non lo conosce: si chiede dal catalogo
+                Err(e) if e.contains("error: 4") => {}
+                Err(e) => return Err(e),
+            }
+        }
+        fetch(&self.page_url(index), login, max_time)
     }
 }
 
 /// L'indirizzo della copertina gia' pronta sul server, se il catalogo ne ha
 /// una per questo volume.
 pub fn cover_url(path: &Path) -> Option<String> {
-    let v = Volume::from_path(path)?;
-    COVERS.lock().unwrap_or_else(|e| e.into_inner()).as_ref()?.get(&v.template).cloned()
+    links_of(path)?.cover
 }
 
 /// I byte della copertina gia' pronta sul server.
@@ -165,23 +254,35 @@ pub fn cover(path: &Path) -> Option<Vec<u8>> {
 }
 
 /// I volumi di un server, come voci della libreria. Il catalogo letto da meno
-/// di cinque minuti non si rilegge.
-pub fn volumes(server: &Server) -> Result<Vec<Entry>, String> {
+/// di cinque minuti non si rilegge. Se il server non risponde, vale quello
+/// dell'ultima volta (`stale`), tenuto su disco: i volumi scaricati si
+/// leggono anche fuori casa.
+pub fn volumes(server: &Server) -> Result<Catalog, String> {
     {
         let crawled = CRAWLED.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((_, _, found)) = crawled.iter().find(|(s, at, _)| s == server && at.elapsed() < FRESH) {
-            return Ok(found.clone());
+        if let Some((_, c)) = crawled.iter().find(|(s, c)| s == server && c.fetched.elapsed() < FRESH) {
+            return Ok(c.clone());
         }
     }
-    let found = crawl(server)?;
+    let catalog = match crawl(server) {
+        Ok(catalog) => catalog,
+        Err(e) => {
+            let mut old = offline::load_catalog(server).ok_or(e.clone())?;
+            old.stale = Some(e);
+            remember_links(&old.links);
+            return Ok(old);
+        }
+    };
+    remember_links(&catalog.links);
+    offline::save_catalog(server, &catalog);
     let mut crawled = CRAWLED.lock().unwrap_or_else(|e| e.into_inner());
-    crawled.retain(|(s, _, _)| s != server);
-    crawled.push((server.clone(), Instant::now(), found.clone()));
-    Ok(found)
+    crawled.retain(|(s, _)| s != server);
+    crawled.push((server.clone(), catalog.clone()));
+    Ok(catalog)
 }
 
 /// Legge il catalogo, dalla radice ai volumi.
-fn crawl(server: &Server) -> Result<Vec<Entry>, String> {
+fn crawl(server: &Server) -> Result<Catalog, String> {
     let login = (!server.user.is_empty()).then_some((server.user.as_str(), server.password.as_str()));
     let (root_url, root) = root(server.url.trim(), login)?;
     let mut found = Found::default();
@@ -231,9 +332,16 @@ fn crawl(server: &Server) -> Result<Vec<Entry>, String> {
     {
         return Err(e);
     }
-    let mut covers = COVERS.lock().unwrap_or_else(|e| e.into_inner());
-    covers.get_or_insert_with(HashMap::new).extend(found.covers);
-    Ok(found.entries)
+    let reads = found
+        .entries
+        .iter()
+        .filter_map(|e| {
+            let v = Volume::from_path(&e.path)?;
+            let &(last_read, date) = found.reads.get(&v.template)?;
+            Some(sync::Read { path: e.path.clone(), last_read, date })
+        })
+        .collect();
+    Ok(Catalog { entries: found.entries, reads, links: found.links, fetched: Instant::now(), stale: None })
 }
 
 /// Un feed da leggere: dove, e la serie a cui appartengono i suoi volumi (il
@@ -250,7 +358,10 @@ struct Found {
     entries: Vec<Entry>,
     /// Per indirizzo delle pagine: dove sta gia' il volume fra quelli trovati.
     at: HashMap<String, usize>,
-    covers: HashMap<String, String>,
+    links: HashMap<String, Links>,
+    /// Dove e' arrivato chi legge, secondo il server: pagina (come la dice
+    /// lui) e quando.
+    reads: HashMap<String, (u32, Option<u64>)>,
 }
 
 impl Found {
@@ -259,9 +370,11 @@ impl Found {
             let Some((template, count)) = &e.stream else { continue };
             let title = clean_title(&e.title, series);
             let entry = remote_entry(template, *count, title, series, &e.authors);
-            if let Some(cover) = &e.cover {
-                self.covers.insert(template.clone(), cover.clone());
+            if e.cover.is_some() || e.download.is_some() {
+                let links = Links { cover: e.cover.clone(), download: e.download.clone() };
+                self.links.insert(template.clone(), links);
             }
+            self.reads.insert(template.clone(), (e.last_read.unwrap_or(0), e.read_date));
             match self.at.get(template) {
                 // lo stesso volume due volte (Kavita mette in cima "Continue
                 // Reading from: ..."): vale il titolo piu' corto
@@ -370,20 +483,51 @@ fn fetch_feeds(visits: &[Visit], login: Option<(&str, &str)>) -> Vec<Fetched> {
 /// Chiede un indirizzo con curl. `max_time`: i secondi oltre i quali si
 /// rinuncia.
 pub fn fetch(url: &str, login: Option<(&str, &str)>, max_time: u32) -> Result<Vec<u8>, String> {
-    let mut config = format!("url = {}\n", quoted(url));
-    if let Some((user, password)) = login {
+    curl(&Request { url, login, ..Request::default() }, Some(max_time))
+}
+
+/// Una richiesta per curl, oltre al semplice GET.
+#[derive(Default)]
+struct Request<'a> {
+    url: &'a str,
+    login: Option<(&'a str, &'a str)>,
+    /// "PATCH", "DELETE"...
+    method: Option<&'a str>,
+    /// Un corpo in JSON.
+    json: Option<&'a str>,
+    /// Dove scrivere la risposta, invece di restituirla.
+    output: Option<&'a Path>,
+}
+
+/// Fa la richiesta con curl. `max_time`: i secondi oltre i quali si rinuncia;
+/// `None` (per scaricare un volume intero) solo se il trasferimento si ferma.
+fn curl(r: &Request, max_time: Option<u32>) -> Result<Vec<u8>, String> {
+    let mut config = format!("url = {}\n", quoted(r.url));
+    if let Some((user, password)) = r.login {
         config += &format!("user = {}\n", quoted(&format!("{user}:{password}")));
+    }
+    if let Some(method) = r.method {
+        config += &format!("request = {}\n", quoted(method));
+    }
+    if let Some(json) = r.json {
+        config += &format!("header = {}\ndata = {}\n", quoted("Content-Type: application/json"), quoted(json));
+    }
+    if let Some(output) = r.output {
+        config += &format!("output = {}\n", quoted(&output.to_string_lossy()));
     }
     let mut curl = Command::new("curl");
     // solo http e https, anche dopo un rinvio: un catalogo non puo' far
     // leggere a curl un file del computer o parlare altri protocolli
     curl.args(["--config", "-", "--globoff", "--location", "--fail", "--silent", "--show-error"])
         .args(["--proto", "=http,https", "--proto-redir", "=http,https"])
-        .args(["--connect-timeout", "10", "--max-time", &max_time.to_string()])
-        .args(["--user-agent", concat!("NicoReader/", env!("CARGO_PKG_VERSION"))])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .args(["--connect-timeout", "10"])
+        .args(["--user-agent", concat!("NicoReader/", env!("CARGO_PKG_VERSION"))]);
+    match max_time {
+        Some(t) => curl.args(["--max-time", &t.to_string()]),
+        // meno di 1 KB al secondo per un minuto: il trasferimento e' fermo
+        None => curl.args(["--speed-limit", "1024", "--speed-time", "60"]),
+    };
+    curl.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     crate::upscale::hide_window(&mut curl);
     let mut child = curl.spawn().map_err(|e| format!("curl: {e}"))?;
     if let Some(mut stdin) = child.stdin.take() {
@@ -485,6 +629,11 @@ struct FeedEntry {
     /// Le pagine: l'indirizzo con `{pageNumber}` e quante sono.
     stream: Option<(String, usize)>,
     cover: Option<String>,
+    /// Il file intero, da scaricare.
+    download: Option<String>,
+    /// Dove e' arrivato chi legge, come lo dice il server, e quando.
+    last_read: Option<u32>,
+    read_date: Option<u64>,
 }
 
 /// Legge un feed Atom; `None` se non lo e' (una pagina web, un errore in
@@ -563,13 +712,17 @@ fn parse_feed(xml: &[u8], base: &str) -> Option<Feed> {
 /// Un `<link>`: dove porta, se e' nel feed o in una voce.
 fn link(r: &NsReader<&[u8]>, e: &BytesStart, base: &str, entry: Option<&mut FeedEntry>, feed: &mut Feed) {
     let (mut rel, mut href, mut kind, mut count) = (String::new(), None, String::new(), None);
+    let (mut last_read, mut read_date) = (None, None);
     for a in e.attributes().flatten() {
         let (ns, local) = r.resolver().resolve_attribute(a.key);
         let Ok(value) = a.normalized_value(XmlVersion::Implicit1_0) else { continue };
         match ns {
-            ResolveResult::Bound(Namespace(n)) if n == PSE && local.as_ref() == b"count" => {
-                count = value.trim().parse::<usize>().ok()
-            }
+            ResolveResult::Bound(Namespace(n)) if n == PSE => match local.as_ref() {
+                b"count" => count = value.trim().parse::<usize>().ok(),
+                b"lastRead" => last_read = value.trim().parse::<u32>().ok(),
+                b"lastReadDate" => read_date = sync::unix_time(value.trim()),
+                _ => {}
+            },
             ResolveResult::Unbound => match local.as_ref() {
                 b"rel" => rel = value.into_owned(),
                 b"href" => href = Some(join(base, &value)),
@@ -590,7 +743,11 @@ fn link(r: &NsReader<&[u8]>, e: &BytesStart, base: &str, entry: Option<&mut Feed
         STREAM => {
             if let Some(n) = count.filter(|&n| n > 0 && href.contains(PAGE)) {
                 e.stream = Some((href, n));
+                (e.last_read, e.read_date) = (last_read, read_date);
             }
+        }
+        _ if rel.starts_with("http://opds-spec.org/acquisition") => {
+            e.download.get_or_insert(href);
         }
         "http://opds-spec.org/image" => e.cover = Some(href),
         "http://opds-spec.org/image/thumbnail" => {
@@ -628,7 +785,7 @@ mod tests {
     <title>⬤ Nebbia sul Porto - Volume 1</title>
     <link rel="http://opds-spec.org/image" type="image/jpeg" href="/api/image/chapter-cover?chapterId=1&amp;apiKey=KEY" />
     <link rel="http://opds-spec.org/acquisition/open-access" type="application/x-cbz" href="/api/opds/KEY/series/1/volume/1/chapter/1/download/x.cbz" p5:count="6" xmlns:p5="http://vaemendis.net/opds-pse/ns" />
-    <link rel="http://vaemendis.net/opds-pse/stream" type="image/jpeg" href="/api/opds/KEY/image?libraryId=1&amp;seriesId=1&amp;volumeId=1&amp;chapterId=1&amp;pageNumber={pageNumber}" p5:count="6" p5:lastRead="6" xmlns:p5="http://vaemendis.net/opds-pse/ns" />
+    <link rel="http://vaemendis.net/opds-pse/stream" type="image/jpeg" href="/api/opds/KEY/image?libraryId=1&amp;seriesId=1&amp;volumeId=1&amp;chapterId=1&amp;pageNumber={pageNumber}" p5:count="6" p5:lastRead="6" p5:lastReadDate="2026-10-06T19:03:41" xmlns:p5="http://vaemendis.net/opds-pse/ns" />
   </entry>
   <entry>
     <id>2</id>
@@ -656,6 +813,11 @@ mod tests {
                 nav: None,
                 stream: Some(("http://casa:25600/opds/v1.2/books/0RV8BZTHSG7VG/pages/{pageNumber}".into(), 6)),
                 cover: Some("http://casa:25600/opds/v1.2/books/0RV8BZTHSG7VG/thumbnail".into()),
+                download: Some(
+                    "http://casa:25600/opds/v1.2/books/0RV8BZTHSG7VG/file/Nebbia%20sul%20Porto%20v01.cbz".into()
+                ),
+                last_read: None,
+                read_date: None,
             }]
         );
     }
@@ -677,6 +839,11 @@ mod tests {
         );
         assert_eq!(one.cover.as_deref(), Some("http://casa:5000/api/image/chapter-cover?chapterId=1&apiKey=KEY"));
         assert_eq!(one.nav, None, "lo scaricamento non e' un feed");
+        assert_eq!(
+            one.download.as_deref(),
+            Some("http://casa:5000/api/opds/KEY/series/1/volume/1/chapter/1/download/x.cbz")
+        );
+        assert_eq!((one.last_read, one.read_date), (Some(6), sync::unix_time("2026-10-06T19:03:41")));
 
         let mut found = Found::default();
         found.add(&feed, Some("Nebbia sul Porto"));
@@ -780,8 +947,15 @@ mod tests {
             password: parts.next().unwrap_or("").into(),
         };
         set_servers(std::slice::from_ref(&server));
-        let found = volumes(&server).unwrap();
-        for e in &found {
+        let dir = std::env::temp_dir().join(format!("fumetto-opds-{}", std::process::id()));
+        offline::set_folders(dir.join("dati"), dir.join("cache"));
+        let catalog = volumes(&server).unwrap();
+        assert!(catalog.stale.is_none());
+        let found = &catalog.entries;
+        for r in &catalog.reads {
+            println!("letto: {} {} {:?}", r.path.display(), r.last_read, r.date);
+        }
+        for e in found {
             println!("{:?} / {} ({:?})", e.series, e.title, e.number);
         }
         assert!(!found.is_empty());
@@ -789,5 +963,30 @@ mod tests {
         let page = v.page(0, true).unwrap();
         assert!(crate::decode::dimensions(&page).is_some(), "la prima pagina e' un'immagine");
         assert!(cover(&found[0].path).is_some_and(|c| !c.is_empty()));
+        // scaricato, il volume si apre dalla copia: uguale, pagina per pagina
+        let file = offline::download(&found[0].path).unwrap();
+        assert_eq!(offline::downloaded(&found[0].path), Some(file));
+        let book = crate::Book::open(&found[0].path).unwrap();
+        assert_eq!(book.path, found[0].path);
+        assert_eq!(book.len(), v.count);
+        offline::forget(&found[0].path).unwrap();
+        assert_eq!(offline::downloaded(&found[0].path), None);
+        // il catalogo e' rimasto su disco: senza server (qui: un altro
+        // indirizzo con lo stesso file) lo si ritrova
+        let saved = offline::load_catalog(&server).unwrap();
+        assert_eq!(saved.entries, catalog.entries);
+        // il punto di lettura arriva al server: alla terza pagina, poi di
+        // nuovo da leggere
+        let last = &found[found.len() - 1].path;
+        let template = Volume::from_path(last).unwrap().template;
+        let on_server = || crawl(&server).unwrap().reads.into_iter().find(|r| &r.path == last).unwrap().last_read;
+        sync::report(last, 2, 6);
+        sync::flush();
+        let third = if matches!(Flavor::of(&template), Flavor::Kavita { .. }) { 2 } else { 3 };
+        assert_eq!(on_server(), third);
+        sync::report_mark(last, false);
+        sync::flush();
+        assert_eq!(on_server(), 0);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

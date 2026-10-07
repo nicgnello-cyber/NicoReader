@@ -85,6 +85,24 @@ impl Progress {
         self.dirty = true;
     }
 
+    /// Il punto di lettura venuto da un server (vedi remote::sync): pagina e
+    /// pagine, e quando (`None`: adesso). Il resto (modo, segnalibri) resta.
+    /// Vero se e' cambiato qualcosa.
+    pub fn adopt(&mut self, volume: &Path, page: usize, pages: usize, read_at: Option<u64>) -> bool {
+        let key = Self::key(volume);
+        let old = self.entries.get(&key);
+        if old.is_some_and(|s| s.page == page && s.pages == pages) {
+            return false;
+        }
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        let mut saved = old.cloned().unwrap_or_default();
+        (saved.page, saved.pages, saved.strip_offset) = (page, pages, 0.0);
+        saved.read_at = read_at.unwrap_or(now).min(now);
+        self.entries.insert(key, saved);
+        self.dirty = true;
+        true
+    }
+
     /// I volumi letti, dal piu' recente. Sono i "file recenti": l'ora di
     /// lettura sta gia' in ogni voce, non serve un elenco a parte da tenere
     /// allineato.

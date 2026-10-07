@@ -172,6 +172,10 @@ pub enum Command {
     AddServer(fumetto_core::remote::Server),
     /// Toglie un server dalla libreria (per indirizzo).
     RemoveServer(String),
+    /// Scarica un volume del server, per leggerlo senza rete.
+    Download(PathBuf),
+    /// Toglie la copia scaricata.
+    ForgetDownload(PathBuf),
     /// Dalle miniature: va alla pagina (da 0) e torna a leggere.
     Page(usize),
     /// Una scelta fatta nelle impostazioni.

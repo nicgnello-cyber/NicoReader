@@ -186,6 +186,13 @@ impl Book {
     /// Un volume su un server: si chiede subito la prima pagina, per sapere
     /// adesso (e non pagina per pagina) se il server risponde.
     fn open_remote(path: &Path, volume: Volume) -> Result<Book, Error> {
+        // scaricato: si legge la copia, anche senza rete. Il percorso resta
+        // quello remoto (progressi, copertine, punto di lettura sul server)
+        if let Some(local) = remote::offline::downloaded(path) {
+            let mut book = Book::open(&local)?;
+            (book.path, book.title) = (path.to_owned(), volume.title);
+            return Ok(book);
+        }
         let first = volume.page(0, true).map_err(Error::Remote)?;
         Ok(Book {
             path: path.to_owned(),
@@ -197,9 +204,9 @@ impl Book {
         })
     }
 
-    /// Il volume sta su un server.
+    /// Il volume sta su un server (anche se se ne legge la copia scaricata).
     pub fn is_remote(&self) -> bool {
-        matches!(self.store, Store::Remote(..))
+        remote::is_remote(&self.path)
     }
 
     pub fn len(&self) -> usize {
@@ -260,7 +267,7 @@ impl Book {
         // 256 KB: un JPEG con dentro una miniatura EXIF o un profilo colore
         // tiene la misura anche a qualche decina di KB dall'inizio
         let size = |i: usize| self.head(i, 256 << 10).and_then(|h| crate::decode::dimensions(&h)).map(|s| (i, s));
-        if !self.is_remote() {
+        if !matches!(self.store, Store::Remote(..)) {
             return picked.filter_map(size).collect();
         }
         // da un server, tutte insieme: una dopo l'altra si aspetterebbe la
