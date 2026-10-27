@@ -31,7 +31,12 @@ use crate::ui::{
 
 /// Cio' che la libreria deve sapere, dall'app.
 pub struct ShelfData<'a> {
+    /// I volumi della libreria e, da `found_from`, quelli trovati cercando sui
+    /// server che la libreria non ha.
     pub entries: &'a [Entry],
+    pub found_from: usize,
+    /// Si aspetta la risposta dei server alla ricerca.
+    pub searching: bool,
     /// Allineati con `entries`: dove si e' arrivati, e quando.
     pub status: &'a [Status],
     pub read_at: &'a [u64],
@@ -55,6 +60,13 @@ pub enum Filter {
     Reading,
     New,
     Done,
+}
+
+impl ShelfData<'_> {
+    /// Quanti volumi ha la libreria (senza quelli trovati solo sul server).
+    fn library_len(&self) -> usize {
+        self.found_from.min(self.entries.len())
+    }
 }
 
 impl Filter {
@@ -202,7 +214,7 @@ impl Shelf {
                 || e.series.as_ref().is_some_and(|s| s.to_lowercase().contains(&needle))
                 || e.authors.as_ref().is_some_and(|a| a.to_lowercase().contains(&needle))
         };
-        let mut visible: Vec<usize> = (0..d.entries.len())
+        let mut visible: Vec<usize> = (0..d.library_len())
             .filter(|&i| self.filter.keeps(d.status[i]) && found(&d.entries[i]))
             .filter(|&i| self.series.is_none() || d.entries[i].series == self.series)
             .filter(|&i| self.group.as_ref().is_none_or(|(k, n)| in_group(&d.entries[i], *k, n)))
@@ -231,7 +243,14 @@ impl Shelf {
             }
             let title =
                 if needle.is_empty() { self.filter.label().to_owned() } else { t("Trovati", "Found").to_owned() };
-            return vec![Section { title, tiles: visible.into_iter().map(Tile::Volume).collect(), one_row: false }];
+            let mut sections =
+                vec![Section { title, tiles: visible.into_iter().map(Tile::Volume).collect(), one_row: false }];
+            if let Some(server) = server_section(d, self.filter).filter(|_| !needle.is_empty()) {
+                // in libreria niente: resta solo cio' che dice il server
+                sections.retain(|s| !s.tiles.is_empty());
+                sections.push(server);
+            }
+            return sections;
         }
 
         let mut sections = Vec::new();
@@ -245,7 +264,7 @@ impl Shelf {
                 one_row: true,
             });
         }
-        let n = d.entries.len();
+        let n = d.library_len();
         sections.push(Section {
             title: if italian() {
                 format!("Tutta la libreria \u{00b7} {n}")
@@ -795,7 +814,8 @@ impl Shelf {
             );
         }
 
-        if lay.placed.is_empty() {
+        // mentre il server cerca, lo dice gia' il titolo della sua sezione
+        if lay.placed.is_empty() && !(d.searching && !self.search.is_empty()) {
             let text = if d.scanning {
                 t("Cerco i fumetti\u{2026}", "Looking for comics\u{2026}")
             } else if !self.search.is_empty() || self.filter != Filter::All {
@@ -841,7 +861,7 @@ impl Shelf {
             let on = self.filter == *f;
             let hovered = self.hover == Some(Hit::Filter(*f));
             let color = if on || hovered { INK } else { MUTED };
-            let count = d.status.iter().filter(|st| f.keeps(**st)).count();
+            let count = d.status[..d.library_len()].iter().filter(|st| f.keeps(**st)).count();
             // filtri stretti (finestra piccola): lettere un po' piu' piccole
             let size = 11.0 * s * (geo.tab_w / (134.0 * s)).clamp(0.8, 1.0);
             let label = caps(&format!("{}  {count}", f.label()), size, color).tabular();
@@ -929,7 +949,7 @@ impl BarGeo {
         });
         r -= 36.0 * s + 4.0 * s;
         let folders_x = Some(r.round());
-        let groups_x = d.entries.iter().any(|e| !e.groups.is_empty()).then(|| {
+        let groups_x = d.entries[..d.library_len()].iter().any(|e| !e.groups.is_empty()).then(|| {
             r -= 36.0 * s + 4.0 * s;
             r.round()
         });
@@ -1067,7 +1087,7 @@ fn group_sections(d: &ShelfData, filter: Filter, needle: &str, found: &dyn Fn(&E
     let mut sections = Vec::new();
     for kind in KINDS {
         let mut by_name: Vec<(&str, Vec<usize>)> = Vec::new();
-        for (i, e) in d.entries.iter().enumerate() {
+        for (i, e) in d.entries[..d.library_len()].iter().enumerate() {
             if !filter.keeps(d.status[i]) {
                 continue;
             }
@@ -1103,6 +1123,24 @@ fn group_sections(d: &ShelfData, filter: Filter, needle: &str, found: &dyn Fn(&E
     sections
 }
 
+/// I volumi trovati cercando sui server, che la libreria non ha: per serie e
+/// numero. Mentre si aspetta la risposta, solo il titolo che lo dice.
+fn server_section(d: &ShelfData, filter: Filter) -> Option<Section> {
+    let mut found: Vec<usize> = (d.library_len()..d.entries.len()).filter(|&i| filter.keeps(d.status[i])).collect();
+    found.sort_by(|&a, &b| {
+        let (ea, eb) = (&d.entries[a], &d.entries[b]);
+        natural_cmp(ea.series.as_deref().unwrap_or(""), eb.series.as_deref().unwrap_or(""))
+            .then_with(|| by_number(ea, eb))
+    });
+    let title = match (found.len(), d.searching) {
+        (0, false) => return None,
+        (0, true) => t("Sul server: cerco\u{2026}", "On the server: searching\u{2026}").to_owned(),
+        (n, _) if italian() => format!("Sul server \u{b7} {n}"),
+        (n, _) => format!("On the server \u{b7} {n}"),
+    };
+    Some(Section { title, tiles: found.into_iter().map(Tile::Volume).collect(), one_row: false })
+}
+
 fn meta_of(s: Status) -> String {
     match s {
         Status::New => t("nuovo", "new").to_owned(),
@@ -1129,6 +1167,8 @@ mod tests {
     fn data<'a>(entries: &'a [Entry], status: &'a [Status], read_at: &'a [u64]) -> ShelfData<'a> {
         ShelfData {
             entries,
+            found_from: entries.len(),
+            searching: false,
             status,
             read_at,
             offline: &[],
@@ -1245,6 +1285,50 @@ mod tests {
         shelf.search.clear();
         shelf.key(Key::Escape, &d, view, 1.0);
         assert!(!shelf.groups, "dall'elenco alla libreria");
+    }
+
+    #[test]
+    fn trovati_sul_server() {
+        let (mut e, mut st, mut at) = library();
+        // l'ultimo l'ha trovato solo la ricerca sul server
+        e.push(entry("Mare Aperto 7", Some(("Mare Aperto", 7))));
+        st.push(Status::New);
+        at.push(0);
+        let d = ShelfData { found_from: 4, ..data(&e, &st, &at) };
+        let view = (1920.0, 1080.0);
+        let mut shelf = Shelf::default();
+        let all = shelf.sections(&d);
+        assert!(all.iter().all(|s| !s.tiles.contains(&Tile::Volume(4))), "nella libreria non c'e'");
+        assert_eq!(
+            all.last().unwrap().title,
+            if italian() { "Tutta la libreria \u{b7} 4" } else { "The whole library \u{b7} 4" }
+        );
+        for c in "mare".chars() {
+            shelf.key(Key::Char(c), &d, view, 1.0);
+        }
+        let secs = shelf.sections(&d);
+        assert_eq!(secs.len(), 1, "in libreria niente: niente sezione vuota");
+        assert_eq!(secs[0].tiles, [Tile::Volume(4)], "sul server si'");
+        shelf.key(Key::Right, &d, view, 1.0);
+        assert_eq!(
+            shelf.key(Key::Enter, &d, view, 1.0),
+            Handled::Yes(Some(Command::Open("Mare Aperto 7.cbz".into()))),
+            "e si apre"
+        );
+        // qui "Mare Aperto 7" e' della libreria: mentre si aspetta il
+        // server, la sua sezione lo dice, sotto i trovati
+        let waiting = ShelfData { found_from: 5, searching: true, ..data(&e, &st, &at) };
+        let secs = shelf.sections(&waiting);
+        assert_eq!(secs.len(), 2);
+        assert_eq!(secs[0].tiles, [Tile::Volume(4)]);
+        assert!(secs[1].tiles.is_empty() && !secs[1].title.is_empty());
+        let answered = shelf.sections(&ShelfData { found_from: 5, ..data(&e, &st, &at) });
+        assert_eq!(answered.len(), 1, "il server non ha altro: niente sezione");
+        // con dei risultati in libreria, quelli del server vengono dopo
+        shelf.search = "a".into();
+        let both = shelf.sections(&d);
+        assert_eq!(both.len(), 2);
+        assert!(!both[0].tiles.is_empty() && both[1].tiles == [Tile::Volume(4)]);
     }
 
     #[test]

@@ -26,8 +26,7 @@ ultimi due si accendono e spengono dalle impostazioni), AVIF e JPEG XL, e
 lo script per il pacchetto da distribuire. Dal 25 settembre anche cio' che
 aveva CDisplayEx e mancava: luminosita', contrasto e gamma, la lente
 d'ingrandimento, i tasti personalizzabili e un foglio delle impostazioni.
-Manca solo cio' che arriva con l'installer (jump list, associazione dei
-file).
+Manca solo cio' che arriva con l'installer (associazione dei file).
 
 Quasi tutto il lavoro degli ultimi due giorni e' stato verificato con test,
 con scatti fuori schermo e con gli strumenti di prova, non ancora a mano
@@ -507,8 +506,7 @@ Il capitolo 7 ne tiene la memoria e i numeri.
   [x] File recenti: avviato senza volume riprende l'ultimo letto; nella
       galleria vuota e nel menu (tasto destro) gli ultimi letti. Vengono
       dai progressi, nessun elenco a parte.
-  [ ] I recenti nella jump list di Windows (arrivano con l'associazione
-      dei file dell'installer, capitolo 5).
+  [x] I recenti nella jump list di Windows (27 ottobre, jumplist.rs).
   [x] Messaggi d'errore visibili: finestra di sistema (volume che non si
       apre, progressi non salvati, cestino); pagina illeggibile.
   [x] Niente console con il doppio clic sull'exe.
@@ -664,7 +662,7 @@ Il capitolo 7 ne tiene la memoria e i numeri.
        credenziali su Windows (provato sotto wine), Portachiavi su macOS. Se
        il portachiavi non la prende resta nel file; su Linux resta nel file,
        che ha permessi 0600.
-     Da fare, se serve: la ricerca sul server.
+     La ricerca sul server: vedi 4h.
   4b. [x] EPUB (27 ottobre, fumetto-core\src\epub.rs). Quelli fatti di
      immagini: META-INF/container.xml -> pacchetto .opf -> spine; da ogni
      paginetta XHTML le sue immagini (<img src>, <svg><image href>), in
@@ -714,6 +712,24 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      recenti, nel titolo della finestra e all'apertura (il verso corretto
      vince su quello salvato; M sul volume aggiorna anche la correzione).
      "Torna ai dati del file" le toglie.
+  4g. [x] Jump list di Windows (27 ottobre, fumetto\src\jumplist.rs). Con
+     ICustomDestinationList (crate windows 0.62, gia' fra le dipendenze di
+     wgpu): una categoria "Letti di recente" con i dieci volumi piu'
+     recenti, anche quello aperto e quelli dei server (ogni voce e' un
+     collegamento a NicoReader con il volume come argomento). Si riscrive
+     quando cambiano i recenti, in un thread con il suo appartamento COM.
+     Le voci tolte a mano non si rimettono (Windows rifiuterebbe tutta la
+     categoria): si ricordano in jumplist-tolti.json. Compilato e passato
+     da clippy per Windows (da Linux, con MinGW); NON provato su un Windows
+     vero: da guardare al primo avvio della versione nuova.
+  4h. [x] Ricerca sul server (27 ottobre). remote::search: dalla radice del
+     catalogo il link rel="search", la descrizione OpenSearch, l'indirizzo
+     con {searchTerms}; si aprono le prime 30 serie trovate (al massimo 120
+     richieste). Nell'app (app\search.rs) si chiede 0,6 s dopo l'ultimo
+     tasto, con almeno due lettere; i volumi che la libreria non ha vanno
+     in coda a lib.entries (da lib.found_from) e la libreria li mostra in
+     "Sul server". Provato con Komga 1.24: una serie aggiunta al server
+     dopo la lettura del catalogo si trova e si apre.
   5. Il peso dell'eseguibile: da 15,3 a 20,7 MB con AVIF, JPEG XL e appunti
      (vedi 5, Tecnici).
   6. Distribuzione (capitolo 5).
@@ -902,7 +918,7 @@ Il capitolo 7 ne tiene la memoria e i numeri.
         un tag sbagliato); la prima Release vera nasce col primo tag.
         Finche' il repository e' privato, i link funzionano solo per chi
         ha accesso: per tutti serve renderlo pubblico (e allora la licenza).
-    [ ] Jump list.
+    [x] Jump list (27 ottobre, jumplist.rs).
     [ ] Linux: RPM (Fedora, openSUSE) o AppImage, se servono.
     [x] Accanto all'eseguibile: pdfium.dll e le sue licenze (lo fa
         pacchetto.ps1).

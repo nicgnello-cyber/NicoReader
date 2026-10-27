@@ -203,6 +203,7 @@ impl ApplicationHandler<UserEvent> for App {
                         .expect("thread del salvataggio");
                 }
             }
+            UserEvent::Searched(query, found, failed) => self.searched(query, found, failed),
             UserEvent::Done(result) => match result {
                 Ok(text) => {
                     self.ui.toast(text, Instant::now());
@@ -373,6 +374,9 @@ impl ApplicationHandler<UserEvent> for App {
         // succede nient'altro
         if self.progress.is_dirty() {
             let at = self.last_save + SAVE_EVERY;
+            wake = Some(wake.map_or(at, |w| w.min(at)));
+        }
+        if let Some(at) = self.search_tick(now) {
             wake = Some(wake.map_or(at, |w| w.min(at)));
         }
         if let Some(at) = self.slideshow_tick(now, event_loop) {

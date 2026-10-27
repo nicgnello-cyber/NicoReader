@@ -38,18 +38,27 @@ impl App {
     /// quello aperto.
     pub(super) fn refresh_recent(&mut self) {
         let open = self.book.as_ref().map(|b| fumetto_core::absolute(&b.path));
-        self.recent = self
-            .progress
-            .recent()
-            .into_iter()
-            .filter(|(path, _)| Some(path) != open.as_ref() && fumetto_core::exists(path))
+        let recent: Vec<_> =
+            self.progress.recent().into_iter().filter(|(path, _)| fumetto_core::exists(path)).collect();
+        self.recent = recent
+            .iter()
+            .filter(|(path, _)| Some(path) != open.as_ref())
             .take(6)
-            .map(|(path, saved)| {
-                // il titolo corretto a mano, se c'e'
-                let title = self.edits.get(&path).and_then(|e| e.title.clone()).filter(|t| !t.trim().is_empty());
-                Recent { title: title.unwrap_or_else(|| fumetto_core::title_of(&path)), place: place(saved), path }
-            })
+            .map(|(path, saved)| Recent { title: self.recent_title(path), place: place(saved), path: path.clone() })
             .collect();
+        // nella jump list anche quello aperto: e' il piu' recente
+        let items = recent
+            .iter()
+            .take(jumplist::MAX_ITEMS)
+            .map(|(path, _)| jumplist::Item { title: self.recent_title(path), path: path.clone() })
+            .collect();
+        self.jumplist.update(items);
+    }
+
+    /// Come si chiama un volume letto: il titolo corretto a mano, se c'e'.
+    fn recent_title(&self, path: &Path) -> String {
+        let edited = self.edits.get(path).and_then(|e| e.title.clone()).filter(|t| !t.trim().is_empty());
+        edited.unwrap_or_else(|| fumetto_core::title_of(path))
     }
 
     /// Apre un volume; se non si puo', lo dice e resta quello di prima.
