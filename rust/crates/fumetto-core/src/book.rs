@@ -34,6 +34,8 @@ pub enum Error {
     Io(io::Error),
     Archive(String),
     Pdf(String),
+    /// Un PDF protetto: serve la password (o quella data e' sbagliata).
+    Password,
     /// Un volume su un server (Komga, Kavita) che non risponde come dovrebbe.
     Remote(String),
 }
@@ -53,6 +55,7 @@ impl fmt::Display for Error {
             Error::Io(e) => write!(f, "{e}"),
             Error::Archive(e) => write!(f, "{} ({e})", t("Archivio rovinato o illeggibile", "Damaged or unreadable archive")),
             Error::Pdf(e) => write!(f, "PDF: {e}"),
+            Error::Password => f.write_str(t("È protetto da password.", "It is password protected.")),
             // "il server non risponde..." in testa alla frase
             Error::Remote(e) => {
                 let mut c = e.chars();
@@ -181,6 +184,25 @@ impl Book {
             _ => read_info(path),
         };
         Ok(Book { path: path.to_owned(), title, names, start_at: 0, info, store })
+    }
+
+    /// Apre un PDF protetto con la sua password. Se va, la password si
+    /// ricorda (nel portachiavi, dove c'e'): la volta dopo `open` basta.
+    /// Sbagliata: `Error::Password`, e non si ricorda niente.
+    pub fn open_with_password(path: &Path, password: &str) -> Result<Book, Error> {
+        // un volume remoto scaricato: la password e' del file scaricato
+        let file = remote::offline::downloaded(path).unwrap_or_else(|| path.to_owned());
+        crate::pdf::remember(&file, password, false);
+        match Book::open(path) {
+            Ok(book) => {
+                crate::pdf::remember(&file, password, true);
+                Ok(book)
+            }
+            Err(e) => {
+                crate::pdf::forget(&file);
+                Err(e)
+            }
+        }
     }
 
     /// Un volume su un server: si chiede subito la prima pagina, per sapere

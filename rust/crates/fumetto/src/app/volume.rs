@@ -83,17 +83,49 @@ impl App {
                 {
                     return self.open(&first);
                 }
+                self.cant_open(path, e);
+            }
+        }
+    }
+
+    /// Un volume che non si apre: un PDF protetto chiede la password, il
+    /// resto lo dice in un avviso.
+    fn cant_open(&mut self, path: &Path, e: fumetto_core::Error) {
+        if matches!(e, fumetto_core::Error::Password) {
+            self.ui.ask_password(path.to_owned(), fumetto_core::title_of(path));
+            return self.changed();
+        }
+        self.notify(dialog::cant_open(path, &e));
+    }
+
+    /// La password scritta per un PDF protetto: giusta, si apre (e si
+    /// ricorda); sbagliata, si richiede.
+    pub(super) fn open_with_password(&mut self, path: &Path, password: &str) {
+        match Book::open_with_password(path, password) {
+            Ok(book) => {
+                self.ui.password_checked(Ok(()));
+                self.set_book(book);
+            }
+            Err(fumetto_core::Error::Password) => {
+                self.ui.password_checked(Err(t("Password sbagliata.", "Wrong password.").into()));
+            }
+            Err(e) => {
+                self.ui.password_checked(Ok(()));
                 self.notify(dialog::cant_open(path, &e));
             }
         }
+        self.changed();
     }
 
     /// Un volume remoto aperto in sottofondo (o l'errore).
     pub(super) fn opened(&mut self, path: &Path, book: Result<Book, fumetto_core::Error>, quiet: bool) {
         match book {
             Ok(book) => self.set_book(book),
-            Err(e) if quiet => eprintln!("{}", dialog::cant_open(path, &e)),
-            Err(e) => self.notify(dialog::cant_open(path, &e)),
+            // un PDF protetto la password la chiede anche alla ripresa
+            Err(e) if quiet && !matches!(e, fumetto_core::Error::Password) => {
+                eprintln!("{}", dialog::cant_open(path, &e))
+            }
+            Err(e) => self.cant_open(path, e),
         }
     }
 

@@ -87,6 +87,10 @@ credenziali, Portachiavi), non nel file delle impostazioni; su Linux resta
 in `impostazioni.json`, leggibile solo da te. In ogni caso curl la riceve
 dallo standard input, mai dalla riga di comando.
 
+Un PDF protetto da password la chiede quando lo si apre. Su Windows e
+macOS NicoReader la tiene nel portachiavi del sistema e non la richiede; su
+Linux la chiede a ogni avvio.
+
 Una volta al giorno NicoReader chiede a GitHub qual è l'ultima versione (non
 manda nient'altro); se ne è uscita una nuova, propone di aprirne la pagina,
 una volta per versione. Si spegne in Impostazioni → Lettura.

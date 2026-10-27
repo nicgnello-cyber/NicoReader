@@ -278,6 +278,7 @@ impl App {
             }
             // quelli interni li ha gia' fatti l'interfaccia
             Command::AddServer(server) => self.check_server(server),
+            Command::OpenWithPassword(path, password) => self.open_with_password(&path, &password),
             Command::RemoveServer(url) => {
                 // la sua password esce anche dal portachiavi
                 for s in self.settings.servers.iter().filter(|s| s.url == url && !s.user.is_empty()) {
