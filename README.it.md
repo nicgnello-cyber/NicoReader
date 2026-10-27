@@ -67,6 +67,12 @@ Si apre un volume dal menu (tasto destro), con Ctrl+O (Cmd+O sul Mac), dalla
 libreria o con doppio clic sul file. Senza volume riprende l'ultimo letto.
 Ctrl+, apre le impostazioni (anche i tasti).
 
+L'icona degli scaffali nella barra della libreria mostra raccolte, liste di
+lettura, generi ed editori: dalla ComicInfo.xml (SeriesGroup, StoryArc con il
+suo numero, Genre, Publisher), dai dati degli EPUB e da un server Komga o
+Kavita (le sue raccolte e liste di lettura). Una lista di lettura si apre nel
+suo ordine, anche fra serie diverse.
+
 Per leggere da un server Komga o Kavita: tasto destro → Aggiungi un server…
 (o l'icona della cartella nella libreria). Per Komga l'indirizzo del server,
 con nome e password; per Kavita il link OPDS che c'è nelle impostazioni

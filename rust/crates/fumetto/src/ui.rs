@@ -182,9 +182,10 @@ pub enum Command {
     Page(usize),
     /// Una scelta fatta nelle impostazioni.
     Pref(crate::prefs::Pref),
-    /// Interni all'interfaccia: aprire una serie, il menu delle cartelle,
-    /// il modulo per aggiungere un server.
+    /// Interni all'interfaccia: aprire una serie o un gruppo, il menu delle
+    /// cartelle, il modulo per aggiungere un server.
     Series(String),
+    Group(fumetto_core::library::GroupKind, String),
     FoldersMenu(f32, f32),
     AskServer,
 }
@@ -487,6 +488,10 @@ impl Ui {
         match cmd? {
             Command::Series(name) => {
                 self.shelf.enter_series(name);
+                None
+            }
+            Command::Group(kind, name) => {
+                self.shelf.enter_group(kind, name);
                 None
             }
             Command::FoldersMenu(x, y) => {

@@ -70,6 +70,12 @@ Open a volume from the menu (right click), with Ctrl+O (Cmd+O on a Mac), from
 the library, or by double-clicking the file. With no volume, it resumes the
 last one you read. Ctrl+, opens the settings (keys included).
 
+The shelves icon in the library bar shows the collections, reading lists,
+genres and publishers: from ComicInfo.xml (SeriesGroup, StoryArc with its
+number, Genre, Publisher), from EPUB metadata, and from a Komga or Kavita
+server (its collections and reading lists). A reading list opens in its own
+order, even across different series.
+
 To read from a Komga or Kavita server: right click → Add a server… (or the
 folder icon in the library). For Komga, the server address with your user
 name and password; for Kavita, the OPDS link from your user settings (it

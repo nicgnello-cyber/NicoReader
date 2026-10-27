@@ -20,6 +20,8 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use crate::book::{is_image, read_info, title_of};
 use crate::comicinfo::ComicInfo;
 use crate::natural::natural_cmp;
@@ -50,6 +52,45 @@ pub struct Entry {
     pub number: Option<u32>,
     /// Gli autori, dalla ComicInfo.xml: per cercarli.
     pub authors: Option<String>,
+    /// Le raccolte, le liste di lettura, i generi e l'editore di cui fa parte.
+    pub groups: Vec<Group>,
+}
+
+/// Che cosa riunisce dei volumi oltre la serie.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum GroupKind {
+    /// Una raccolta di serie ("Universo Marvel"; SeriesGroup, le collezioni
+    /// di Komga e Kavita).
+    Collection,
+    /// Una lista di lettura: volumi di serie diverse in un ordine preciso
+    /// (StoryArc, le liste di Komga e Kavita).
+    ReadingList,
+    Genre,
+    Publisher,
+}
+
+/// Un gruppo di cui fa parte un volume; `order`: il suo posto nella lista.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Group {
+    pub kind: GroupKind,
+    pub name: String,
+    pub order: Option<u32>,
+}
+
+impl Group {
+    pub fn new(kind: GroupKind, name: impl Into<String>, order: Option<u32>) -> Group {
+        Group { kind, name: name.into(), order }
+    }
+}
+
+/// I gruppi che dice una scheda.
+pub fn groups_of(info: &ComicInfo) -> Vec<Group> {
+    let mut out: Vec<Group> = Vec::new();
+    out.extend(info.series_group.iter().map(|n| Group::new(GroupKind::Collection, n, None)));
+    out.extend(info.story_arcs.iter().map(|(n, o)| Group::new(GroupKind::ReadingList, n, *o)));
+    out.extend(info.genres.iter().map(|n| Group::new(GroupKind::Genre, n, None)));
+    out.extend(info.publisher.iter().map(|n| Group::new(GroupKind::Publisher, n, None)));
+    out
 }
 
 /// Dove si e' arrivati in un volume.
@@ -156,7 +197,7 @@ fn is_volume_file(name: &str) -> bool {
 fn entry(path: PathBuf) -> Entry {
     let title = title_of(&path);
     let (name, number) = parse_series(&title);
-    Entry { series: number.map(|_| name), number, title, path, authors: None }
+    Entry { series: number.map(|_| name), number, title, path, authors: None, groups: Vec::new() }
 }
 
 /// Cio' che dice la ComicInfo.xml vince su cio' che si indovina dal nome. Una
@@ -172,6 +213,7 @@ fn apply_info(e: &mut Entry, info: &ComicInfo) {
         e.title = title;
     }
     e.authors = info.authors.clone();
+    e.groups = groups_of(info);
 }
 
 /// Le schede gia' lette, per percorso, misura e data del volume (`None`: il

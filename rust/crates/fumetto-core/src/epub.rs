@@ -511,6 +511,17 @@ pub(crate) mod tests {
         assert_eq!(entries.len(), 1, "l'EPUB e' un volume della libreria");
         assert_eq!(entries[0].series.as_deref(), Some("Nebbia sul Porto"));
         assert_eq!(entries[0].number, Some(3));
+        use crate::library::{Group, GroupKind};
+        assert_eq!(
+            entries[0].groups,
+            [
+                Group::new(GroupKind::Collection, "Gialli italiani", None),
+                Group::new(GroupKind::Genre, "Giallo", None),
+                Group::new(GroupKind::Genre, "Avventura", None),
+                Group::new(GroupKind::Publisher, "Edizioni Prova", None),
+            ],
+            "raccolte, generi ed editore dalla scheda"
+        );
         let text = dir.join("romanzo.epub");
         let opf = br#"<package xmlns="http://www.idpf.org/2007/opf"><manifest>
             <item id="t" href="t.xhtml" media-type="application/xhtml+xml"/></manifest>

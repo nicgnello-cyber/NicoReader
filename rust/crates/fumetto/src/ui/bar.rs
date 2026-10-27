@@ -25,6 +25,7 @@ pub(crate) enum Icon {
     Hide,
     Thumbs,
     Bookmark,
+    Shelf,
 }
 
 /// Cosa mostra un tasto della barra, e quindi quale tasto e'.
@@ -416,6 +417,12 @@ pub(crate) fn draw_icon(l: &mut Layer, icon: Icon, cx: f32, cy: f32, s: f32, col
         Icon::Thumbs => boxes.extend([(-8.5, -5.5, 4.5, 11.0), (-2.25, -5.5, 4.5, 11.0), (4.0, -5.5, 4.5, 11.0)]),
         // un nastrino con la coda a V
         Icon::Bookmark => line(&[(-4.5, -7.5), (4.5, -7.5), (4.5, 7.5), (0.0, 3.5), (-4.5, 7.5), (-4.5, -7.5)]),
+        // due dorsi dritti e uno appoggiato, su una mensola
+        Icon::Shelf => {
+            boxes.extend([(-8.0, -5.0, 4.0, 11.0), (-3.0, -7.5, 4.0, 13.5)]);
+            line(&[(2.0, 6.0), (5.5, -6.0), (8.8, -5.0), (5.6, 6.0)]);
+            line(&[(-9.5, 7.75), (9.5, 7.75)]);
+        }
         Icon::Close => {
             line(&[(-5.5, -5.5), (5.5, 5.5)]);
             line(&[(5.5, -5.5), (-5.5, 5.5)]);
