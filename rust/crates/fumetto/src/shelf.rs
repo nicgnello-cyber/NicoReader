@@ -37,6 +37,8 @@ pub struct ShelfData<'a> {
     pub read_at: &'a [u64],
     /// Scaricato dal server: si legge anche senza rete (puo' essere vuoto).
     pub offline: &'a [bool],
+    /// I dati sono corretti a mano (puo' essere vuoto).
+    pub edited: &'a [bool],
     /// La scansione delle cartelle e' in corso.
     pub scanning: bool,
     pub roots: &'a [PathBuf],
@@ -599,6 +601,20 @@ impl Shelf {
                         cmd: Command::MarkRead(path.clone(), false),
                     });
                 }
+                rows.push(ui::Row::Item {
+                    label: t("Modifica i dati\u{2026}", "Edit details\u{2026}"),
+                    key: String::new(),
+                    on: false,
+                    cmd: Command::EditVolume(path.clone()),
+                });
+                if d.edited.get(*i) == Some(&true) {
+                    rows.push(ui::Row::Item {
+                        label: t("Torna ai dati del file", "Back to the file's details"),
+                        key: String::new(),
+                        on: false,
+                        cmd: Command::ResetVolume(path.clone()),
+                    });
+                }
                 // un volume su un server non ha cartella ne' cestino: si puo'
                 // scaricare per leggerlo senza rete
                 if remote::is_remote(&path) {
@@ -1116,6 +1132,7 @@ mod tests {
             status,
             read_at,
             offline: &[],
+            edited: &[],
             scanning: false,
             roots: &[],
             covered: &|_| true,

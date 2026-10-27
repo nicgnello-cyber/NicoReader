@@ -67,6 +67,24 @@ Si apre un volume dal menu (tasto destro), con Ctrl+O (Cmd+O sul Mac), dalla
 libreria o con doppio clic sul file. Senza volume riprende l'ultimo letto.
 Ctrl+, apre le impostazioni (anche i tasti).
 
+All'ultima pagina, andando avanti ancora una volta l'app dice quale volume
+viene dopo, e andando avanti di nuovo lo apre: il seguente della serie (o
+della lista di lettura da cui lo si è aperto, o della sua cartella). C'è
+anche nel menu del tasto destro, sotto Volume successivo.
+
+Su uno schermo touch si tocca ai lati per girare pagina, o si striscia; si
+trascina per spostare una pagina ingrandita o per scorrere il nastro, la
+libreria e le miniature; si allargano due dita per ingrandire (nel nastro
+cambia la larghezza); due tocchi al centro ingrandiscono o tornano alla
+pagina intera; un dito tenuto giù apre il menu. Sul trackpad del Mac si
+ingrandisce con il pizzico.
+
+Se il nome di un file è disordinato e manca la ComicInfo.xml, tasto destro
+sul volume nella libreria → Modifica i dati… per dargli titolo, serie,
+numero e verso di lettura. Le correzioni stanno in `correzioni.json` nella
+cartella dei dati: i file non si toccano (nemmeno quelli dei server); "Torna
+ai dati del file", nello stesso menu, le toglie.
+
 L'icona degli scaffali nella barra della libreria mostra raccolte, liste di
 lettura, generi ed editori: dalla ComicInfo.xml (SeriesGroup, StoryArc con il
 suo numero, Genre, Publisher), dai dati degli EPUB e da un server Komga o

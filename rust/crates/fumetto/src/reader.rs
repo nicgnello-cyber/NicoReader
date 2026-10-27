@@ -447,6 +447,26 @@ impl Reader {
         self.strip_now().visible(|i| self.strip_height(i), self.len, self.view.1 as f32)
     }
 
+    /// Si e' alla fine del volume: avanti non c'e' piu' niente (l'ultima
+    /// pagina a schermo; nel nastro, il fondo dell'ultima sul bordo basso).
+    pub fn at_end(&self) -> bool {
+        if self.len == 0 {
+            return false;
+        }
+        match self.mode {
+            Mode::Strip => {
+                let mut further = self.strip_now();
+                let before = further;
+                further.scroll(1.0, |i| self.strip_height(i), self.len, self.view.1 as f32);
+                further == before && self.glide <= 0.5
+            }
+            _ => {
+                let (s, n) = self.group_of(self.page);
+                s + n >= self.len
+            }
+        }
+    }
+
     /// Esegue un'azione del lettore. Restituisce `true` se si e' girata
     /// pagina (per misurare quanto ci mette ad arrivare sullo schermo).
     pub fn act(&mut self, action: Action, now: Instant) -> bool {
@@ -981,6 +1001,26 @@ mod tests {
         let pages = ready_all(&r, [0]);
         let (_, order) = r.prefetch(&pages);
         assert_eq!(order, [1, 2, 3, 4], "arrivata la prima, le successive");
+    }
+
+    #[test]
+    fn la_fine_del_volume() {
+        let mut r = reader(3);
+        assert!(!r.at_end());
+        r.act(Action::Next, now());
+        r.act(Action::Next, now());
+        assert!(r.at_end(), "l'ultima pagina");
+        r.act(Action::ToggleDouble, now());
+        r.act(Action::GoTo(1), now());
+        assert!(!r.at_end(), "in doppia pagina: 1 e 2 insieme, poi la 3");
+        r.act(Action::Next, now());
+        assert!(r.at_end());
+        r.act(Action::ToggleStrip, now());
+        r.act(Action::First, now());
+        assert!(!r.at_end(), "il nastro in cima");
+        r.act(Action::Scroll(1e6), now());
+        while r.advance_glide(0.05) {}
+        assert!(r.at_end(), "il nastro in fondo");
     }
 
     #[test]

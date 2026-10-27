@@ -89,8 +89,8 @@ impl App {
         }
         let mut entries = scan.local;
         entries.extend(self.lib.remote.iter().cloned());
-        entries.sort_by(|a, b| fumetto_core::natural_cmp(&a.title, &b.title).then_with(|| a.path.cmp(&b.path)));
-        self.lib.entries = entries;
+        self.lib.raw = entries;
+        self.apply_edits();
         if !scan.failed.is_empty() && self.shelf_shown() {
             let head = t("Server non raggiungibile", "Server unreachable");
             self.ui.toast(format!("{head}: {}", scan.failed.join("; ")), Instant::now());
@@ -207,7 +207,66 @@ impl App {
     }
 
     /// Dove si e' arrivati in ogni volume della libreria.
+    /// La libreria con i dati corretti a mano, in ordine di titolo.
+    pub(super) fn apply_edits(&mut self) {
+        let mut entries = self.lib.raw.clone();
+        self.edits.apply(&mut entries);
+        entries.sort_by(|a, b| fumetto_core::natural_cmp(&a.title, &b.title).then_with(|| a.path.cmp(&b.path)));
+        self.lib.entries = entries;
+        self.refresh_next();
+    }
+
+    /// Apre il modulo per correggere i dati di un volume.
+    pub(super) fn edit_volume(&mut self, path: PathBuf) {
+        let here = fumetto_core::absolute(&path);
+        let entry = self.lib.entries.iter().find(|e| fumetto_core::absolute(&e.path) == here);
+        let (title, series, number) = match entry {
+            Some(e) => (e.title.clone(), e.series.clone().unwrap_or_default(), e.number),
+            None => (fumetto_core::title_of(&path), String::new(), None),
+        };
+        let existing = self.edits.get(&path).cloned().unwrap_or_default();
+        let number = number.map(|n| n.to_string()).unwrap_or_default();
+        let name = match &path.file_name() {
+            Some(n) if !remote::is_remote(&path) => n.to_string_lossy().into_owned(),
+            _ => title.clone(),
+        };
+        let rtl = existing.right_to_left;
+        self.ui.edit_volume(path, name, [title, series, number], existing, rtl);
+        self.changed();
+    }
+
+    /// Salva i dati corretti di un volume (vuoti: tornano quelli del file).
+    pub(super) fn save_volume(&mut self, path: &Path, edit: fumetto_core::edits::VolumeEdit) {
+        let reset = edit.is_empty();
+        let had_rtl = self.edits.get(path).and_then(|e| e.right_to_left).is_some();
+        let rtl = edit.right_to_left;
+        match self.edits.set(path, edit) {
+            Ok(()) => {
+                self.ui.server_checked(Ok(()));
+                self.apply_edits();
+                self.refresh_shelf();
+                // il volume aperto: il verso scelto vale subito; tolto, torna quello del file
+                if let (Some(book), Some(reader)) = (&self.book, &mut self.reader)
+                    && fumetto_core::absolute(&book.path) == fumetto_core::absolute(path)
+                    && (rtl.is_some() || had_rtl)
+                {
+                    reader.manga = rtl.or(book.info.as_ref().and_then(|i| i.right_to_left)).unwrap_or(false);
+                }
+                let note = if reset {
+                    t("Tornati i dati del file", "Back to the file's details")
+                } else {
+                    t("Dati del volume salvati", "Volume details saved")
+                };
+                self.ui.toast(note, Instant::now());
+            }
+            Err(e) => self.ui.server_checked(Err(e.to_string())),
+        }
+        self.changed();
+    }
+
     pub(super) fn refresh_shelf(&mut self) {
+        let edits = &self.edits;
+        self.lib.edited = self.lib.entries.iter().map(|e| edits.get(&e.path).is_some()).collect();
         let progress = &self.progress;
         self.lib.status = self.lib.entries.iter().map(|e| Status::of(progress, &e.path)).collect();
         self.lib.read_at = self.lib.entries.iter().map(|e| progress.get(&e.path).map_or(0, |s| s.read_at)).collect();
@@ -224,6 +283,7 @@ pub(super) fn shelf_data<'a>(
         entries: &lib.entries,
         status: &lib.status,
         offline: &lib.offline,
+        edited: &lib.edited,
         read_at: &lib.read_at,
         scanning: lib.scanning,
         roots,

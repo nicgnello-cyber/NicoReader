@@ -177,6 +177,9 @@ impl App {
             }
             _ => {}
         }
+        if self.end_of_volume(action) {
+            return;
+        }
         let Some(reader) = &mut self.reader else { return };
         let now = Instant::now();
         if reader.act(action, now) {
@@ -184,6 +187,16 @@ impl App {
         }
         if action == Action::ToggleTrim {
             self.settings.trim = reader.trim;
+        }
+        // il verso corretto a mano vale a ogni apertura: si cambia anche li'
+        if action == Action::ToggleManga
+            && let Some(book) = &self.book
+            && let Some(mut edit) = self.edits.get(&book.path).filter(|e| e.right_to_left.is_some()).cloned()
+        {
+            edit.right_to_left = Some(reader.manga);
+            if let Err(e) = self.edits.set(&book.path, edit) {
+                eprintln!("correzioni non salvate: {e}");
+            }
         }
         // chi gira pagina a mano ha tutto il tempo della presentazione per la nuova
         if self.slideshow.is_some()
@@ -293,6 +306,9 @@ impl App {
             }
             Command::Download(path) => self.download(path),
             Command::ForgetDownload(path) => self.forget_download(&path),
+            Command::EditVolume(path) => self.edit_volume(path),
+            Command::SaveVolume(path, edit) => self.save_volume(&path, edit),
+            Command::ResetVolume(path) => self.save_volume(&path, fumetto_core::edits::VolumeEdit::default()),
             Command::Series(_) | Command::Group(..) | Command::FoldersMenu(..) | Command::AskServer => {}
         }
         self.request_redraw();

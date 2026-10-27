@@ -68,6 +68,7 @@ macro_rules! look {
             keys: &$app.keymap,
             slideshow: $app.slideshow.is_some(),
             lens: $app.lens_circle(),
+            next: $app.next_volume.as_ref(),
         }
     };
 }
@@ -78,6 +79,16 @@ struct Look<'a> {
     keys: &'a Keymap,
     slideshow: bool,
     lens: Option<(f32, f32, f32)>,
+    next: Option<&'a (PathBuf, String)>,
+}
+
+/// Avanti alla fine di un volume: quale si e' finito, quale viene dopo,
+/// quando lo si e' detto e l'ultima spinta in avanti.
+struct NextOffer {
+    from: PathBuf,
+    to: PathBuf,
+    since: Instant,
+    last: Instant,
 }
 
 // App e' divisa per temi, un blocco `impl App` per file. I moduli vengono
@@ -88,6 +99,7 @@ mod draw;
 mod events;
 mod shelf;
 mod tools;
+mod touch;
 mod update;
 mod volume;
 
@@ -108,6 +120,9 @@ const BUDGET: usize = 768 << 20;
 
 /// Ogni quanto, al massimo, si riscrive il file dei progressi.
 const SAVE_EVERY: Duration = Duration::from_secs(1);
+
+/// Per quanto, alla fine di un volume, avanti apre il seguente.
+const NEXT_OFFER_HOLD: Duration = Duration::from_secs(8);
 
 pub enum UserEvent {
     Loaded(Loaded),
@@ -174,6 +189,10 @@ pub struct Scan {
 #[derive(Default)]
 struct Lib {
     entries: Vec<Entry>,
+    /// Come le ha trovate la scansione, senza le correzioni a mano.
+    raw: Vec<Entry>,
+    /// Allineati con `entries`: il volume ha dei dati corretti a mano.
+    edited: Vec<bool>,
     /// I volumi dei server, a parte: le cartelle si rileggono prima.
     remote: Vec<Entry>,
     /// Quali volumi dei server sono scaricati (si leggono senza rete).
@@ -331,6 +350,14 @@ pub struct App {
     slideshow: Option<Instant>,
     /// Dove si era al giro precedente: se non ci si muove piu', e' finita.
     slide_last: Option<(usize, f32)>,
+    /// Il volume da leggere dopo quello aperto, e come si chiama.
+    next_volume: Option<(PathBuf, String)>,
+    /// Si e' andati avanti alla fine del volume: il seguente e' stato detto.
+    next_offer: Option<NextOffer>,
+    /// Le dita sullo schermo, e il gesto che fanno.
+    touches: touch::Touches,
+    /// I dati dei volumi corretti a mano.
+    edits: fumetto_core::edits::Edits,
     /// L'ultimo clic, per riconoscere il doppio clic.
     last_click: Option<(Instant, f32, f32)>,
     /// Il thread degli appunti: tiene la pagina copiata (su Linux gli appunti
@@ -370,6 +397,10 @@ impl App {
         remote::set_servers(&settings.servers);
         // i punti di lettura visti sui server e i volumi scaricati: accanto ai
         // progressi (la prova automatica, senza cartella sua, non ne ha)
+        let edits = match settings_path.as_deref().and_then(Path::parent) {
+            Some(data) => fumetto_core::edits::Edits::load(data.join("correzioni.json")),
+            None => fumetto_core::edits::Edits::in_memory(),
+        };
         if let Some(data) = settings_path.as_deref().and_then(Path::parent) {
             remote::sync::set_file(data.join("server-letture.json"));
             remote::offline::set_folders(data.to_owned(), covers_dir.parent().unwrap_or(&covers_dir).to_owned());
@@ -463,6 +494,10 @@ impl App {
             upscale_failed: HashSet::new(),
             slideshow: None,
             slide_last: None,
+            next_volume: None,
+            next_offer: None,
+            touches: touch::Touches::default(),
+            edits,
             last_click: None,
             copier: None,
             to_save: None,

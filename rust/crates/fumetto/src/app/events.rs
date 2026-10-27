@@ -327,71 +327,18 @@ impl ApplicationHandler<UserEvent> for App {
                 self.act(action, event_loop);
             }
             WindowEvent::CursorMoved { position, .. } => {
-                let (x, y) = (position.x as f32, position.y as f32);
-                let (dx, dy) = (x - self.cursor.0, y - self.cursor.1);
-                self.cursor = (x, y);
-                let ctx = input_context!(self);
-                if self.ui.motion(x, y, &ctx, Instant::now()) || self.lens_circle().is_some() {
-                    self.request_redraw();
-                }
-                if self.press.is_some() {
-                    let ctx = input_context!(self);
-                    if let Some(cmd) = self.ui.drag(x, &ctx) {
-                        if let Some(p) = &mut self.press {
-                            p.dragged = true;
-                        }
-                        return self.run(cmd, event_loop);
-                    }
-                }
-                if let Some(press) = &mut self.press {
-                    // oltre qualche pixel non e' piu' un clic: si trascina la pagina
-                    press.dragged |= (x - press.x).abs() + (y - press.y).abs() > 6.0;
-                    if press.dragged && !self.ui.modal() && self.reader.as_ref().is_some_and(|r| r.zoomed()) {
-                        self.act(Action::Pan(dx, dy), event_loop);
-                    }
-                }
+                self.pointer_moved(position.x as f32, position.y as f32, event_loop)
             }
             WindowEvent::MouseInput { state, button: MouseButton::Left, .. } => match state {
-                ElementState::Pressed => {
-                    self.press = Some(Press { x: self.cursor.0, y: self.cursor.1, dragged: false });
-                    let ctx = input_context!(self);
-                    if let Some(cmd) = self.ui.press(self.cursor.0, self.cursor.1, &ctx) {
-                        self.run(cmd, event_loop);
-                    }
-                }
-                ElementState::Released => {
-                    let press = self.press.take();
-                    if press.as_ref().is_some_and(|p| p.dragged) && self.ui.prefs.is_some() {
-                        // fine del trascinamento di una regolazione
-                        let ctx = input_context!(self);
-                        let _ = self.ui.click(self.cursor.0, self.cursor.1, &ctx);
-                    }
-                    if let Some(press) = press
-                        && !press.dragged
-                    {
-                        let ctx = input_context!(self);
-                        match self.ui.click(press.x, press.y, &ctx) {
-                            Handled::Yes(cmd) => {
-                                self.request_redraw();
-                                if let Some(cmd) = cmd {
-                                    self.run(cmd, event_loop);
-                                }
-                            }
-                            Handled::No => {
-                                let action = self.click(press.x).or_else(|| self.double_click(press.x, press.y));
-                                if let Some(a) = action {
-                                    self.act(a, event_loop);
-                                }
-                            }
-                        }
-                    }
-                }
+                ElementState::Pressed => self.left_down(event_loop),
+                ElementState::Released => self.left_up(event_loop),
             },
             WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Right, .. } => {
-                let ctx = input_context!(self);
-                self.ui.open_menu(self.cursor.0, self.cursor.1, &ctx);
-                self.request_redraw();
+                self.context_menu();
             }
+            WindowEvent::Touch(touch) => self.touch(touch, event_loop),
+            WindowEvent::PinchGesture { delta, .. } => self.pinch_gesture(delta as f32, event_loop),
+            WindowEvent::DoubleTapGesture { .. } => self.double_tap(self.cursor.0, self.cursor.1, event_loop),
             WindowEvent::DroppedFile(path) => self.open(&path),
             WindowEvent::Focused(on) => {
                 self.stats.note(if on { "finestra in primo piano" } else { "finestra sullo sfondo" })
@@ -450,6 +397,79 @@ impl ApplicationHandler<UserEvent> for App {
             wake = Some(wake.map_or(next, |w| w.min(next)));
         }
         event_loop.set_control_flow(wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
+    }
+}
+
+impl App {
+    /// Il puntatore (mouse, o un dito) si e' mosso.
+    pub(super) fn pointer_moved(&mut self, x: f32, y: f32, event_loop: &ActiveEventLoop) {
+        let (dx, dy) = (x - self.cursor.0, y - self.cursor.1);
+        self.cursor = (x, y);
+        let ctx = input_context!(self);
+        if self.ui.motion(x, y, &ctx, Instant::now()) || self.lens_circle().is_some() {
+            self.request_redraw();
+        }
+        if self.press.is_some() {
+            let ctx = input_context!(self);
+            if let Some(cmd) = self.ui.drag(x, &ctx) {
+                if let Some(p) = &mut self.press {
+                    p.dragged = true;
+                }
+                return self.run(cmd, event_loop);
+            }
+        }
+        if let Some(press) = &mut self.press {
+            // oltre qualche pixel non e' piu' un clic: si trascina la pagina
+            press.dragged |= (x - press.x).abs() + (y - press.y).abs() > 6.0;
+            if press.dragged && !self.ui.modal() && self.reader.as_ref().is_some_and(|r| r.zoomed()) {
+                self.act(Action::Pan(dx, dy), event_loop);
+            }
+        }
+    }
+
+    /// Il tasto sinistro (o un dito) giu'.
+    pub(super) fn left_down(&mut self, event_loop: &ActiveEventLoop) {
+        self.press = Some(Press { x: self.cursor.0, y: self.cursor.1, dragged: false });
+        let ctx = input_context!(self);
+        if let Some(cmd) = self.ui.press(self.cursor.0, self.cursor.1, &ctx) {
+            self.run(cmd, event_loop);
+        }
+    }
+
+    /// Il tasto sinistro (o un dito) su: se non si e' trascinato, un clic.
+    pub(super) fn left_up(&mut self, event_loop: &ActiveEventLoop) {
+        let press = self.press.take();
+        if press.as_ref().is_some_and(|p| p.dragged) && self.ui.prefs.is_some() {
+            // fine del trascinamento di una regolazione
+            let ctx = input_context!(self);
+            let _ = self.ui.click(self.cursor.0, self.cursor.1, &ctx);
+        }
+        if let Some(press) = press
+            && !press.dragged
+        {
+            let ctx = input_context!(self);
+            match self.ui.click(press.x, press.y, &ctx) {
+                Handled::Yes(cmd) => {
+                    self.request_redraw();
+                    if let Some(cmd) = cmd {
+                        self.run(cmd, event_loop);
+                    }
+                }
+                Handled::No => {
+                    let action = self.click(press.x).or_else(|| self.double_click(press.x, press.y));
+                    if let Some(a) = action {
+                        self.act(a, event_loop);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Il menu del tasto destro (o del dito tenuto giu'), dove sta il puntatore.
+    pub(super) fn context_menu(&mut self) {
+        let ctx = input_context!(self);
+        self.ui.open_menu(self.cursor.0, self.cursor.1, &ctx);
+        self.request_redraw();
     }
 }
 

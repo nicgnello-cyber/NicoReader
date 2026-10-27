@@ -70,6 +70,23 @@ Open a volume from the menu (right click), with Ctrl+O (Cmd+O on a Mac), from
 the library, or by double-clicking the file. With no volume, it resumes the
 last one you read. Ctrl+, opens the settings (keys included).
 
+At the last page, going forward once more tells you which volume comes
+next, and going forward again opens it: the next one in the series (or in
+the reading list you opened it from, or in its folder). It is also in the
+right-click menu, under Next volume.
+
+On a touch screen, tap the sides to turn pages or swipe; drag to move a
+zoomed page or to scroll the strip, the library and the thumbnails; pinch
+with two fingers to zoom (in the strip it changes the width); double-tap the
+middle to zoom in or back out; hold a finger down for the menu. On a Mac
+trackpad, pinch to zoom.
+
+If a file name is messy and the volume has no ComicInfo.xml, right-click it
+in the library → Edit details… to set its title, series, number and reading
+direction. The corrections live in `correzioni.json` in the data folder, so
+the files stay untouched (server volumes too); "Back to the file's details"
+in the same menu undoes them.
+
 The shelves icon in the library bar shows the collections, reading lists,
 genres and publishers: from ComicInfo.xml (SeriesGroup, StoryArc with its
 number, Genre, Publisher), from EPUB metadata, and from a Komga or Kavita

@@ -1,10 +1,12 @@
 //! I moduli da scrivere: aggiungere un server alla libreria (Komga, Kavita:
 //! indirizzo, nome e password; Invio prova il collegamento, il server entra
-//! nella libreria solo se risponde) e la password di un PDF protetto.
+//! nella libreria solo se risponde), la password di un PDF protetto, i dati
+//! di un volume corretti a mano.
 
 use std::path::PathBuf;
 
 use super::*;
+use fumetto_core::edits::VolumeEdit;
 use fumetto_core::remote::Server;
 
 /// Quanto puo' essere lungo un campo: un indirizzo con la chiave di Kavita
@@ -16,12 +18,30 @@ pub(crate) struct ServerForm {
     fields: [String; 3],
     /// La password di un PDF: il volume e il suo titolo.
     pdf: Option<(PathBuf, String)>,
+    /// I dati di un volume: titolo, serie e numero nei campi, piu' il verso.
+    volume: Option<VolumeData>,
     focus: usize,
     /// Si sta provando il collegamento: si aspetta.
     busy: bool,
     /// Cosa e' andato storto l'ultima volta.
     error: Option<String>,
 }
+
+/// Il volume di cui si correggono i dati.
+pub(super) struct VolumeData {
+    pub path: PathBuf,
+    /// Il nome del file, in testa al modulo.
+    pub name: String,
+    /// I campi come erano all'apertura: si salva solo cio' che cambia.
+    pub initial: [String; 3],
+    /// Le correzioni che c'erano gia'.
+    pub existing: VolumeEdit,
+    /// Il verso scelto: `None` come dice il file.
+    pub right_to_left: Option<bool>,
+}
+
+/// La riga del verso, dopo i tre campi.
+const DIRECTION: usize = 3;
 
 /// Cosa fa un tasto nel modulo.
 pub(super) enum Outcome {
@@ -32,7 +52,12 @@ pub(super) enum Outcome {
 
 impl ServerForm {
     pub(super) fn new() -> ServerForm {
-        ServerForm { fields: Default::default(), pdf: None, focus: 0, busy: false, error: None }
+        ServerForm { fields: Default::default(), pdf: None, volume: None, focus: 0, busy: false, error: None }
+    }
+
+    /// I dati di un volume da correggere, con i valori di adesso nei campi.
+    pub(super) fn volume(data: VolumeData) -> ServerForm {
+        ServerForm { fields: data.initial.clone(), volume: Some(data), ..ServerForm::new() }
     }
 
     /// La password per aprire un PDF protetto.
@@ -45,14 +70,27 @@ impl ServerForm {
         self.pdf.is_some()
     }
 
-    /// Quanti campi ha il modulo.
+    /// Quanti campi da scrivere ha il modulo.
     fn count(&self) -> usize {
         if self.pdf.is_some() { 1 } else { 3 }
     }
 
+    /// Quante righe si scelgono con Tab: i campi, e il verso per un volume.
+    fn rows(&self) -> usize {
+        self.count() + usize::from(self.volume.is_some())
+    }
+
     /// Il campo si scrive a pallini.
     fn masked(&self, i: usize) -> bool {
-        i == self.count() - 1
+        self.volume.is_none() && i == self.count() - 1
+    }
+
+    /// Il verso dopo (o prima): come il file, da sinistra, da destra.
+    fn turn_direction(&mut self, forward: bool) {
+        let Some(v) = &mut self.volume else { return };
+        const ORDER: [Option<bool>; 3] = [None, Some(false), Some(true)];
+        let k = ORDER.iter().position(|d| *d == v.right_to_left).unwrap_or(0);
+        v.right_to_left = ORDER[(k + if forward { 1 } else { 2 }) % 3];
     }
 
     pub(super) fn key(&mut self, key: Key) -> Outcome {
@@ -62,14 +100,24 @@ impl ServerForm {
         if self.busy {
             return Outcome::Stay;
         }
+        if self.focus == DIRECTION {
+            match key {
+                Key::Left | Key::Right | Key::Char(' ') => {
+                    self.turn_direction(key != Key::Left);
+                    return Outcome::Stay;
+                }
+                Key::Char(_) | Key::Digit(_) | Key::Backspace => return Outcome::Stay,
+                _ => {}
+            }
+        }
         match key {
             Key::Char(c) => self.type_text(&c.to_string()),
             Key::Digit(d) => self.type_text(&d.to_string()),
             Key::Backspace => {
                 self.fields[self.focus].pop();
             }
-            Key::Tab | Key::Down => self.focus = (self.focus + 1) % self.count(),
-            Key::Up => self.focus = (self.focus + self.count() - 1) % self.count(),
+            Key::Tab | Key::Down => self.focus = (self.focus + 1) % self.rows(),
+            Key::Up => self.focus = (self.focus + self.rows() - 1) % self.rows(),
             Key::Enter => return self.submit(),
             _ => {}
         }
@@ -78,7 +126,7 @@ impl ServerForm {
 
     /// Testo scritto o incollato, nel campo scelto (senza a capo).
     pub(super) fn type_text(&mut self, text: &str) {
-        if self.busy {
+        if self.busy || self.focus >= self.count() {
             return;
         }
         let field = &mut self.fields[self.focus];
@@ -91,6 +139,32 @@ impl ServerForm {
     }
 
     fn submit(&mut self) -> Outcome {
+        if let Some(v) = &self.volume {
+            let [title, series, number] = &self.fields;
+            let number = number.trim();
+            let parsed = if number.is_empty() { Some(None) } else { number.parse::<u32>().ok().map(Some) };
+            let Some(parsed) = parsed else {
+                self.error =
+                    Some(t("Il numero dev'essere un numero intero.", "The number must be a whole number.").into());
+                self.focus = 2;
+                return Outcome::Stay;
+            };
+            // si cambia solo cio' che si e' toccato: il resto resta com'era
+            let mut edit = v.existing.clone();
+            if *title != v.initial[0] {
+                // il titolo vuoto: torna quello del file
+                edit.title = Some(title.trim().to_owned()).filter(|t| !t.is_empty());
+            }
+            if *series != v.initial[1] {
+                edit.series = Some(series.trim().to_owned());
+            }
+            if self.fields[2] != v.initial[2] {
+                edit.number = Some(parsed);
+            }
+            edit.right_to_left = v.right_to_left;
+            self.busy = true;
+            return Outcome::Submit(Command::SaveVolume(v.path.clone(), edit));
+        }
         if let Some((path, _)) = &self.pdf {
             if self.fields[0].is_empty() {
                 return Outcome::Stay;
@@ -128,11 +202,15 @@ impl ServerForm {
     pub(super) fn click(&mut self, ctx: &Context, x: f32, y: f32) {
         let (x0, w, ys) = geo(ctx);
         let s = ctx.scale;
-        if let Some(i) = ys[..self.count()].iter().position(|&fy| y > fy - 44.0 * s && y < fy + 12.0 * s)
+        if let Some(i) = ys[..self.rows()].iter().position(|&fy| y > fy - 44.0 * s && y < fy + 12.0 * s)
             && x >= x0
             && x <= x0 + w
             && !self.busy
         {
+            // un clic sul verso gia' scelto lo cambia (si sceglie anche col dito)
+            if i == DIRECTION && self.focus == DIRECTION {
+                self.turn_direction(true);
+            }
             self.focus = i;
         }
     }
@@ -144,7 +222,25 @@ impl ServerForm {
         let mut l = Layer::default();
         l.rects.push(Rect::new(0.0, 0.0, vw, vh, [0.0, 0.0, 0.0, 0.96]));
         let top = ys[0] - 178.0 * s;
-        if let Some((_, title)) = &self.pdf {
+        if let Some(v) = &self.volume {
+            l.texts.push(caps(t("Dati del volume", "Volume details"), 11.0 * s, MUTED).on_baseline(x0, top));
+            let name = Text::new(v.name.as_str(), Face::Serif, 40.0 * s, INK);
+            l.texts.push(fit(m, name, w).on_baseline(x0, top + 46.0 * s));
+            let help = [
+                t(
+                    "Si correggono per NicoReader: il file resta com'\u{e8}.",
+                    "They're corrected for NicoReader: the file stays as it is.",
+                ),
+                t(
+                    "Senza serie \u{e8} un volume unico; il titolo vuoto torna quello del file.",
+                    "No series makes it a standalone volume; an empty title goes back to the file's.",
+                ),
+            ];
+            for (k, line) in help.into_iter().enumerate() {
+                let text = Text::new(line, Face::Sans, 13.0 * s, MUTED);
+                l.texts.push(fit(m, text, w).on_baseline(x0, top + (78.0 + 20.0 * k as f32) * s));
+            }
+        } else if let Some((_, title)) = &self.pdf {
             l.texts.push(caps(t("PDF protetto", "Protected PDF"), 11.0 * s, MUTED).on_baseline(x0, top));
             let name = Text::new(title.as_str(), Face::Serif, 40.0 * s, INK);
             l.texts.push(fit(m, name, w).on_baseline(x0, top + 46.0 * s));
@@ -163,7 +259,7 @@ impl ServerForm {
             l.texts.push(caps(t("Aggiungi un server", "Add a server"), 11.0 * s, MUTED).on_baseline(x0, top));
             l.texts.push(Text::new("Komga, Kavita", Face::Serif, 40.0 * s, INK).on_baseline(x0, top + 46.0 * s));
         }
-        let help = if self.pdf.is_some() {
+        let help = if self.pdf.is_some() || self.volume.is_some() {
             &[][..]
         } else {
             &[
@@ -183,6 +279,8 @@ impl ServerForm {
         }
         let labels = if self.pdf.is_some() {
             [t("Password", "Password"); 1].to_vec()
+        } else if self.volume.is_some() {
+            vec![t("Titolo", "Title"), t("Serie", "Series"), t("Numero", "Number")]
         } else {
             vec![t("Indirizzo", "Address"), t("Nome", "User name"), t("Password", "Password")]
         };
@@ -213,11 +311,40 @@ impl ServerForm {
                 ));
             }
         }
-        let below = ys[self.count() - 1] + 50.0 * s;
+        if let Some(v) = &self.volume {
+            let y = ys[DIRECTION];
+            let focused = self.focus == DIRECTION && !self.busy;
+            let label = caps(t("Verso di lettura", "Reading direction"), 9.5 * s, if focused { INK } else { MUTED });
+            l.texts.push(label.on_baseline(x0, y - 30.0 * s));
+            let value = match v.right_to_left {
+                None => t("Come dice il file", "As the file says"),
+                Some(false) => t("Da sinistra a destra", "Left to right"),
+                Some(true) => t("Da destra a sinistra (manga)", "Right to left (manga)"),
+            };
+            let shown = format!("\u{2039}   {value}   \u{203a}");
+            l.texts.push(Text::new(shown, Face::Sans, 17.0 * s, INK).on_baseline(x0, y));
+            l.rects.push(Rect::new(
+                x0,
+                (y + 9.0 * s).round(),
+                w,
+                if focused { (2.0 * s).round() } else { s.round() },
+                if focused { ACCENT } else { HAIR },
+            ));
+        }
+        let below = ys[self.rows() - 1] + 50.0 * s;
         let (line, color) = match (&self.error, self.busy) {
             (_, true) if self.pdf.is_some() => (t("Apertura\u{2026}", "Opening\u{2026}").to_owned(), MUTED),
+            (_, true) if self.volume.is_some() => (t("Salvataggio\u{2026}", "Saving\u{2026}").to_owned(), MUTED),
             (_, true) => (t("Collegamento in corso\u{2026}", "Connecting\u{2026}").to_owned(), MUTED),
             (Some(e), _) => (e.clone(), ACCENT_TEXT),
+            (None, _) if self.volume.is_some() => (
+                t(
+                    "Tab per il campo dopo   \u{00b7}   \u{2190} \u{2192} per il verso   \u{00b7}   Invio per salvare   \u{00b7}   Esc per lasciar stare",
+                    "Tab for the next field   \u{00b7}   \u{2190} \u{2192} for the direction   \u{00b7}   Enter to save   \u{00b7}   Esc to cancel",
+                )
+                .to_owned(),
+                MUTED,
+            ),
             (None, _) if self.pdf.is_some() => (
                 t("Invio per aprire   \u{00b7}   Esc per lasciar stare", "Enter to open   \u{00b7}   Esc to cancel")
                     .to_owned(),
@@ -238,15 +365,15 @@ impl ServerForm {
     }
 }
 
-/// Dove sta il modulo: (sinistra, larghezza, linea di base di ogni campo).
-fn geo(ctx: &Context) -> (f32, f32, [f32; 3]) {
+/// Dove sta il modulo: (sinistra, larghezza, linea di base di ogni riga).
+fn geo(ctx: &Context) -> (f32, f32, [f32; 4]) {
     let s = ctx.scale;
     let (vw, vh) = ctx.view;
     let w = (560.0 * s).min(vw - 48.0 * s).round();
     let x0 = ((vw - w) / 2.0).round();
     let first = (vh / 2.0 - 20.0 * s).round().max(214.0 * s);
     let gap = (74.0 * s).round();
-    (x0, w, [first, first + gap, first + 2.0 * gap])
+    (x0, w, [first, first + gap, first + 2.0 * gap, first + 3.0 * gap])
 }
 
 /// La fine del testo, se tutto non ci sta: mentre si scrive un indirizzo
