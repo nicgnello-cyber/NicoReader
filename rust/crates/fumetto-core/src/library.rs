@@ -26,6 +26,7 @@ use crate::book::{is_image, read_info, title_of};
 use crate::comicinfo::ComicInfo;
 use crate::natural::natural_cmp;
 use crate::progress::Progress;
+use crate::{epub, remote};
 
 const VOLUME_EXT: &[&str] = &["cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z", "tar", "pdf", "epub"];
 
@@ -357,6 +358,67 @@ pub fn parse_series(title: &str) -> (String, Option<u32>) {
     }
 }
 
+/// Il volume da leggere dopo quello in `path`. Se e' nella lista di lettura
+/// `list`, il seguente della lista; se no il seguente della sua serie, per
+/// numero; un volume senza serie (o fuori dalla libreria), il seguente della
+/// sua cartella in ordine naturale. Sempre dalla stessa parte: un volume
+/// della cartella non continua con quello del server, e viceversa. `None`:
+/// e' l'ultimo.
+pub fn next_volume(entries: &[Entry], path: &Path, list: Option<&str>) -> Option<PathBuf> {
+    let here = crate::absolute(path);
+    let from = origin(&here);
+    let same = |e: &Entry| crate::absolute(&e.path) == here;
+    let after = |mut members: Vec<&Entry>, cmp: &dyn Fn(&Entry, &Entry) -> Ordering| {
+        members.retain(|e| origin(&e.path) == from);
+        members.sort_by(|a, b| cmp(a, b));
+        let k = members.iter().position(|e| same(e))?;
+        members.get(k + 1).map(|e| e.path.clone())
+    };
+    if let Some(current) = entries.iter().find(|e| same(e)) {
+        let place = |e: &Entry, name: &str| {
+            e.groups
+                .iter()
+                .find(|g| g.kind == GroupKind::ReadingList && g.name == name)
+                .map(|g| g.order.unwrap_or(u32::MAX))
+        };
+        if let Some(name) = list.filter(|n| place(current, n).is_some()) {
+            let members = entries.iter().filter(|e| place(e, name).is_some()).collect();
+            return after(members, &|a, b| place(a, name).cmp(&place(b, name)).then_with(|| by_number(a, b)));
+        }
+        if let Some(series) = &current.series {
+            let members = entries.iter().filter(|e| e.series.as_ref() == Some(series)).collect();
+            return after(members, &by_number);
+        }
+    }
+    if remote::is_remote(&here) {
+        return None;
+    }
+    let dir = here.parent()?;
+    let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file() && p.file_name().is_some_and(|n| is_volume_file(&n.to_string_lossy())))
+        .filter(|p| {
+            *p == here || !p.extension().is_some_and(|e| e.eq_ignore_ascii_case("epub")) || epub::looks_like_comic(p)
+        })
+        .collect();
+    files.sort_by(|a, b| natural_cmp(&a.to_string_lossy(), &b.to_string_lossy()));
+    let k = files.iter().position(|p| *p == here)?;
+    files.get(k + 1).cloned()
+}
+
+/// Da dove viene un volume: "" dal disco, schema e host dal server.
+fn origin(path: &Path) -> String {
+    if !remote::is_remote(path) {
+        return String::new();
+    }
+    let s = path.to_string_lossy();
+    let rest = s.split_once("://").map_or(&*s, |(_, r)| r);
+    let host = rest.split('/').next().unwrap_or("");
+    format!("{}://{host}", s.split("://").next().unwrap_or("").to_ascii_lowercase())
+}
+
 /// Per ordinare i volumi di una serie: prima il numero, poi il titolo.
 pub fn by_number(a: &Entry, b: &Entry) -> Ordering {
     match (a.number, b.number) {
@@ -368,6 +430,49 @@ pub fn by_number(a: &Entry, b: &Entry) -> Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn il_volume_dopo() {
+        let vol = |path: &str, series: Option<(&str, u32)>, list: Option<u32>| Entry {
+            path: PathBuf::from(path),
+            title: title_of(Path::new(path)),
+            series: series.map(|s| s.0.to_owned()),
+            number: series.map(|s| s.1),
+            authors: None,
+            groups: list.map(|n| Group::new(GroupKind::ReadingList, "Nebbia", Some(n))).into_iter().collect(),
+        };
+        let server = "http://casa:25600/opds/v1.2/books/";
+        let entries = vec![
+            vol("/l/Porto v02.cbz", Some(("Porto", 2)), Some(3)),
+            vol("/l/Porto v10.cbz", Some(("Porto", 10)), None),
+            vol("/l/Porto v01.cbz", Some(("Porto", 1)), Some(1)),
+            vol("/l/Orbita v01.cbz", Some(("Orbita", 1)), Some(2)),
+            vol(&format!("{server}a/pages/{{n}}#10:Porto v01"), Some(("Porto", 1)), None),
+            vol(&format!("{server}b/pages/{{n}}#10:Porto v02"), Some(("Porto", 2)), None),
+        ];
+        let next = |p: &str, list| next_volume(&entries, Path::new(p), list);
+        assert_eq!(next("/l/Porto v01.cbz", None), Some("/l/Porto v02.cbz".into()), "per numero, non per titolo");
+        assert_eq!(next("/l/Porto v02.cbz", None), Some("/l/Porto v10.cbz".into()));
+        assert_eq!(next("/l/Porto v10.cbz", None), None, "l'ultimo; quelli del server non contano");
+        assert_eq!(
+            next(&entries[4].path.to_string_lossy(), None),
+            Some(entries[5].path.clone()),
+            "dal server, il server"
+        );
+        assert_eq!(next("/l/Porto v01.cbz", Some("Nebbia")), Some("/l/Orbita v01.cbz".into()), "la lista di lettura");
+        assert_eq!(next("/l/Orbita v01.cbz", Some("Nebbia")), Some("/l/Porto v02.cbz".into()));
+        assert_eq!(next("/l/Porto v10.cbz", Some("Nebbia")), None, "fuori dalla lista: la serie");
+
+        // un volume fuori dalla libreria: la cartella
+        let dir = std::env::temp_dir().join(format!("fumetto-dopo-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in ["cap 2.cbz", "cap 10.cbz", "cap 1.cbz", "note.txt"] {
+            std::fs::write(dir.join(name), b"x").unwrap();
+        }
+        assert_eq!(next_volume(&[], &dir.join("cap 2.cbz"), None), Some(dir.join("cap 10.cbz")));
+        assert_eq!(next_volume(&[], &dir.join("cap 10.cbz"), None), None);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn serie_dai_nomi() {

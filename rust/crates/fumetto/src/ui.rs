@@ -120,6 +120,8 @@ pub struct BookInfo<'a> {
     pub bookmarks: &'a [usize],
     pub trim: bool,
     pub slideshow: bool,
+    /// Il volume da leggere dopo questo: percorso e titolo.
+    pub next: Option<(&'a std::path::Path, &'a str)>,
 }
 
 pub struct Context<'a> {
@@ -178,6 +180,12 @@ pub enum Command {
     Download(PathBuf),
     /// Toglie la copia scaricata.
     ForgetDownload(PathBuf),
+    /// Il modulo per correggere i dati di un volume.
+    EditVolume(PathBuf),
+    /// Salva i dati corretti di un volume.
+    SaveVolume(PathBuf, fumetto_core::edits::VolumeEdit),
+    /// Toglie le correzioni: tornano i dati del file.
+    ResetVolume(PathBuf),
     /// Dalle miniature: va alla pagina (da 0) e torna a leggere.
     Page(usize),
     /// Una scelta fatta nelle impostazioni.
@@ -370,6 +378,18 @@ impl Ui {
         self.server.is_some()
     }
 
+    /// Il modulo per correggere i dati di un volume: i campi con i valori di
+    /// adesso (titolo, serie, numero), le correzioni che c'erano, il verso.
+    pub fn edit_volume(
+        &mut self, path: PathBuf, name: String, initial: [String; 3], existing: fumetto_core::edits::VolumeEdit,
+        right_to_left: Option<bool>,
+    ) {
+        self.menu = None;
+        self.goto = None;
+        self.prefs = None;
+        self.server = Some(ServerForm::volume(server::VolumeData { path, name, initial, existing, right_to_left }));
+    }
+
     /// Chiede la password di un PDF protetto, per aprirlo.
     pub fn ask_password(&mut self, path: PathBuf, title: String) {
         self.menu = None;
@@ -453,6 +473,11 @@ impl Ui {
     /// Una riga che dice cosa e' appena cambiato.
     pub fn toast(&mut self, text: impl Into<String>, now: Instant) {
         self.toast_for(text, now, TOAST_HOLD);
+    }
+
+    /// Toglie la riga (ha detto qualcosa che non vale piu').
+    pub fn clear_toast(&mut self) {
+        self.toast = None;
     }
 
     /// Come `toast`, per una riga che resta di piu' (`hold`).
@@ -787,7 +812,7 @@ impl Ui {
             scene.layers.extend(self.thumbs.layers(d, ctx.view, ctx.scale, m));
             let toast = self.toast.as_ref().map(|(text, s)| (text.as_str(), s.alpha(now)));
             if let Some((text, a)) = toast {
-                scene.layers.push(toast_only(ctx, text, a));
+                scene.layers.push(toast_only(ctx, text, a, m));
             }
             self.push_prefs(&mut scene, ctx, m);
             if let Some(menu) = &self.menu {
@@ -800,7 +825,7 @@ impl Ui {
             scene.layers.extend(self.shelf.layers(d, ctx.view, ctx.scale, m));
             let toast = self.toast.as_ref().map(|(text, s)| (text.as_str(), s.alpha(now)));
             if let Some((text, a)) = toast {
-                scene.layers.push(toast_only(ctx, text, a));
+                scene.layers.push(toast_only(ctx, text, a, m));
             }
             self.push_prefs(&mut scene, ctx, m);
             if let Some(menu) = &self.menu {
@@ -1000,6 +1025,7 @@ mod tests {
             bookmarks: &[],
             trim: false,
             slideshow: false,
+            next: None,
         }
     }
 
@@ -1097,6 +1123,37 @@ mod tests {
         ui.key(Key::Char('x'), &c);
         assert_eq!(ui.key(Key::Enter, &c), open("x"), "la sbagliata si cancella");
         ui.password_checked(Ok(()));
+        assert!(!ui.server_open());
+    }
+
+    #[test]
+    fn i_dati_di_un_volume() {
+        use fumetto_core::edits::VolumeEdit;
+        let mut ui = Ui::new();
+        let c = ctx(None, &[]);
+        let existing = VolumeEdit { title: Some("Vecchio".into()), ..VolumeEdit::default() };
+        let initial = ["Vecchio".to_owned(), String::new(), String::new()];
+        ui.edit_volume("/f/scan_03.cbz".into(), "scan_03.cbz".into(), initial, existing, None);
+        assert!(ui.modal() && ui.server_open());
+        ui.key(Key::Tab, &c);
+        ui.paste("Nebbia sul Porto");
+        ui.key(Key::Tab, &c);
+        ui.key(Key::Char('x'), &c);
+        assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(None), "il numero dev'essere un numero");
+        ui.key(Key::Backspace, &c);
+        ui.key(Key::Digit(3), &c);
+        ui.key(Key::Tab, &c); // il verso
+        ui.key(Key::Char('z'), &c); // qui non si scrive
+        ui.key(Key::Right, &c);
+        ui.key(Key::Right, &c); // come il file -> da sinistra -> da destra
+        let saved = VolumeEdit {
+            title: Some("Vecchio".into()), // non toccato: resta la correzione di prima
+            series: Some("Nebbia sul Porto".into()),
+            number: Some(Some(3)),
+            right_to_left: Some(true),
+        };
+        assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::SaveVolume("/f/scan_03.cbz".into(), saved))));
+        ui.server_checked(Ok(()));
         assert!(!ui.server_open());
     }
 

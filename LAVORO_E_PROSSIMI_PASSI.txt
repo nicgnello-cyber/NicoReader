@@ -688,6 +688,32 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      comicinfo-2.json (quella vecchia non aveva i generi). Provato con
      Komga 1.24 (una raccolta, una lista di tre volumi di due serie); con
      Kavita no, non c'era un server per provarlo.
+  4d. [x] Il volume dopo (27 ottobre). All'ultima pagina avanti dice qual e'
+     il volume seguente (un avviso di due righe), avanti di nuovo lo apre;
+     ci vuole un gesto nuovo (non il tasto tenuto giu' ne' la rotella che
+     continua), entro 8 secondi. Quale: library::next_volume, nella lista
+     di lettura da cui lo si e' aperto, se no nella serie per numero, se no
+     nella cartella; sempre dalla stessa parte (disco o quel server). Anche
+     nel menu, "Volume successivo". Reader::at_end vale anche per doppia
+     pagina e nastro. Provato a mano: Orbita v01 -> v02.
+  4e. [x] Tocco e trackpad (27 ottobre, app\touch.rs). winit su Windows si
+     tiene i messaggi del tocco (non arrivano clic finti), su X11 butta via
+     quelli emulati: prima il tocco non faceva niente. Ora un dito fa da
+     mouse (tocco = clic, trascinare = spostare/scorrere), strisciare gira
+     pagina (al contrario per i manga), due dita ingrandiscono (nel nastro
+     allargano) e spostano, due tocchi al centro ingrandiscono o tornano
+     indietro, il dito tenuto giu' (0,55 s) apre il menu; il nastro ha la
+     spinta. Pizzico e doppio tocco del trackpad del Mac. Gli eventi del
+     mouse ora passano per pointer_moved/left_down/left_up, come il tocco.
+     NON provato su uno schermo touch vero (qui non c'e'): da provare su
+     un Surface o un portatile 2-in-1 prima di dirlo fatto davvero.
+  4f. [x] Correggere i dati di un volume (27 ottobre, fumetto-core\src\
+     edits.rs). Tasto destro sul volume -> "Modifica i dati...": titolo,
+     serie, numero, verso. Si salva solo cio' che si cambia, in
+     correzioni.json nella cartella dei dati; valgono in libreria, nei
+     recenti, nel titolo della finestra e all'apertura (il verso corretto
+     vince su quello salvato; M sul volume aggiorna anche la correzione).
+     "Torna ai dati del file" le toglie.
   5. Il peso dell'eseguibile: da 15,3 a 20,7 MB con AVIF, JPEG XL e appunti
      (vedi 5, Tecnici).
   6. Distribuzione (capitolo 5).

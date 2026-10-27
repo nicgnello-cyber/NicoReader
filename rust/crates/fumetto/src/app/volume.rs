@@ -44,7 +44,11 @@ impl App {
             .into_iter()
             .filter(|(path, _)| Some(path) != open.as_ref() && fumetto_core::exists(path))
             .take(6)
-            .map(|(path, saved)| Recent { title: fumetto_core::title_of(&path), place: place(saved), path })
+            .map(|(path, saved)| {
+                // il titolo corretto a mano, se c'e'
+                let title = self.edits.get(&path).and_then(|e| e.title.clone()).filter(|t| !t.trim().is_empty());
+                Recent { title: title.unwrap_or_else(|| fumetto_core::title_of(&path)), place: place(saved), path }
+            })
             .collect();
     }
 
@@ -129,8 +133,12 @@ impl App {
         }
     }
 
-    fn set_book(&mut self, book: Book) {
+    fn set_book(&mut self, mut book: Book) {
         self.remember();
+        let edit = self.edits.get(&book.path).cloned().unwrap_or_default();
+        if let Some(title) = edit.title.filter(|t| !t.trim().is_empty()) {
+            book.title = title;
+        }
         let book = Arc::new(book);
         let mut reader = Reader::new(book.len(), book.start_at);
         // aperto su un'immagine precisa: si parte da quella, non dal segnalibro
@@ -149,6 +157,10 @@ impl App {
         let chosen = book.start_at > 0 || self.progress.get(&book.path).is_some_and(|s| s.pages > 0);
         // la ComicInfo.xml dice se e' un manga da destra a sinistra
         if !chosen && let Some(rtl) = book.info.as_ref().and_then(|i| i.right_to_left) {
+            reader.manga = rtl;
+        }
+        // il verso corretto a mano vale sempre: e' una scelta su questo volume
+        if let Some(rtl) = edit.right_to_left {
             reader.manga = rtl;
         }
         let mut webtoon = false;
@@ -177,6 +189,79 @@ impl App {
         if webtoon {
             self.ui.toast(t("Webtoon: lettura a nastro", "Webtoon: strip reading"), Instant::now());
         }
+        self.next_offer = None;
+        self.refresh_next();
+    }
+
+    /// Quale volume viene dopo quello aperto: nella lista di lettura da cui
+    /// lo si e' aperto, se no nella sua serie, se no nella sua cartella.
+    pub(super) fn refresh_next(&mut self) {
+        let Some(book) = &self.book else {
+            self.next_volume = None;
+            return;
+        };
+        let list = match &self.ui.shelf.group {
+            Some((fumetto_core::library::GroupKind::ReadingList, name)) => Some(name.as_str()),
+            _ => None,
+        };
+        self.next_volume = library::next_volume(&self.lib.entries, &book.path, list).map(|path| {
+            let here = fumetto_core::absolute(&path);
+            let title = match self.lib.entries.iter().find(|e| fumetto_core::absolute(&e.path) == here) {
+                Some(e) => match &e.series {
+                    Some(s) if !e.title.to_lowercase().contains(&s.to_lowercase()) => format!("{s}: {}", e.title),
+                    _ => e.title.clone(),
+                },
+                None => fumetto_core::title_of(&path),
+            };
+            (path, title)
+        });
+    }
+
+    /// Avanti alla fine del volume. La prima volta si dice quale viene
+    /// dopo; la seconda lo si apre, se e' un gesto nuovo: non il tasto
+    /// tenuto giu' ne' la rotella (o il trackpad) che continua a scorrere.
+    /// `true` se l'azione finisce qui.
+    pub(super) fn end_of_volume(&mut self, action: Action) -> bool {
+        let forward = match action {
+            Action::Next => true,
+            Action::Scroll(dy) => dy > 0.0,
+            _ => false,
+        };
+        let (Some(book), Some(reader)) = (&self.book, &self.reader) else { return false };
+        if !forward || !reader.at_end() {
+            return false;
+        }
+        let now = Instant::now();
+        let from = book.path.clone();
+        if let Some(offer) = &mut self.next_offer
+            && offer.from == from
+            && now.duration_since(offer.since) < NEXT_OFFER_HOLD
+        {
+            let fresh = now.duration_since(offer.last) >= Duration::from_millis(250);
+            let settled = now.duration_since(offer.since) >= Duration::from_millis(500);
+            offer.last = now;
+            if fresh && settled {
+                let to = offer.to.clone();
+                self.next_offer = None;
+                self.ui.clear_toast();
+                self.open(&to);
+                return true;
+            }
+            return false;
+        }
+        let Some((to, title)) = self.next_volume.clone() else {
+            self.next_offer = None;
+            self.ui.toast(t("Fine del volume", "End of the volume"), now);
+            return false;
+        };
+        let text = if fumetto_core::lingua::italian() {
+            format!("Fine del volume\navanti ancora per \u{ab}{title}\u{bb}")
+        } else {
+            format!("End of the volume\nforward again for \u{201c}{title}\u{201d}")
+        };
+        self.ui.toast_for(text, now, NEXT_OFFER_HOLD);
+        self.next_offer = Some(NextOffer { from, to, since: now, last: now });
+        false
     }
 
     /// Chiude il volume: resta la galleria vuota, e il file si libera (lo si
@@ -189,6 +274,7 @@ impl App {
         self.forget_volume();
         self.book = None;
         self.reader = None;
+        self.next_volume = None;
         self.shown.clear();
         self.cpu_pages.clear();
         self.pending_turn = None;

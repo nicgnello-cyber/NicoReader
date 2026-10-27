@@ -58,6 +58,10 @@ pub(super) fn main_rows(ctx: &Context) -> Vec<Row> {
             rows.push(Row::Recent { title, place, cmd: Command::Act(Action::GoTo(p)) });
         }
     }
+    if let Some((path, title)) = b.next {
+        rows.push(Row::Head(t("Volume successivo", "Next volume")));
+        rows.push(Row::Recent { title: title.to_owned(), place: String::new(), cmd: Command::Open(path.to_owned()) });
+    }
     rows.extend([
         Row::Break,
         i(t("Doppia pagina", "Two pages"), Bind::Double, b.double, Action::ToggleDouble),

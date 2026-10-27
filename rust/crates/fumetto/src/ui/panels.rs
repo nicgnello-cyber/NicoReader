@@ -83,12 +83,10 @@ pub(super) fn caption(ctx: &Context, b: &BookInfo, a: f32, toast: Option<(&str, 
         let lw = 40.0 * s;
         l.rects.push(Rect::new((vw - pad - lw).round(), line_y, lw.round(), s.round(), alpha(TICK, ta)));
         let bw = 400.0 * s;
-        l.texts.push(
-            Text::new(text, Face::Sans, 15.0 * s, fade(INK, ta))
-                .weight(500)
-                .boxed(bw, Align::Right)
-                .on_baseline(vw - pad - bw, line_y - 15.0 * s),
-        );
+        let text = Text::new(text, Face::Sans, 15.0 * s, fade(INK, ta)).weight(500).boxed(bw, Align::Right);
+        // su piu' righe si alza: l'ultima resta sopra il filo
+        let up = (m.lines(&text).max(1) - 1) as f32 * (15.0 * s * 1.3).ceil();
+        l.texts.push(text.on_baseline(vw - pad - bw, line_y - 15.0 * s - up));
     }
     l
 }
@@ -291,24 +289,22 @@ pub(super) fn lens_ring(x: f32, y: f32, r: f32, s: f32) -> Layer {
 }
 
 /// Nella libreria: solo l'avviso, in basso a destra.
-pub(super) fn toast_only(ctx: &Context, text: &str, a: f32) -> Layer {
+pub(super) fn toast_only(ctx: &Context, text: &str, a: f32, m: &mut dyn Measure) -> Layer {
     let s = ctx.scale;
     let (vw, vh) = ctx.view;
     let mut l = Layer::default();
     let bw = 500.0 * s;
-    let base = vh - 40.0 * s;
-    l.rects.push(Rect::new(vw - 460.0 * s, vh - 90.0 * s, 460.0 * s, 90.0 * s, [0.0, 0.0, 0.0, 0.0]).to([
+    let text = Text::new(text, Face::Sans, 15.0 * s, fade(INK, a)).weight(500).boxed(bw, Align::Right);
+    // su piu' righe si alza: l'ultima resta al suo posto
+    let up = (m.lines(&text).max(1) - 1) as f32 * (15.0 * s * 1.3).ceil();
+    let base = vh - 40.0 * s - up;
+    l.rects.push(Rect::new(vw - 460.0 * s, vh - 90.0 * s - up, 460.0 * s, 90.0 * s + up, [0.0, 0.0, 0.0, 0.0]).to([
         0.0,
         0.0,
         0.0,
         0.7 * a,
     ]));
-    l.texts.push(
-        Text::new(text, Face::Sans, 15.0 * s, fade(INK, a))
-            .weight(500)
-            .boxed(bw, Align::Right)
-            .on_baseline(vw - 40.0 * s - bw, base),
-    );
+    l.texts.push(text.on_baseline(vw - 40.0 * s - bw, base));
     l
 }
 
