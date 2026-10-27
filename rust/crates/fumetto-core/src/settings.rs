@@ -44,6 +44,9 @@ pub struct Settings {
     pub update_checked: u64,
     /// L'ultima versione nuova gia' proposta: non la si ripropone.
     pub update_offered: String,
+    /// La versione dell'ultimo avvio: se e' cambiata, NicoReader e' stato
+    /// aggiornato e lo dice.
+    pub last_version: String,
 }
 
 impl Default for Settings {
@@ -65,6 +68,7 @@ impl Default for Settings {
             check_updates: true,
             update_checked: 0,
             update_offered: String::new(),
+            last_version: String::new(),
         }
     }
 }

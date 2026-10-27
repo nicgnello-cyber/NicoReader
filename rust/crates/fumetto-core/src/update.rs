@@ -5,6 +5,10 @@
 //! 11, in macOS e in ogni Linux): niente librerie di rete nell'eseguibile per
 //! una domanda al giorno. A GitHub arriva solo la richiesta della pagina
 //! pubblica delle Release, nient'altro.
+//!
+//! Se si puo', la versione nuova si installa da se' (vedi `installa`).
+
+pub mod installa;
 
 use std::process::{Command, Stdio};
 
@@ -14,11 +18,26 @@ pub const LATEST: &str = "https://api.github.com/repos/nicgnello-cyber/NicoReade
 /// Le pagine delle Release: solo queste si aprono nel browser.
 const PAGES: &str = "https://github.com/nicgnello-cyber/NicoReader/releases/";
 
-/// Una Release: la versione ("0.2.0") e la sua pagina, da aprire nel browser.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Da dove si scaricano i file delle Release: solo da qui.
+const DOWNLOADS: &str = "https://github.com/nicgnello-cyber/NicoReader/releases/download/";
+
+/// Una Release: la versione ("0.2.0"), la sua pagina da aprire nel browser, e
+/// i suoi file.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Release {
     pub version: String,
     pub url: String,
+    pub assets: Vec<Asset>,
+}
+
+/// Un file della Release, con la misura e l'impronta SHA-256 che da' GitHub:
+/// lo scaricato si controlla contro di loro prima di installarlo.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Asset {
+    pub name: String,
+    pub url: String,
+    pub size: u64,
+    pub sha256: [u8; 32],
 }
 
 /// L'ultima Release, chiesta a GitHub. Puo' metterci qualche secondo (o
@@ -50,7 +69,31 @@ pub fn parse(json: &[u8]) -> Option<Release> {
     let version = tag.strip_prefix('v').unwrap_or(tag).to_owned();
     numbers(&version)?;
     let url = v["html_url"].as_str().filter(|u| u.starts_with(PAGES))?.to_owned();
-    Some(Release { version, url })
+    // i file senza impronta, o da un altro indirizzo, non si installano
+    let assets = v["assets"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|a| {
+            let url = a["browser_download_url"].as_str().filter(|u| u.starts_with(DOWNLOADS))?;
+            let sha256 = hex32(a["digest"].as_str()?.strip_prefix("sha256:")?)?;
+            Some(Asset { name: a["name"].as_str()?.to_owned(), url: url.to_owned(), size: a["size"].as_u64()?, sha256 })
+        })
+        .collect();
+    Some(Release { version, url, assets })
+}
+
+/// 64 cifre esadecimali in 32 byte.
+fn hex32(s: &str) -> Option<[u8; 32]> {
+    let s = s.as_bytes();
+    if s.len() != 64 {
+        return None;
+    }
+    let mut out = [0; 32];
+    for (i, pair) in s.chunks(2).enumerate() {
+        out[i] = u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?;
+    }
+    Some(out)
 }
 
 /// `candidate` e' piu' nuova di `current`? Si confrontano i numeri
@@ -88,7 +131,8 @@ mod tests {
             parse(json),
             Some(Release {
                 version: "0.2.0".into(),
-                url: "https://github.com/nicgnello-cyber/NicoReader/releases/tag/v0.2.0".into()
+                url: "https://github.com/nicgnello-cyber/NicoReader/releases/tag/v0.2.0".into(),
+                assets: Vec::new(),
             })
         );
         let page = |tag: &str| format!(r#"{{"tag_name": "{tag}", "html_url": "{PAGES}tag/{tag}"}}"#).into_bytes();
@@ -98,6 +142,27 @@ mod tests {
         assert_eq!(parse(br#"{"tag_name": "ultima", "html_url": "x"}"#), None);
         assert_eq!(parse(br#"{"message": "Not Found"}"#), None);
         assert_eq!(parse(b"<html>"), None);
+    }
+
+    #[test]
+    fn i_file_della_release() {
+        let digest = "a9ecf37d7c437beebe86a9df6cac3d97cdf63f8be9c92764674b24a4b6669902";
+        let json = format!(
+            r#"{{"tag_name": "v0.3.0", "html_url": "{PAGES}tag/v0.3.0", "assets": [
+                {{"name": "NicoReader-windows-x64-setup.exe", "size": 11665139, "digest": "sha256:{digest}",
+                  "browser_download_url": "{DOWNLOADS}v0.3.0/NicoReader-windows-x64-setup.exe"}},
+                {{"name": "senza-impronta.zip", "size": 1,
+                  "browser_download_url": "{DOWNLOADS}v0.3.0/senza-impronta.zip"}},
+                {{"name": "altrove.exe", "size": 1, "digest": "sha256:{digest}",
+                  "browser_download_url": "https://example.com/altrove.exe"}}
+            ]}}"#
+        );
+        let r = parse(json.as_bytes()).unwrap();
+        assert_eq!(r.assets.len(), 1, "solo i file con l'impronta, e da GitHub");
+        let a = &r.assets[0];
+        assert_eq!((a.name.as_str(), a.size), ("NicoReader-windows-x64-setup.exe", 11665139));
+        assert_eq!(a.sha256[..3], [0xa9, 0xec, 0xf3]);
+        assert_eq!(hex32("zz"), None);
     }
 
     #[test]

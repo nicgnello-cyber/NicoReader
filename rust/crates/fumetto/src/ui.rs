@@ -451,11 +451,16 @@ impl Ui {
 
     /// Una riga che dice cosa e' appena cambiato.
     pub fn toast(&mut self, text: impl Into<String>, now: Instant) {
+        self.toast_for(text, now, TOAST_HOLD);
+    }
+
+    /// Come `toast`, per una riga che resta di piu' (`hold`).
+    pub fn toast_for(&mut self, text: impl Into<String>, now: Instant, hold: Duration) {
         let since = match &self.toast {
             Some((_, s)) if !s.gone(now) => s.since,
             _ => now,
         };
-        self.toast = Some((text.into(), Show { since, until: now + TOAST_HOLD }));
+        self.toast = Some((text.into(), Show { since, until: now + hold }));
     }
 
     pub fn ask_page(&mut self, here: usize, pages: usize, bookmarks: &[usize]) {

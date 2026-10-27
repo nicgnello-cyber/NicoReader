@@ -65,8 +65,13 @@ pub fn save(window: &Window, name: String, near: Option<&Path>, proxy: EventLoop
 
 /// Propone di aprire la pagina di una versione nuova; se si', torna
 /// `OpenUpdate` con il suo indirizzo.
-pub fn offer_update(window: &Window, release: &fumetto_core::update::Release, proxy: EventLoopProxy<UserEvent>) {
+pub fn offer_update(
+    window: &Window, release: &fumetto_core::update::Release, can_install: bool, proxy: EventLoopProxy<UserEvent>,
+) {
     let (new, this) = (&release.version, env!("CARGO_PKG_VERSION"));
+    if can_install {
+        return offer_install(window, release, proxy);
+    }
     let text = if fumetto_core::lingua::italian() {
         format!(
             "È uscito NicoReader {new} (questo è il {this}).\n\nApro la sua pagina su GitHub, con le novità e \
@@ -89,6 +94,46 @@ pub fn offer_update(window: &Window, release: &fumetto_core::update::Release, pr
     run(
         asked,
         move |r| if r == rfd::MessageDialogResult::Yes { UserEvent::OpenUpdate(url) } else { UserEvent::DialogClosed },
+        proxy,
+    );
+}
+
+/// La versione nuova si puo' installare da qui: aggiornare adesso, vedere le
+/// novita' (la pagina della Release), o piu' tardi.
+fn offer_install(window: &Window, release: &fumetto_core::update::Release, proxy: EventLoopProxy<UserEvent>) {
+    let (new, this) = (&release.version, env!("CARGO_PKG_VERSION"));
+    let it = fumetto_core::lingua::italian();
+    let text = if it {
+        format!(
+            "È uscito NicoReader {new} (questo è il {this}).\n\nAggiornando, NicoReader scarica la versione nuova, \
+             si chiude, la installa e si riapre dove eri.\n\nL'avviso si può spegnere nelle impostazioni (Lettura)."
+        )
+    } else {
+        format!(
+            "NicoReader {new} is out (this is {this}).\n\nUpdating, NicoReader downloads the new version, closes, \
+             installs it and reopens where you were.\n\nThis notice can be turned off in the settings (Reading)."
+        )
+    };
+    let (update, news, later) =
+        if it { ("Aggiorna", "Novit\u{e0}", "Pi\u{f9} tardi") } else { ("Update", "What's new", "Later") };
+    let asked = AsyncMessageDialog::new()
+        .set_parent(window)
+        .set_level(MessageLevel::Info)
+        .set_title("NicoReader")
+        .set_description(text)
+        .set_buttons(MessageButtons::YesNoCancelCustom(update.into(), news.into(), later.into()))
+        .show();
+    let release = release.clone();
+    run(
+        asked,
+        move |r| match r {
+            // a seconda del sistema torna il nome del tasto, o quale dei tre
+            rfd::MessageDialogResult::Yes => UserEvent::InstallUpdate(release),
+            rfd::MessageDialogResult::Custom(c) if c == update => UserEvent::InstallUpdate(release),
+            rfd::MessageDialogResult::No => UserEvent::OpenUpdate(release.url),
+            rfd::MessageDialogResult::Custom(c) if c == news => UserEvent::OpenUpdate(release.url),
+            _ => UserEvent::DialogClosed,
+        },
         proxy,
     );
 }

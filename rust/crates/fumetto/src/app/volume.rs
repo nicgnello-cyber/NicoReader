@@ -231,7 +231,20 @@ impl App {
     /// Mostra cio' che aspetta, prima gli avvisi e poi la richiesta di cosa
     /// aprire: solo a finestra visibile, e un dialogo alla volta.
     pub(super) fn show_pending(&mut self) {
-        if self.dialog || !self.visible() {
+        if !self.visible() {
+            return;
+        }
+        // appena aggiornato: lo si dice a finestra visibile, e per qualche secondo
+        if std::mem::take(&mut self.just_updated) {
+            let note = if fumetto_core::lingua::italian() {
+                format!("NicoReader aggiornato alla {}", env!("CARGO_PKG_VERSION"))
+            } else {
+                format!("NicoReader updated to {}", env!("CARGO_PKG_VERSION"))
+            };
+            self.ui.toast_for(note, Instant::now(), Duration::from_secs(5));
+            self.request_redraw();
+        }
+        if self.dialog {
             return;
         }
         let Some(window) = &self.window else { return };
