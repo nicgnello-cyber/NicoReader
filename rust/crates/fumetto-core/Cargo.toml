@@ -23,6 +23,8 @@ libloading = "0.9.0"
 libwebp-sys = { version = "0.14.4", features = ["sse41"] }
 # i cataloghi OPDS dei server (Komga, Kavita): Atom, con i namespace
 quick-xml = { version = "0.41", default-features = false }
+# per controllare l'aggiornamento scaricato contro l'impronta che da' GitHub
+sha2 = { version = "0.10", default-features = false }
 # i progressi di lettura, in un file di testo leggibile
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"

@@ -144,6 +144,10 @@ pub enum UserEvent {
     Update(Release),
     /// Si', apri la pagina della versione nuova.
     OpenUpdate(String),
+    /// Si', installa la versione nuova.
+    InstallUpdate(Release),
+    /// La versione nuova scaricata e controllata (o l'errore), da installare.
+    UpdateDownloaded(Box<fumetto_core::update::installa::Plan>, Release, Result<PathBuf, String>),
     /// Dove salvare la pagina (`None`: annullato).
     SaveTo(Option<PathBuf>),
     /// Com'e' andato un salvataggio o una copia: la riga da mostrare, o l'errore.
@@ -282,6 +286,10 @@ pub struct App {
     pub resume_later: Option<PathBuf>,
     /// Una versione nuova da proporre, quando non c'e' altro da mostrare.
     update_offer: Option<Release>,
+    /// Si sta scaricando la versione nuova.
+    updating: bool,
+    /// Appena aggiornato a questa versione: lo si dice a finestra aperta.
+    just_updated: bool,
     /// Il salvataggio dei progressi e' gia' fallito: lo si dice una volta sola.
     save_failed: bool,
 
@@ -428,6 +436,8 @@ impl App {
             ask_open: false,
             resume_later: None,
             update_offer: None,
+            updating: false,
+            just_updated: false,
             save_failed: false,
             ui: Ui::new(),
             recent: Vec::new(),
@@ -467,6 +477,7 @@ impl App {
         };
         app.refresh_recent();
         app.rescan();
+        app.note_version();
         app.check_update();
         app
     }

@@ -61,7 +61,7 @@ impl ApplicationHandler<UserEvent> for App {
         remote::sync::flush();
     }
 
-    fn user_event(&mut self, _: &ActiveEventLoop, event: UserEvent) {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
             UserEvent::Loaded(loaded) => self.arrived(loaded),
             #[cfg(target_os = "macos")]
@@ -185,14 +185,10 @@ impl ApplicationHandler<UserEvent> for App {
                 self.request_upscale();
             }
             UserEvent::Update(release) => self.update_arrived(release),
-            UserEvent::OpenUpdate(url) => {
-                self.dialog = false;
-                if let Err(e) = system::open_url(&url) {
-                    self.notify(format!(
-                        "{}\n\n{url}\n\n{e}",
-                        t("Impossibile aprire la pagina.", "Can't open the page.")
-                    ));
-                }
+            UserEvent::OpenUpdate(url) => self.open_release_page(&url),
+            UserEvent::InstallUpdate(release) => self.install_update(release),
+            UserEvent::UpdateDownloaded(plan, release, file) => {
+                self.update_downloaded(event_loop, *plan, release, file)
             }
             UserEvent::SaveTo(path) => {
                 self.dialog = false;

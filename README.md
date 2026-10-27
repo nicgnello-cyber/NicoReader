@@ -96,8 +96,12 @@ Windows and macOS NicoReader keeps it in the system keychain and doesn't
 ask again; on Linux it asks at each launch.
 
 Once a day NicoReader asks GitHub which version is the latest (nothing else
-is sent); when a newer one is out, it offers to open its page, once per
-version. Turn it off in Settings → Reading.
+is sent); when a newer one is out, it asks once per version: Update, What's
+new (the Release page) or Later. Update downloads the new version, checks it
+against the SHA-256 that GitHub publishes, closes, installs it and reopens
+where you were. It works with the Windows installer, on macOS, and with the
+Linux tar.gz folder; with the Windows zip or the .deb it opens the Release
+page instead. Turn the check off in Settings → Reading.
 
 From the command line, after building it:
 

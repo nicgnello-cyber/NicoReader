@@ -13,6 +13,8 @@
 ;     con", anche per i PDF (che non gli si prendono)
 ;   - il disinstallatore toglie tutto questo; i progressi di lettura e le
 ;     impostazioni restano (sono dell'utente, non del programma)
+;   - l'aggiornamento da NicoReader stesso (update::installa) lo lancia con
+;     /SILENT /RIAPRI=si: niente domande, e alla fine NicoReader si riapre
 
 #ifndef Versione
   #error "manca /DVersione=..."
@@ -100,12 +102,20 @@ Root: HKA; Subkey: "Software\Classes\.cbt"; ValueType: string; ValueName: ""; Va
 
 [Run]
 Filename: "{app}\NicoReader.exe"; Description: "{cm:LaunchProgram,NicoReader}"; Flags: nowait postinstall skipifsilent
+; l'aggiornamento lanciato da NicoReader: lui si e' chiuso, lo si riapre
+Filename: "{app}\NicoReader.exe"; Flags: nowait; Check: Riapri
 
 [CustomMessages]
 it.Volume=NicoReader (volume)
 en.Volume=NicoReader (volume)
 
 [Code]
+// Lanciato da NicoReader per aggiornarsi (/RIAPRI=si): alla fine lo si riapre.
+function Riapri: Boolean;
+begin
+  Result := ExpandConstant('{param:RIAPRI|no}') = 'si';
+end;
+
 // Nessun programma apre gia' questi file (o li apre gia' NicoReader)? La vista
 // unita HKCR vede sia le impostazioni dell'utente sia quelle per tutti.
 function Libero(Estensione: String): Boolean;
