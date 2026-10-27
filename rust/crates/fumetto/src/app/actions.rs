@@ -293,7 +293,7 @@ impl App {
             }
             Command::Download(path) => self.download(path),
             Command::ForgetDownload(path) => self.forget_download(&path),
-            Command::Series(_) | Command::FoldersMenu(..) | Command::AskServer => {}
+            Command::Series(_) | Command::Group(..) | Command::FoldersMenu(..) | Command::AskServer => {}
         }
         self.request_redraw();
     }

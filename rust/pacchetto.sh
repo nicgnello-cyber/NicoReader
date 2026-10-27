@@ -133,7 +133,7 @@ Section: graphics
 Priority: optional
 Homepage: https://github.com/nicgnello-cyber/NicoReader
 Description: comic, manga and webtoon reader
- NicoReader legge fumetti, manga e webtoon: cartelle, CBZ, CBR, CB7, CBT e PDF,
+ NicoReader legge fumetti, manga e webtoon: cartelle, CBZ, CBR, CB7, CBT, PDF e EPUB,
  con pagine JPEG, PNG, WebP, GIF, BMP, AVIF e JPEG XL. Le pagine si
  rimpiccioliscono in luce lineare, si girano subito e si riaprono dove le si
  era lasciate. In italiano e in inglese.

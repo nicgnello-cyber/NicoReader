@@ -393,7 +393,10 @@ impl App {
             })
         };
         let keymap = Keymap::new(&settings.keys);
-        let info_cache = covers_dir.with_file_name("comicinfo.json");
+        // "-2": le schede ora dicono anche generi, editore e raccolte; quelle
+        // vecchie non li hanno, e si rileggono tutte una volta
+        let _ = std::fs::remove_file(covers_dir.with_file_name("comicinfo.json"));
+        let info_cache = covers_dir.with_file_name("comicinfo-2.json");
         let cover_loader = {
             let proxy = proxy.clone();
             CoverLoader::new(covers_dir, move |c| {

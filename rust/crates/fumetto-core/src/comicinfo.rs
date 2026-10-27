@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 pub const MAX_BYTES: u64 = 1 << 20;
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ComicInfo {
     pub series: Option<String>,
     /// Com'e' scritto ("12", "12.5", "1/2"): per ordinare, `number_value`.
@@ -24,6 +25,15 @@ pub struct ComicInfo {
     /// `Some(true)`: da destra a sinistra (Manga = YesAndRightToLeft).
     /// `Some(false)`: dichiarato non manga, o manga gia' da sinistra a destra.
     pub right_to_left: Option<bool>,
+    /// L'editore.
+    pub publisher: Option<String>,
+    /// I generi (Genre, separati da virgole).
+    pub genres: Vec<String>,
+    /// Le raccolte di cui fa parte (SeriesGroup: "Universo Marvel").
+    pub series_group: Vec<String>,
+    /// Le storie lunghe che attraversano piu' serie (StoryArc), con il posto
+    /// del volume nella storia (StoryArcNumber): le liste di lettura.
+    pub story_arcs: Vec<(String, Option<u32>)>,
 }
 
 impl ComicInfo {
@@ -45,6 +55,23 @@ impl ComicInfo {
                 }
             }
         }
+        let list = |name: &str| -> Vec<String> {
+            let mut out: Vec<String> = Vec::new();
+            for v in tag(name).iter().flat_map(|s| s.split(',')).map(str::trim).filter(|v| !v.is_empty()) {
+                if !out.iter().any(|o| o.eq_ignore_ascii_case(v)) {
+                    out.push(v.to_owned());
+                }
+            }
+            out
+        };
+        // StoryArc e StoryArcNumber vanno a coppie: "Guerra, Pace" con "3, 1"
+        let arc_numbers: Vec<Option<u32>> =
+            tag("StoryArcNumber").iter().flat_map(|s| s.split(',')).map(|n| n.trim().parse().ok()).collect();
+        let story_arcs = list("StoryArc")
+            .into_iter()
+            .enumerate()
+            .map(|(i, arc)| (arc, arc_numbers.get(i).copied().flatten()))
+            .collect();
         let info = ComicInfo {
             series: tag("Series"),
             number: tag("Number"),
@@ -58,6 +85,10 @@ impl ComicInfo {
                 // averlo gia' girato; e "Unknown" non dice niente
                 _ => None,
             }),
+            publisher: tag("Publisher"),
+            genres: list("Genre"),
+            series_group: list("SeriesGroup"),
+            story_arcs,
         };
         (info != ComicInfo::default()).then_some(info)
     }
@@ -238,6 +269,25 @@ mod tests {
         assert_eq!(info.right_to_left, Some(true));
         assert_eq!(info.number_value(), Some(1));
         assert_eq!(info.display_title().as_deref(), Some("One Piece 1: Romance Dawn"));
+    }
+
+    #[test]
+    fn raccolte_generi_e_storie() {
+        let xml = "<ComicInfo><Series>X-Men</Series><Number>141</Number>\
+                   <StoryArcNumber>2, 5</StoryArcNumber><StoryArc>Giorni di un futuro passato, Saga</StoryArc>\
+                   <SeriesGroup>Universo Marvel, Mutanti</SeriesGroup><Genre>Supereroi, Fantascienza, supereroi</Genre>\
+                   <Publisher>Marvel</Publisher></ComicInfo>";
+        let info = ComicInfo::parse(xml.as_bytes()).unwrap();
+        assert_eq!(info.publisher.as_deref(), Some("Marvel"));
+        assert_eq!(info.genres, ["Supereroi", "Fantascienza"], "senza ripetere");
+        assert_eq!(info.series_group, ["Universo Marvel", "Mutanti"]);
+        assert_eq!(
+            info.story_arcs,
+            [("Giorni di un futuro passato".to_owned(), Some(2)), ("Saga".to_owned(), Some(5))]
+        );
+        // una scheda vecchia in cache, senza i campi nuovi
+        let old: ComicInfo = serde_json::from_str(r#"{"series":"A","number":"1"}"#).unwrap();
+        assert!(old.genres.is_empty() && old.publisher.is_none());
     }
 
     #[test]

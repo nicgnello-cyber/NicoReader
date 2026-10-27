@@ -35,7 +35,7 @@ use quick_xml::name::{Namespace, ResolveResult};
 use quick_xml::{NsReader, XmlVersion};
 use serde::{Deserialize, Serialize};
 
-use crate::library::{Entry, parse_series};
+use crate::library::{Entry, Group, GroupKind, parse_series};
 use crate::lingua::t;
 
 const ATOM: &[u8] = b"http://www.w3.org/2005/Atom";
@@ -55,6 +55,18 @@ const PARALLEL: usize = 6;
 /// Per quanto vale il catalogo gia' letto: aprire e chiudere la libreria non
 /// rilegge ogni volta tutte le serie del server.
 const FRESH: Duration = Duration::from_secs(5 * 60);
+
+/// Le voci della radice che portano ai gruppi, per tipo: l'id (Komga, Kavita)
+/// o la fine dell'indirizzo. Le raccolte e gli editori elencano serie, le
+/// liste di lettura volumi, in ordine.
+const GROUP_ROOTS: &[(GroupKind, &[&str], &[&str])] = &[
+    (GroupKind::Collection, &["allCollections", "collections"], &["/collections"]),
+    (GroupKind::ReadingList, &["allReadLists", "readingList"], &["/readlists", "/reading-list"]),
+    (GroupKind::Publisher, &["allPublishers"], &["/publishers"]),
+];
+/// Quanti gruppi per tipo, e quante pagine per feed, al massimo.
+const MAX_GROUPS: usize = 300;
+const MAX_PAGES: usize = 50;
 
 /// Un server nella libreria.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -286,15 +298,18 @@ fn crawl(server: &Server) -> Result<Catalog, String> {
     let login = (!server.user.is_empty()).then_some((server.user.as_str(), server.password.as_str()));
     let (root_url, root) = root(server.url.trim(), login)?;
     let mut found = Found::default();
-    found.add(&root, None);
+    found.add(&root, None, None);
     // la lista di tutte le serie, se c'e'; altrimenti ogni voce della radice
     let start: Vec<String> = match STARTS.iter().find_map(|id| root.entries.iter().find(|e| e.id == *id)) {
         Some(e) => e.nav.iter().cloned().collect(),
         None => root.entries.iter().filter_map(|e| e.nav.clone()).collect(),
     };
     let mut seen: HashSet<String> = HashSet::from([root_url]);
-    let mut level: Vec<Visit> =
-        start.into_iter().filter(|u| seen.insert(u.clone())).map(|url| Visit { url, series: None, depth: 1 }).collect();
+    let mut level: Vec<Visit> = start
+        .into_iter()
+        .filter(|u| seen.insert(u.clone()))
+        .map(|url| Visit { origin: url.clone(), url, series: None, depth: 1 })
+        .collect();
     let mut requests = 1;
     let mut error = None;
     while !level.is_empty() && requests < MAX_REQUESTS {
@@ -311,7 +326,7 @@ fn crawl(server: &Server) -> Result<Catalog, String> {
                     continue;
                 }
             };
-            found.add(&feed, visit.series.as_deref());
+            found.add(&feed, visit.series.as_deref(), Some(&visit.origin));
             // la pagina dopo dello stesso feed: stessa serie, stessa profondita'
             if let Some(url) = feed.next.clone().filter(|u| seen.insert(u.clone())) {
                 next.push(Visit { url, ..visit.clone() });
@@ -321,7 +336,8 @@ fn crawl(server: &Server) -> Result<Catalog, String> {
             }
             for e in &feed.entries {
                 if let Some(url) = e.nav.clone().filter(|u| e.stream.is_none() && seen.insert(u.clone())) {
-                    next.push(Visit { url, series: Some(e.title.clone()), depth: visit.depth + 1 });
+                    let series = Some(e.title.clone());
+                    next.push(Visit { origin: url.clone(), url, series, depth: visit.depth + 1 });
                 }
             }
         }
@@ -332,6 +348,7 @@ fn crawl(server: &Server) -> Result<Catalog, String> {
     {
         return Err(e);
     }
+    found.read_groups(&root, login);
     let reads = found
         .entries
         .iter()
@@ -349,6 +366,8 @@ fn crawl(server: &Server) -> Result<Catalog, String> {
 #[derive(Clone)]
 struct Visit {
     url: String,
+    /// La prima pagina del feed: e' l'indirizzo con cui lo nominano i gruppi.
+    origin: String,
     series: Option<String>,
     depth: usize,
 }
@@ -362,10 +381,13 @@ struct Found {
     /// Dove e' arrivato chi legge, secondo il server: pagina (come la dice
     /// lui) e quando.
     reads: HashMap<String, (u32, Option<u64>)>,
+    /// Per feed (la sua prima pagina): i volumi che ci si sono trovati. Una
+    /// raccolta nomina le serie con l'indirizzo del loro feed.
+    by_feed: HashMap<String, Vec<usize>>,
 }
 
 impl Found {
-    fn add(&mut self, feed: &Feed, series: Option<&str>) {
+    fn add(&mut self, feed: &Feed, series: Option<&str>, origin: Option<&str>) {
         for e in &feed.entries {
             let Some((template, count)) = &e.stream else { continue };
             let title = clean_title(&e.title, series);
@@ -388,8 +410,78 @@ impl Found {
                     self.entries.push(entry);
                 }
             }
+            if let (Some(origin), Some(&i)) = (origin, self.at.get(template)) {
+                self.by_feed.entry(origin.to_owned()).or_default().push(i);
+            }
         }
     }
+
+    /// Le raccolte, le liste di lettura e gli editori del server (vedi
+    /// `GROUP_ROOTS`), assegnati ai volumi gia' trovati. Quello che non
+    /// risponde si salta: i volumi ci sono lo stesso.
+    fn read_groups(&mut self, root: &Feed, login: Option<(&str, &str)>) {
+        for (kind, ids, ends) in GROUP_ROOTS {
+            let entry = root.entries.iter().find(|e| {
+                ids.contains(&e.id.as_str())
+                    || e.nav.as_deref().is_some_and(|u| ends.iter().any(|s| u.trim_end_matches('/').ends_with(s)))
+            });
+            let Some(url) = entry.and_then(|e| e.nav.clone()) else { continue };
+            let lists = pages(&url, login);
+            let groups: Vec<(String, String)> = lists
+                .iter()
+                .flat_map(|f| &f.entries)
+                .filter_map(|e| Some((e.title.clone(), e.nav.clone()?)))
+                .take(MAX_GROUPS)
+                .collect();
+            let visits: Vec<Visit> = groups
+                .iter()
+                .map(|(_, u)| Visit { url: u.clone(), origin: u.clone(), series: None, depth: 0 })
+                .collect();
+            for ((name, _), first) in groups.iter().zip(fetch_feeds(&visits, login)) {
+                let Ok(Some(first)) = first else { continue };
+                let mut feeds = vec![first];
+                // le pagine dopo, se il gruppo e' lungo
+                while let Some(next) = feeds.last().and_then(|f| f.next.clone()).filter(|_| feeds.len() < MAX_PAGES) {
+                    match fetch(&next, login, 60).ok().and_then(|b| parse_feed(&b, &next)) {
+                        Some(f) => feeds.push(f),
+                        None => break,
+                    }
+                }
+                let mut position = 0;
+                for e in feeds.iter().flat_map(|f| &f.entries) {
+                    if let Some((template, _)) = &e.stream {
+                        position += 1;
+                        let order = (*kind == GroupKind::ReadingList).then_some(position);
+                        if let Some(&i) = self.at.get(template) {
+                            push_group(&mut self.entries[i], Group::new(*kind, name, order));
+                        }
+                    } else if let Some(members) = e.nav.as_ref().and_then(|n| self.by_feed.get(n)) {
+                        for &i in members.clone().iter() {
+                            push_group(&mut self.entries[i], Group::new(*kind, name, None));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn push_group(e: &mut Entry, g: Group) {
+    if !e.groups.iter().any(|h| h.kind == g.kind && h.name == g.name) {
+        e.groups.push(g);
+    }
+}
+
+/// Un feed con tutte le sue pagine (fino a `MAX_PAGES`).
+fn pages(url: &str, login: Option<(&str, &str)>) -> Vec<Feed> {
+    let mut out: Vec<Feed> = Vec::new();
+    let mut next = Some(url.to_owned());
+    while let Some(u) = next.take().filter(|_| out.len() < MAX_PAGES) {
+        let Some(feed) = fetch(&u, login, 60).ok().and_then(|b| parse_feed(&b, &u)) else { break };
+        next = feed.next.clone();
+        out.push(feed);
+    }
+    out
 }
 
 fn remote_entry(template: &str, count: usize, title: String, series: Option<&str>, authors: &[String]) -> Entry {
@@ -402,7 +494,7 @@ fn remote_entry(template: &str, count: usize, title: String, series: Option<&str
         None => (number.map(|_| name), number),
     };
     let authors = (!authors.is_empty()).then(|| authors.join(", "));
-    Entry { path, title, series, number, authors }
+    Entry { path, title, series, number, authors, groups: Vec::new() }
 }
 
 /// Il primo numero nel titolo ("Volume 3", "Capitolo 12 - Il ritorno").
@@ -846,7 +938,7 @@ mod tests {
         assert_eq!((one.last_read, one.read_date), (Some(6), sync::unix_time("2026-10-06T19:03:41")));
 
         let mut found = Found::default();
-        found.add(&feed, Some("Nebbia sul Porto"));
+        found.add(&feed, Some("Nebbia sul Porto"), None);
         let titles: Vec<_> = found.entries.iter().map(|e| e.title.as_str()).collect();
         assert_eq!(titles, ["Volume 2", "Volume 1"], "il volume ripetuto una volta sola, col titolo pulito");
         assert!(found.entries.iter().all(|e| e.series.as_deref() == Some("Nebbia sul Porto")));
@@ -956,7 +1048,7 @@ mod tests {
             println!("letto: {} {} {:?}", r.path.display(), r.last_read, r.date);
         }
         for e in found {
-            println!("{:?} / {} ({:?})", e.series, e.title, e.number);
+            println!("{:?} / {} ({:?}) {:?}", e.series, e.title, e.number, e.groups);
         }
         assert!(!found.is_empty());
         let v = Volume::from_path(&found[0].path).unwrap();

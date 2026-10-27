@@ -2,7 +2,7 @@
 //!
 //! La galleria nera: esiste solo la tavola, resa in luce lineare.
 //!
-//!   fumetto <volume>            apre un archivio (CBZ, CBR, CB7, CBT), un PDF, una cartella o un'immagine
+//!   fumetto <volume>            apre un archivio (CBZ, CBR, CB7, CBT), un PDF, un EPUB, una cartella o un'immagine
 //!   fumetto                     riprende l'ultimo volume letto (o chiede cosa aprire)
 //!   fumetto <volume> --prova    legge da solo per mezzo minuto e stampa le misure
 //!

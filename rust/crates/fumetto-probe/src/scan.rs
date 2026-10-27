@@ -11,7 +11,7 @@ use std::time::Instant;
 
 use fumetto_core::{Book, Content, Fit, Loader, decode, is_image, natural_cmp};
 
-const ARCHIVES: &[&str] = &["cbz", "zip", "cbr", "rar", "cb7", "7z", "cbt", "tar", "pdf"];
+const ARCHIVES: &[&str] = &["cbz", "zip", "cbr", "rar", "cb7", "7z", "cbt", "tar", "pdf", "epub"];
 
 pub fn run(root: &Path) -> Result<(), String> {
     let volumes = find_volumes(root);

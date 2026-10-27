@@ -4,6 +4,8 @@
 //! leggere, letti), la ricerca (basta scrivere), le cartelle. Sotto, se non
 //! si cerca e non si filtra, prima una fila "Continua a leggere", poi tutta
 //! la libreria con le serie raccolte in una pila; un clic sulla pila la apre.
+//! Un tasto della barra mostra invece i gruppi delle schede e dei server:
+//! raccolte, liste di lettura, generi, editori, ognuno una pila da aprire.
 //! Le celle si allargano per riempire la finestra: niente vuoti a destra.
 //!
 //! Come `ui`, qui non c'e' grafica: si decide cosa sta dove, cosa scrivere e
@@ -14,7 +16,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use fumetto_core::library::{Entry, Status, by_number};
+use fumetto_core::library::{Entry, GroupKind, Status, by_number};
 use fumetto_core::lingua::{italian, t};
 use fumetto_core::natural_cmp;
 use fumetto_core::remote::{self, Server};
@@ -79,7 +81,20 @@ impl Filter {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Tile {
     Volume(usize),
-    Series { name: String, cover: usize, count: usize, done: usize },
+    Series {
+        name: String,
+        cover: usize,
+        count: usize,
+        done: usize,
+    },
+    /// Una raccolta, una lista di lettura, un genere, un editore.
+    Group {
+        kind: GroupKind,
+        name: String,
+        cover: usize,
+        count: usize,
+        done: usize,
+    },
 }
 
 impl Tile {
@@ -87,7 +102,7 @@ impl Tile {
     fn cover(&self) -> usize {
         match self {
             Tile::Volume(i) => *i,
-            Tile::Series { cover, .. } => *cover,
+            Tile::Series { cover, .. } | Tile::Group { cover, .. } => *cover,
         }
     }
 }
@@ -99,6 +114,7 @@ pub enum Hit {
     Filter(Filter),
     ClearSearch,
     Folders,
+    Groups,
     Return,
     Back,
     Bar,
@@ -124,8 +140,8 @@ struct Layout {
     placed: Vec<Placed>,
     /// Titoli delle sezioni: testo e linea di base.
     heads: Vec<(String, f32)>,
-    /// Dentro una serie: la cima dell'intestazione.
-    series_head: Option<f32>,
+    /// Dentro una serie, un gruppo o fra i gruppi: la cima dell'intestazione.
+    head: Option<f32>,
     /// Quanto e' alto tutto il contenuto, per fermare lo scorrimento.
     height: f32,
 }
@@ -161,6 +177,10 @@ pub struct Shelf {
     pub search: String,
     /// Dentro una serie: il suo nome.
     pub series: Option<String>,
+    /// Si guardano i gruppi invece della libreria.
+    pub groups: bool,
+    /// Dentro un gruppo (si arriva dalla vista dei gruppi).
+    pub group: Option<(GroupKind, String)>,
     scroll: f32,
     /// Pixel di scorrimento ancora da percorrere (come nel nastro).
     glide: f32,
@@ -183,16 +203,25 @@ impl Shelf {
         let mut visible: Vec<usize> = (0..d.entries.len())
             .filter(|&i| self.filter.keeps(d.status[i]) && found(&d.entries[i]))
             .filter(|&i| self.series.is_none() || d.entries[i].series == self.series)
+            .filter(|&i| self.group.as_ref().is_none_or(|(k, n)| in_group(&d.entries[i], *k, n)))
             .collect();
         let recent_first = |v: &mut Vec<usize>| v.sort_by_key(|&i| std::cmp::Reverse(d.read_at[i]));
+        let single = |tiles: Vec<Tile>| vec![Section { title: String::new(), tiles, one_row: false }];
 
         if self.series.is_some() {
             visible.sort_by(|&a, &b| by_number(&d.entries[a], &d.entries[b]));
-            return vec![Section {
-                title: String::new(),
-                tiles: visible.into_iter().map(Tile::Volume).collect(),
-                one_row: false,
-            }];
+            return single(visible.into_iter().map(Tile::Volume).collect());
+        }
+        if let Some((kind, name)) = &self.group {
+            // una lista di lettura si legge nel suo ordine, volume per volume
+            if *kind == GroupKind::ReadingList {
+                sort_members(d, &mut visible, *kind, name);
+                return single(visible.into_iter().map(Tile::Volume).collect());
+            }
+            return single(stacks(d, &visible));
+        }
+        if self.groups {
+            return group_sections(d, self.filter, &needle, &found);
         }
         if self.filter != Filter::All || !needle.is_empty() {
             if self.filter == Filter::Reading {
@@ -214,32 +243,6 @@ impl Shelf {
                 one_row: true,
             });
         }
-        // le serie con piu' volumi diventano una pila, al posto del primo
-        let mut tiles: Vec<Tile> = Vec::new();
-        let mut seen: Vec<&str> = Vec::new();
-        for &i in &visible {
-            let Some(name) = d.entries[i].series.as_deref() else {
-                tiles.push(Tile::Volume(i));
-                continue;
-            };
-            if seen.contains(&name) {
-                continue;
-            }
-            let mut members: Vec<usize> =
-                visible.iter().copied().filter(|&j| d.entries[j].series.as_deref() == Some(name)).collect();
-            if members.len() < 2 {
-                tiles.push(Tile::Volume(i));
-                continue;
-            }
-            seen.push(name);
-            members.sort_by(|&a, &b| by_number(&d.entries[a], &d.entries[b]));
-            let done = members.iter().filter(|&&j| d.status[j] == Status::Done).count();
-            // in copertina il volume che si sta leggendo, se c'e'; se no il primo
-            let cover =
-                members.iter().copied().find(|&j| matches!(d.status[j], Status::Reading(..))).unwrap_or(members[0]);
-            tiles.push(Tile::Series { name: name.to_owned(), cover, count: members.len(), done });
-        }
-        tiles.sort_by(|a, b| natural_cmp(&tile_name(d, a), &tile_name(d, b)));
         let n = d.entries.len();
         sections.push(Section {
             title: if italian() {
@@ -247,10 +250,15 @@ impl Shelf {
             } else {
                 format!("The whole library \u{00b7} {n}")
             },
-            tiles,
+            tiles: stacks(d, &visible),
             one_row: false,
         });
         sections
+    }
+
+    /// Non si e' nella libreria intera: c'e' un'intestazione per tornarci.
+    fn inside(&self) -> bool {
+        self.series.is_some() || self.group.is_some() || self.groups
     }
 
     fn layout(&self, d: &ShelfData, g: &Geo) -> Layout {
@@ -259,9 +267,9 @@ impl Shelf {
         let start = y;
         let mut placed = Vec::new();
         let mut heads = Vec::new();
-        let mut series_head = None;
-        if self.series.is_some() {
-            series_head = Some(y);
+        let mut head = None;
+        if self.inside() {
+            head = Some(y);
             y += (128.0 * s).round();
         }
         for sec in self.sections(d) {
@@ -282,7 +290,7 @@ impl Shelf {
             }
             y += n.div_ceil(g.cols) as f32 * g.row_h + (18.0 * s).round();
         }
-        Layout { placed, heads, series_head, height: y - start + (40.0 * s).round() }
+        Layout { placed, heads, head, height: y - start + (40.0 * s).round() }
     }
 
     fn max_scroll(&self, d: &ShelfData, g: &Geo) -> f32 {
@@ -292,7 +300,14 @@ impl Shelf {
 
     /// Una copia con gli stessi filtri (per misurare senza toccare lo scorrimento).
     fn clone_view(&self) -> Shelf {
-        Shelf { filter: self.filter, search: self.search.clone(), series: self.series.clone(), ..Shelf::default() }
+        Shelf {
+            filter: self.filter,
+            search: self.search.clone(),
+            series: self.series.clone(),
+            groups: self.groups,
+            group: self.group.clone(),
+            ..Shelf::default()
+        }
     }
 
     /// Dove disegnare le copertine, e quali preparare: quelle a schermo, poi
@@ -322,7 +337,7 @@ impl Shelf {
             return Some(bar_hit(d, self, view, s, x).unwrap_or(Hit::Bar));
         }
         let lay = self.layout(d, &g);
-        if let Some(top) = lay.series_head
+        if let Some(top) = lay.head
             && y >= top
             && y < top + 40.0 * s
             && x < g.pad + 200.0 * s
@@ -367,9 +382,16 @@ impl Shelf {
                 Handled::Yes(None)
             }
             Some(Hit::Folders) => Handled::Yes(Some(Command::FoldersMenu(x, ui::hud_height(s)))),
+            Some(Hit::Groups) => {
+                // dai gruppi si torna alla libreria; da dentro, all'elenco dei gruppi
+                let home = self.groups && self.group.is_none() && self.series.is_none();
+                (self.groups, self.group, self.series) = (!home, None, None);
+                self.reset_view();
+                Handled::Yes(None)
+            }
             Some(Hit::Return) => Handled::Yes(Some(Command::Act(Action::ToggleLibrary))),
             Some(Hit::Back) => {
-                self.leave_series();
+                self.back();
                 Handled::Yes(None)
             }
             Some(Hit::Bar) | None => Handled::Yes(None),
@@ -384,6 +406,10 @@ impl Shelf {
                 self.enter_series(name);
                 None
             }
+            Tile::Group { kind, name, .. } => {
+                self.enter_group(kind, name);
+                None
+            }
         }
     }
 
@@ -392,8 +418,17 @@ impl Shelf {
         self.reset_view();
     }
 
-    fn leave_series(&mut self) {
-        self.series = None;
+    pub fn enter_group(&mut self, kind: GroupKind, name: String) {
+        (self.groups, self.group, self.series) = (true, Some((kind, name)), None);
+        self.reset_view();
+    }
+
+    /// Un passo indietro: dalla serie al gruppo (o alla libreria), dal gruppo
+    /// all'elenco dei gruppi, da questo alla libreria.
+    fn back(&mut self) {
+        if self.series.take().is_none() && self.group.take().is_none() {
+            self.groups = false;
+        }
         self.reset_view();
     }
 
@@ -449,8 +484,8 @@ impl Shelf {
                 if !self.search.is_empty() {
                     self.search.clear();
                     self.reset_view();
-                } else if self.series.is_some() {
-                    self.leave_series();
+                } else if self.inside() {
+                    self.back();
                 } else if d.reading {
                     return Handled::Yes(Some(Command::Act(Action::ToggleLibrary)));
                 } else {
@@ -460,8 +495,8 @@ impl Shelf {
             Key::Backspace => {
                 if self.search.pop().is_some() {
                     self.reset_view();
-                } else if self.series.is_some() {
-                    self.leave_series();
+                } else if self.inside() {
+                    self.back();
                 }
             }
             Key::Char(c) if !c.is_control() => {
@@ -528,6 +563,15 @@ impl Shelf {
                     key: String::new(),
                     on: false,
                     cmd: Command::Series(name.clone()),
+                },
+            ],
+            Tile::Group { kind, name, .. } => vec![
+                ui::Row::Head(kind_label(*kind, false)),
+                ui::Row::Item {
+                    label: t("Apri", "Open"),
+                    key: String::new(),
+                    on: false,
+                    cmd: Command::Group(*kind, name.clone()),
                 },
             ],
             Tile::Volume(i) => {
@@ -625,30 +669,43 @@ impl Shelf {
         let lay = self.layout(d, &g);
         let mut l = Layer::default();
 
-        if let Some(top) = lay.series_head {
+        if let Some(top) = lay.head {
             let back_hover = self.hover == Some(Hit::Back);
+            // dove si torna, e dove si e'
+            let (to, here) = match (&self.series, &self.group) {
+                (Some(series), Some((_, group))) => (group.clone(), series.clone()),
+                (Some(series), None) => (t("Libreria", "Library").to_owned(), series.clone()),
+                (None, Some((_, group))) => (groups_title().to_owned(), group.clone()),
+                (None, None) => (t("Libreria", "Library").to_owned(), groups_title().to_owned()),
+            };
             l.texts.push(
-                caps(
-                    &format!("\u{2039}   {}", t("Libreria", "Library")),
-                    11.0 * s,
-                    if back_hover { INK } else { MUTED },
-                )
-                .on_baseline(g.pad, top + 20.0 * s),
+                caps(&format!("\u{2039}   {to}"), 11.0 * s, if back_hover { INK } else { MUTED })
+                    .on_baseline(g.pad, top + 20.0 * s),
             );
-            let name = self.series.clone().unwrap_or_default();
             l.texts.push(
-                fit(m, Text::new(name, Face::Serif, 44.0 * s, INK), g.view.0 - 2.0 * g.pad)
+                fit(m, Text::new(here, Face::Serif, 44.0 * s, INK), g.view.0 - 2.0 * g.pad)
                     .on_baseline(g.pad, top + 78.0 * s),
             );
-            if let Some(Section { tiles, .. }) = self.sections(d).into_iter().next() {
-                let done = tiles.iter().filter(|t| d.status[t.cover()] == Status::Done).count();
-                let text = if italian() {
-                    format!("{} volumi \u{00b7} {done} letti", tiles.len())
+            let text = if self.series.is_none() && self.group.is_none() {
+                t("Dalle schede dei volumi e dai server", "From the volumes\u{2019} metadata and the servers")
+                    .to_owned()
+            } else {
+                let (n, done) =
+                    self.sections(d).iter().flat_map(|sec| &sec.tiles).fold((0, 0), |(n, k), tile| match tile {
+                        Tile::Volume(i) => (n + 1, k + usize::from(d.status[*i] == Status::Done)),
+                        Tile::Series { count, done, .. } | Tile::Group { count, done, .. } => (n + count, k + done),
+                    });
+                let count = if italian() {
+                    format!("{n} volumi \u{00b7} {done} letti")
                 } else {
-                    format!("{} volumes \u{00b7} {done} read", tiles.len())
+                    format!("{n} volumes \u{00b7} {done} read")
                 };
-                l.texts.push(caps(&text, 11.0 * s, MUTED).on_baseline(g.pad, top + 104.0 * s));
-            }
+                match (&self.series, &self.group) {
+                    (None, Some((kind, _))) => format!("{} \u{00b7} {count}", kind_label(*kind, false)),
+                    _ => count,
+                }
+            };
+            l.texts.push(caps(&text, 11.0 * s, MUTED).on_baseline(g.pad, top + 104.0 * s));
         }
         for (title, base) in &lay.heads {
             l.texts.push(caps(title, 11.0 * s, MUTED).on_baseline(g.pad, *base));
@@ -669,7 +726,7 @@ impl Shelf {
                     Text::new(e.title.as_str(), Face::Serif, 18.0 * s, MUTED).boxed(w - 28.0 * s, Align::Center);
                 l.texts.push(plate.on_baseline(x + 14.0 * s, y + h / 2.0));
             }
-            if let Tile::Series { .. } = p.tile {
+            if let Tile::Series { .. } | Tile::Group { .. } = p.tile {
                 // la pila: due bordi che spuntano in alto a destra
                 for (k2, a) in [(1.0, 0.55), (2.0, 0.3)] {
                     let o = (5.0 * k2 * s).round();
@@ -703,9 +760,9 @@ impl Shelf {
                     } else {
                         meta
                     };
-                    (d.entries[*i].title.clone(), meta)
+                    (self.volume_title(&d.entries[*i]), meta)
                 }
-                Tile::Series { name, count, done, .. } => (
+                Tile::Series { name, count, done, .. } | Tile::Group { name, count, done, .. } => (
                     name.clone(),
                     if italian() {
                         format!("{count} volumi \u{00b7} {done} letti")
@@ -727,6 +784,8 @@ impl Shelf {
                 t("Cerco i fumetti\u{2026}", "Looking for comics\u{2026}")
             } else if !self.search.is_empty() || self.filter != Filter::All {
                 t("Nessun risultato", "Nothing found")
+            } else if self.groups {
+                t("Nessuna raccolta, lista, genere o editore", "No collections, lists, genres or publishers")
             } else {
                 t("Nessun fumetto in queste cartelle", "No comics in these folders")
             };
@@ -738,6 +797,17 @@ impl Shelf {
             );
         }
         vec![l, self.bar(d, &g, m)]
+    }
+
+    /// Il titolo di un volume nella sua cella: fuori dalla sua serie, se il
+    /// titolo non la dice ("Volume 1" dalla scheda), la serie davanti.
+    fn volume_title(&self, e: &Entry) -> String {
+        match &e.series {
+            Some(series) if self.series.is_none() && !e.title.to_lowercase().contains(&series.to_lowercase()) => {
+                format!("{series}: {}", e.title)
+            }
+            _ => e.title.clone(),
+        }
     }
 
     /// La barra della libreria: il nome, i filtri, la ricerca, le cartelle.
@@ -756,7 +826,9 @@ impl Shelf {
             let hovered = self.hover == Some(Hit::Filter(*f));
             let color = if on || hovered { INK } else { MUTED };
             let count = d.status.iter().filter(|st| f.keeps(**st)).count();
-            let label = caps(&format!("{}  {count}", f.label()), 11.0 * s, color).tabular();
+            // filtri stretti (finestra piccola): lettere un po' piu' piccole
+            let size = 11.0 * s * (geo.tab_w / (134.0 * s)).clamp(0.8, 1.0);
+            let label = caps(&format!("{}  {count}", f.label()), size, color).tabular();
             l.texts.push(label.boxed(geo.tab_w, Align::Center).on_baseline(*x, cy + 4.0 * s));
             if on {
                 let dd = 4.0 * s;
@@ -789,16 +861,27 @@ impl Shelf {
             draw_icon(&mut l, Icon::Close, (sx + sw - 10.0 * s).round(), cy, s * 0.8, color);
         }
 
-        for (hit, icon, x) in [(Hit::Folders, Icon::Open, geo.folders_x), (Hit::Return, Icon::Close, geo.return_x)] {
+        let buttons = [
+            (Hit::Groups, Icon::Shelf, geo.groups_x),
+            (Hit::Folders, Icon::Open, geo.folders_x),
+            (Hit::Return, Icon::Close, geo.return_x),
+        ];
+        for (hit, icon, x) in buttons {
             let Some(x) = x else { continue };
             let hovered = self.hover == Some(hit.clone());
+            let on = hit == Hit::Groups && self.groups;
             let by = ((h - 36.0 * s) / 2.0).round();
             if hovered {
                 l.rects.push(Rect::new(x, by, 36.0 * s, 36.0 * s, [1.0, 1.0, 1.0, 0.075]).radius(8.0 * s));
             }
-            draw_icon(&mut l, icon, (x + 18.0 * s).round(), cy, s, if hovered { INK_F } else { MUTED_F });
+            draw_icon(&mut l, icon, (x + 18.0 * s).round(), cy, s, if hovered || on { INK_F } else { MUTED_F });
+            if on {
+                let dd = 4.0 * s;
+                l.rects.push(Rect::new(x + 18.0 * s - dd / 2.0, h - 10.0 * s, dd, dd, ACCENT).radius(dd));
+            }
             if hovered {
                 let tip = match hit {
+                    Hit::Groups => t("Raccolte, liste, generi, editori", "Collections, lists, genres, publishers"),
                     Hit::Folders => t("Cartelle della libreria", "Library folders"),
                     _ => t("Torna alla lettura   \u{00b7}   Esc", "Back to reading   \u{00b7}   Esc"),
                 };
@@ -816,14 +899,13 @@ struct BarGeo {
     search_x: f32,
     search_w: f32,
     folders_x: Option<f32>,
+    /// Solo se qualche volume fa parte di un gruppo.
+    groups_x: Option<f32>,
     return_x: Option<f32>,
 }
 
 impl BarGeo {
     fn new(d: &ShelfData, vw: f32, s: f32) -> BarGeo {
-        let tab_w = (134.0 * s).round();
-        let tabs_w = tab_w * 4.0;
-        let x0 = ((vw - tabs_w) / 2.0).round();
         let mut r = vw - 14.0 * s;
         let return_x = d.reading.then(|| {
             r -= 36.0 * s;
@@ -831,9 +913,31 @@ impl BarGeo {
         });
         r -= 36.0 * s + 4.0 * s;
         let folders_x = Some(r.round());
+        let groups_x = d.entries.iter().any(|e| !e.groups.is_empty()).then(|| {
+            r -= 36.0 * s + 4.0 * s;
+            r.round()
+        });
+        // i filtri in mezzo; in una finestra stretta si spostano a sinistra
+        // (dopo il nome) e si stringono, per lasciare posto alla ricerca
+        let (logo, room) = (150.0 * s, r - 16.0 * s - 120.0 * s - 16.0 * s);
+        let mut tab_w = (134.0 * s).round();
+        let mut x0 = ((vw - tab_w * 4.0) / 2.0).round();
+        if x0 + tab_w * 4.0 > room {
+            x0 = (room - tab_w * 4.0).max(logo).round();
+            tab_w = tab_w.min(((room - x0) / 4.0).floor()).max(96.0 * s);
+        }
+        let tabs_w = tab_w * 4.0;
         let search_w = (250.0 * s).round().min((r - 16.0 * s) - (x0 + tabs_w + 16.0 * s)).max(120.0 * s);
         let search_x = (r - 16.0 * s - search_w).round();
-        BarGeo { tabs: (0..4).map(|k| x0 + k as f32 * tab_w).collect(), tab_w, search_x, search_w, folders_x, return_x }
+        BarGeo {
+            tabs: (0..4).map(|k| x0 + k as f32 * tab_w).collect(),
+            tab_w,
+            search_x,
+            search_w,
+            folders_x,
+            groups_x,
+            return_x,
+        }
     }
 }
 
@@ -849,6 +953,9 @@ fn bar_hit(d: &ShelfData, shelf: &Shelf, view: (f32, f32), s: f32, x: f32) -> Op
     if inside(g.folders_x) {
         return Some(Hit::Folders);
     }
+    if inside(g.groups_x) {
+        return Some(Hit::Groups);
+    }
     if inside(g.return_x) {
         return Some(Hit::Return);
     }
@@ -858,8 +965,126 @@ fn bar_hit(d: &ShelfData, shelf: &Shelf, view: (f32, f32), s: f32, x: f32) -> Op
 fn tile_name(d: &ShelfData, t: &Tile) -> String {
     match t {
         Tile::Volume(i) => d.entries[*i].title.clone(),
-        Tile::Series { name, .. } => name.clone(),
+        Tile::Series { name, .. } | Tile::Group { name, .. } => name.clone(),
     }
+}
+
+/// Le serie con piu' volumi diventano una pila, al posto del primo; tutto in
+/// ordine naturale di nome.
+fn stacks(d: &ShelfData, visible: &[usize]) -> Vec<Tile> {
+    let mut tiles: Vec<Tile> = Vec::new();
+    let mut seen: Vec<&str> = Vec::new();
+    for &i in visible {
+        let Some(name) = d.entries[i].series.as_deref() else {
+            tiles.push(Tile::Volume(i));
+            continue;
+        };
+        if seen.contains(&name) {
+            continue;
+        }
+        let mut members: Vec<usize> =
+            visible.iter().copied().filter(|&j| d.entries[j].series.as_deref() == Some(name)).collect();
+        if members.len() < 2 {
+            tiles.push(Tile::Volume(i));
+            continue;
+        }
+        seen.push(name);
+        members.sort_by(|&a, &b| by_number(&d.entries[a], &d.entries[b]));
+        let (cover, done) = cover_and_done(d, &members);
+        tiles.push(Tile::Series { name: name.to_owned(), cover, count: members.len(), done });
+    }
+    tiles.sort_by(|a, b| natural_cmp(&tile_name(d, a), &tile_name(d, b)));
+    tiles
+}
+
+/// In copertina il volume che si sta leggendo, se c'e'; se no il primo. E
+/// quanti se ne sono letti.
+fn cover_and_done(d: &ShelfData, members: &[usize]) -> (usize, usize) {
+    let done = members.iter().filter(|&&j| d.status[j] == Status::Done).count();
+    let cover = members.iter().copied().find(|&j| matches!(d.status[j], Status::Reading(..))).unwrap_or(members[0]);
+    (cover, done)
+}
+
+fn in_group(e: &Entry, kind: GroupKind, name: &str) -> bool {
+    e.groups.iter().any(|g| g.kind == kind && g.name == name)
+}
+
+/// I volumi di un gruppo nel loro ordine: quello della lista di lettura, se
+/// c'e'; poi per serie e numero.
+fn sort_members(d: &ShelfData, members: &mut [usize], kind: GroupKind, name: &str) {
+    let place = |i: usize| {
+        d.entries[i].groups.iter().find(|g| g.kind == kind && g.name == name).and_then(|g| g.order).unwrap_or(u32::MAX)
+    };
+    members.sort_by(|&a, &b| {
+        let (ea, eb) = (&d.entries[a], &d.entries[b]);
+        place(a)
+            .cmp(&place(b))
+            .then_with(|| natural_cmp(ea.series.as_deref().unwrap_or(""), eb.series.as_deref().unwrap_or("")))
+            .then_with(|| by_number(ea, eb))
+    });
+}
+
+const KINDS: [GroupKind; 4] = [GroupKind::Collection, GroupKind::ReadingList, GroupKind::Genre, GroupKind::Publisher];
+
+/// Il nome di un tipo di gruppo, al plurale (titolo di sezione) o al singolare.
+fn kind_label(kind: GroupKind, plural: bool) -> &'static str {
+    match (kind, plural) {
+        (GroupKind::Collection, true) => t("Raccolte", "Collections"),
+        (GroupKind::Collection, false) => t("Raccolta", "Collection"),
+        (GroupKind::ReadingList, true) => t("Liste di lettura", "Reading lists"),
+        (GroupKind::ReadingList, false) => t("Lista di lettura", "Reading list"),
+        (GroupKind::Genre, true) => t("Generi", "Genres"),
+        (GroupKind::Genre, false) => t("Genere", "Genre"),
+        (GroupKind::Publisher, true) => t("Editori", "Publishers"),
+        (GroupKind::Publisher, false) => t("Editore", "Publisher"),
+    }
+}
+
+fn groups_title() -> &'static str {
+    t("Raccolte e liste", "Collections and lists")
+}
+
+/// La vista dei gruppi: una sezione per tipo, una pila per gruppo. Cercando,
+/// un gruppo resta se il suo nome corrisponde (con tutti i volumi) o se ci
+/// sono volumi che corrispondono (solo quelli).
+fn group_sections(d: &ShelfData, filter: Filter, needle: &str, found: &dyn Fn(&Entry) -> bool) -> Vec<Section> {
+    let mut sections = Vec::new();
+    for kind in KINDS {
+        let mut by_name: Vec<(&str, Vec<usize>)> = Vec::new();
+        for (i, e) in d.entries.iter().enumerate() {
+            if !filter.keeps(d.status[i]) {
+                continue;
+            }
+            for g in e.groups.iter().filter(|g| g.kind == kind) {
+                if !found(e) && !g.name.to_lowercase().contains(needle) {
+                    continue;
+                }
+                match by_name.iter_mut().find(|(n, _)| *n == g.name) {
+                    Some((_, members)) if members.last() != Some(&i) => members.push(i),
+                    Some(_) => {}
+                    None => by_name.push((&g.name, vec![i])),
+                }
+            }
+        }
+        let mut tiles: Vec<Tile> = by_name
+            .into_iter()
+            .map(|(name, mut members)| {
+                sort_members(d, &mut members, kind, name);
+                let (cover, done) = cover_and_done(d, &members);
+                Tile::Group { kind, name: name.to_owned(), cover, count: members.len(), done }
+            })
+            .collect();
+        if tiles.is_empty() {
+            continue;
+        }
+        tiles.sort_by(|a, b| natural_cmp(&tile_name(d, a), &tile_name(d, b)));
+        sections.push(Section {
+            title: format!("{} \u{00b7} {}", kind_label(kind, true), tiles.len()),
+            tiles,
+            one_row: false,
+        });
+    }
+    sections
 }
 
 fn meta_of(s: Status) -> String {
@@ -881,6 +1106,7 @@ mod tests {
             series: series.map(|s| s.0.to_owned()),
             number: series.map(|s| s.1),
             authors: None,
+            groups: Vec::new(),
         }
     }
 
@@ -944,6 +1170,64 @@ mod tests {
         assert_eq!(shelf.sections(&d)[0].tiles, [Tile::Volume(1), Tile::Volume(2)], "in ordine di numero");
         shelf.key(Key::Escape, &d, view, 1.0);
         assert!(shelf.series.is_none(), "Esc esce dalla serie");
+    }
+
+    #[test]
+    fn raccolte_liste_e_generi() {
+        use fumetto_core::library::Group;
+        let (mut e, st, at) = library();
+        let arc = |n| Group::new(GroupKind::ReadingList, "La grande nebbia", Some(n));
+        let porto = Group::new(GroupKind::Collection, "Classici del porto", None);
+        let giallo = Group::new(GroupKind::Genre, "Giallo", None);
+        e[1].groups = vec![porto.clone(), arc(3), giallo.clone()];
+        e[2].groups = vec![porto.clone(), giallo.clone()];
+        e[3].groups = vec![arc(1)];
+        e[0].groups = vec![Group::new(GroupKind::Genre, "Avventura", None), giallo];
+        let d = data(&e, &st, &at);
+        let view = (1920.0, 1080.0);
+        let mut shelf = Shelf::default();
+        assert!(BarGeo::new(&d, view.0, 1.0).groups_x.is_some(), "c'e' il tasto dei gruppi");
+        shelf.groups = true;
+        let secs = shelf.sections(&d);
+        let titles: Vec<&str> = secs.iter().map(|s| s.title.as_str()).collect();
+        let head = |kind, n| format!("{} \u{b7} {n}", kind_label(kind, true));
+        assert_eq!(
+            titles,
+            [head(GroupKind::Collection, 1), head(GroupKind::ReadingList, 1), head(GroupKind::Genre, 2)]
+        );
+        assert_eq!(
+            secs[1].tiles,
+            [Tile::Group {
+                kind: GroupKind::ReadingList,
+                name: "La grande nebbia".into(),
+                cover: 3, // in lettura
+                count: 2,
+                done: 1
+            }]
+        );
+        assert!(matches!(&secs[2].tiles[1], Tile::Group { name, count: 3, .. } if name == "Giallo"));
+        // nella lista i volumi vanno nel suo ordine, non per serie
+        shelf.enter_group(GroupKind::ReadingList, "La grande nebbia".into());
+        assert_eq!(shelf.sections(&d)[0].tiles, [Tile::Volume(3), Tile::Volume(1)]);
+        // nella raccolta le serie restano pile
+        shelf.enter_group(GroupKind::Collection, "Classici del porto".into());
+        assert!(matches!(&shelf.sections(&d)[0].tiles[..], [Tile::Series { count: 2, .. }]));
+        shelf.enter_series("Nebbia sul Porto".into());
+        shelf.key(Key::Escape, &d, view, 1.0);
+        assert_eq!(shelf.group.as_ref().map(|g| g.1.as_str()), Some("Classici del porto"), "dalla serie al gruppo");
+        shelf.key(Key::Escape, &d, view, 1.0);
+        assert!(shelf.groups && shelf.group.is_none(), "dal gruppo all'elenco");
+        // cercando: il nome del gruppo, o i volumi dentro
+        for c in "orbita".chars() {
+            shelf.key(Key::Char(c), &d, view, 1.0);
+        }
+        assert_eq!(shelf.sections(&d).len(), 1);
+        assert!(matches!(&shelf.sections(&d)[0].tiles[..], [Tile::Group { count: 1, .. }]));
+        shelf.search = "avv".into();
+        assert!(matches!(&shelf.sections(&d)[0].tiles[..], [Tile::Group { count: 1, .. }]));
+        shelf.search.clear();
+        shelf.key(Key::Escape, &d, view, 1.0);
+        assert!(!shelf.groups, "dall'elenco alla libreria");
     }
 
     #[test]

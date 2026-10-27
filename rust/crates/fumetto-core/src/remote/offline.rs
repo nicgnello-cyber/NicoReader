@@ -141,6 +141,8 @@ struct SavedEntry {
     series: Option<String>,
     number: Option<u32>,
     authors: Option<String>,
+    #[serde(default)]
+    groups: Vec<crate::library::Group>,
 }
 
 fn catalog_file(server: &Server) -> Option<PathBuf> {
@@ -158,6 +160,7 @@ pub(super) fn save_catalog(server: &Server, c: &Catalog) {
             series: e.series.clone(),
             number: e.number,
             authors: e.authors.clone(),
+            groups: e.groups.clone(),
         })
         .collect();
     let Ok(json) = serde_json::to_vec(&Saved { entries, links: c.links.clone() }) else { return };
@@ -175,7 +178,14 @@ pub(super) fn load_catalog(server: &Server) -> Option<Catalog> {
     let entries = saved
         .entries
         .into_iter()
-        .map(|e| Entry { path: e.path, title: e.title, series: e.series, number: e.number, authors: e.authors })
+        .map(|e| Entry {
+            path: e.path,
+            title: e.title,
+            series: e.series,
+            number: e.number,
+            authors: e.authors,
+            groups: e.groups,
+        })
         .collect();
     Some(Catalog { entries, reads: Vec::new(), links: saved.links, fetched: Instant::now(), stale: None })
 }

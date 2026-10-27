@@ -10,7 +10,7 @@
 ;   - NicoReader nel menu Start, e sul desktop se lo si chiede
 ;   - CBZ, CBR, CB7 e CBT: li apre NicoReader con il doppio clic, ma solo se
 ;     nessun altro programma li apre gia'; in ogni caso NicoReader sta in "Apri
-;     con", anche per i PDF (che non gli si prendono)
+;     con", anche per i PDF e gli EPUB (che non gli si prendono)
 ;   - il disinstallatore toglie tutto questo; i progressi di lettura e le
 ;     impostazioni restano (sono dell'utente, non del programma)
 ;   - l'aggiornamento da NicoReader stesso (update::installa) lo lancia con
@@ -88,11 +88,13 @@ Root: HKA; Subkey: "Software\Classes\Applications\NicoReader.exe\SupportedTypes"
 Root: HKA; Subkey: "Software\Classes\Applications\NicoReader.exe\SupportedTypes"; ValueType: string; ValueName: ".cb7"; ValueData: ""
 Root: HKA; Subkey: "Software\Classes\Applications\NicoReader.exe\SupportedTypes"; ValueType: string; ValueName: ".cbt"; ValueData: ""
 Root: HKA; Subkey: "Software\Classes\Applications\NicoReader.exe\SupportedTypes"; ValueType: string; ValueName: ".pdf"; ValueData: ""
+Root: HKA; Subkey: "Software\Classes\Applications\NicoReader.exe\SupportedTypes"; ValueType: string; ValueName: ".epub"; ValueData: ""
 Root: HKA; Subkey: "Software\Classes\.cbz\OpenWithProgids"; ValueType: string; ValueName: "{#Tipo}"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.cbr\OpenWithProgids"; ValueType: string; ValueName: "{#Tipo}"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.cb7\OpenWithProgids"; ValueType: string; ValueName: "{#Tipo}"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.cbt\OpenWithProgids"; ValueType: string; ValueName: "{#Tipo}"; ValueData: ""; Flags: uninsdeletevalue
 Root: HKA; Subkey: "Software\Classes\.pdf\OpenWithProgids"; ValueType: string; ValueName: "{#Tipo}"; ValueData: ""; Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\.epub\OpenWithProgids"; ValueType: string; ValueName: "{#Tipo}"; ValueData: ""; Flags: uninsdeletevalue
 ; il doppio clic sui fumetti, solo dove nessun altro programma li apre gia'
 ; (li si toglie disinstallando, vedi Togli() sotto)
 Root: HKA; Subkey: "Software\Classes\.cbz"; ValueType: string; ValueName: ""; ValueData: "{#Tipo}"; Check: Libero('.cbz')

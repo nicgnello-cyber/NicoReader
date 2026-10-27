@@ -6,8 +6,8 @@ A reader for comics, manga and webtoons: a black gallery where only the page
 exists. Pages are downscaled in linear light (screentones keep their tone, no
 moiré), turn in a millisecond, and reopen where you left off.
 
-It reads folders, CBZ/ZIP, CBR/RAR (solid archives too), CB7/7Z, CBT/TAR and
-PDF, with JPEG, PNG, WebP, GIF, BMP, AVIF and JPEG XL pages. It has a library
+It reads folders, CBZ/ZIP, CBR/RAR (solid archives too), CB7/7Z, CBT/TAR,
+PDF and EPUB (the ones made of images: manga and comics), with JPEG, PNG, WebP, GIF, BMP, AVIF and JPEG XL pages. It has a library
 organized by series (from ComicInfo.xml when a volume has one, so manga also
 open right to left on their own), thumbnails, bookmarks, two-page spreads, a vertical strip
 for webtoons (detected automatically), zoom, a magnifier,
@@ -69,6 +69,12 @@ The code also builds for Linux ARM64, but there are no packages for it yet.
 Open a volume from the menu (right click), with Ctrl+O (Cmd+O on a Mac), from
 the library, or by double-clicking the file. With no volume, it resumes the
 last one you read. Ctrl+, opens the settings (keys included).
+
+The shelves icon in the library bar shows the collections, reading lists,
+genres and publishers: from ComicInfo.xml (SeriesGroup, StoryArc with its
+number, Genre, Publisher), from EPUB metadata, and from a Komga or Kavita
+server (its collections and reading lists). A reading list opens in its own
+order, even across different series.
 
 To read from a Komga or Kavita server: right click → Add a server… (or the
 folder icon in the library). For Komga, the server address with your user

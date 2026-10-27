@@ -7,7 +7,8 @@ tavola. Le pagine si rimpiccioliscono in luce lineare (i retini restano del
 loro tono, senza moiré), si girano in un millisecondo e si riaprono dove le si
 era lasciate.
 
-Legge cartelle, CBZ/ZIP, CBR/RAR (anche solidi), CB7/7Z, CBT/TAR e PDF; pagine
+Legge cartelle, CBZ/ZIP, CBR/RAR (anche solidi), CB7/7Z, CBT/TAR, PDF ed EPUB
+(quelli fatti di immagini: manga e fumetti); pagine
 JPEG, PNG, WebP, GIF, BMP, AVIF e JPEG XL. Ha la libreria con le serie
 (prese dalla ComicInfo.xml quando il volume ce l'ha: i manga si aprono anche
 da destra a sinistra da soli), miniature, segnalibri, doppia pagina, nastro per i webtoon (riconosciuti da
@@ -65,6 +66,12 @@ pacchetti.
 Si apre un volume dal menu (tasto destro), con Ctrl+O (Cmd+O sul Mac), dalla
 libreria o con doppio clic sul file. Senza volume riprende l'ultimo letto.
 Ctrl+, apre le impostazioni (anche i tasti).
+
+L'icona degli scaffali nella barra della libreria mostra raccolte, liste di
+lettura, generi ed editori: dalla ComicInfo.xml (SeriesGroup, StoryArc con il
+suo numero, Genre, Publisher), dai dati degli EPUB e da un server Komga o
+Kavita (le sue raccolte e liste di lettura). Una lista di lettura si apre nel
+suo ordine, anche fra serie diverse.
 
 Per leggere da un server Komga o Kavita: tasto destro → Aggiungi un server…
 (o l'icona della cartella nella libreria). Per Komga l'indirizzo del server,
