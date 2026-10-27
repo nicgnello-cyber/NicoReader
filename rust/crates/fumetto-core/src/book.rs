@@ -12,6 +12,7 @@ use std::sync::Mutex;
 
 use crate::comicinfo::{self, ComicInfo, is_comic_info};
 use crate::decode::Page;
+use crate::epub;
 use crate::lingua::t;
 use crate::loader::Fit;
 use crate::natural::natural_cmp;
@@ -36,6 +37,8 @@ pub enum Error {
     Pdf(String),
     /// Un PDF protetto: serve la password (o quella data e' sbagliata).
     Password,
+    /// Un EPUB di testo (un romanzo): niente pagine da mostrare.
+    TextEpub,
     /// Un volume su un server (Komga, Kavita) che non risponde come dovrebbe.
     Remote(String),
 }
@@ -49,13 +52,17 @@ impl fmt::Display for Error {
             )),
             Error::NoImages => f.write_str(t("Non contiene immagini.", "It contains no images.")),
             Error::Unsupported => f.write_str(t(
-                "Formato non riconosciuto. NicoReader legge CBZ, CBR, CB7, CBT, PDF, cartelle di immagini e immagini singole.",
-                "Unrecognized format. NicoReader reads CBZ, CBR, CB7, CBT, PDF, image folders and single images.",
+                "Formato non riconosciuto. NicoReader legge CBZ, CBR, CB7, CBT, PDF, EPUB, cartelle di immagini e immagini singole.",
+                "Unrecognized format. NicoReader reads CBZ, CBR, CB7, CBT, PDF, EPUB, image folders and single images.",
             )),
             Error::Io(e) => write!(f, "{e}"),
             Error::Archive(e) => write!(f, "{} ({e})", t("Archivio rovinato o illeggibile", "Damaged or unreadable archive")),
             Error::Pdf(e) => write!(f, "PDF: {e}"),
             Error::Password => f.write_str(t("È protetto da password.", "It is password protected.")),
+            Error::TextEpub => f.write_str(t(
+                "È un EPUB di testo: NicoReader legge gli EPUB fatti di immagini (manga e fumetti).",
+                "It's a text EPUB: NicoReader reads EPUBs made of images (manga and comics).",
+            )),
             // "il server non risponde..." in testa alla frase
             Error::Remote(e) => {
                 let mut c = e.chars();
@@ -394,7 +401,16 @@ fn folder_images(root: &Path) -> Result<Vec<String>, Error> {
 }
 
 fn open_zip(path: &Path) -> Result<(Vec<String>, Store), Error> {
-    let zip = zip::ZipArchive::new(File::open(path)?).map_err(|e| Error::Archive(e.to_string()))?;
+    let mut zip = zip::ZipArchive::new(File::open(path)?).map_err(|e| Error::Archive(e.to_string()))?;
+    // un EPUB: le pagine nell'ordine del libro (vedi epub.rs)
+    if epub::is_epub(&zip) {
+        match epub::read(&mut zip) {
+            Ok(Some(book)) => return Ok((book.pages, Store::Zip(Mutex::new(zip)))),
+            Err(epub::TextOnly) => return Err(Error::TextEpub),
+            // il pacchetto non si legge: le immagini in ordine di nome
+            Ok(None) => {}
+        }
+    }
     let mut names: Vec<String> = zip.file_names().filter(|n| is_image(n)).map(str::to_owned).collect();
     sort(&mut names);
     Ok((names, Store::Zip(Mutex::new(zip))))
@@ -504,9 +520,13 @@ pub fn read_info(path: &Path) -> Option<ComicInfo> {
             Kind::Zip => {
                 let mut zip = zip::ZipArchive::new(File::open(path).ok()?).ok()?;
                 // la piu' in alto, se ce n'e' piu' d'una
-                let name = zip.file_names().filter(|n| is_comic_info(n)).min_by_key(|n| n.len())?.to_owned();
-                let f = zip.by_name(&name).ok()?;
-                read_limited(f)?
+                let name = zip.file_names().filter(|n| is_comic_info(n)).min_by_key(|n| n.len()).map(str::to_owned);
+                match name {
+                    Some(name) => read_limited(zip.by_name(&name).ok()?)?,
+                    // un EPUB senza ComicInfo: la scheda del suo pacchetto
+                    None if epub::is_epub(&zip) => return epub::read(&mut zip).ok().flatten()?.info,
+                    None => return None,
+                }
             }
             Kind::Tar => {
                 let mut archive = tar::Archive::new(File::open(path).ok()?);

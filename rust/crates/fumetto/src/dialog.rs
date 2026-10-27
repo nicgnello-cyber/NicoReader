@@ -20,8 +20,8 @@ use crate::app::UserEvent;
 /// Le estensioni proposte. Il tipo vero si riconosce dal contenuto: "Tutti i
 /// file" apre anche un CBZ che si chiama .jpg.
 const EXTENSIONS: &[&str] = &[
-    "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z", "tar", "pdf", "jpg", "jpeg", "png", "webp", "gif", "bmp", "avif",
-    "jxl",
+    "cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z", "tar", "pdf", "epub", "jpg", "jpeg", "png", "webp", "gif", "bmp",
+    "avif", "jxl",
 ];
 
 /// Chiede un volume (o una cartella). `near`: dove cominciare; senza, il

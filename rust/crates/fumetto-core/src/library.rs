@@ -1,7 +1,7 @@
 //! La libreria: i volumi dentro le cartelle scelte, riconosciuti e raggruppati
 //! in serie.
 //!
-//! Un volume e' un archivio (CBZ, CBR, CB7, CBT, ZIP, RAR, 7Z, TAR, PDF) o una
+//! Un volume e' un archivio (CBZ, CBR, CB7, CBT, ZIP, RAR, 7Z, TAR, PDF, EPUB) o una
 //! cartella con dentro delle immagini (molti tengono cosi' i webtoon e i
 //! capitoli dei manga). Si riconosce dall'estensione: aprire ogni file per
 //! guardarne il contenuto renderebbe la scansione lenta come la lettura.
@@ -25,7 +25,7 @@ use crate::comicinfo::ComicInfo;
 use crate::natural::natural_cmp;
 use crate::progress::Progress;
 
-const VOLUME_EXT: &[&str] = &["cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z", "tar", "pdf"];
+const VOLUME_EXT: &[&str] = &["cbz", "cbr", "cb7", "cbt", "zip", "rar", "7z", "tar", "pdf", "epub"];
 
 /// Le parole che in un nome dicono "capitolo", "volume", "numero": prima del
 /// numero, non fanno parte della serie. Le piu' lunghe prima ("capitolo"
@@ -132,6 +132,10 @@ fn walk(root: &Path, dir: &Path, found: &mut Vec<Entry>) {
         if kind.is_dir() {
             walk(root, &e.path(), found);
         } else if is_volume_file(&name) {
+            // gli EPUB di testo (i romanzi) non sono fumetti
+            if !crate::epub::looks_like_comic(&e.path()) {
+                continue;
+            }
             found.push(entry(e.path()));
         } else if is_image(&name) {
             images += 1;

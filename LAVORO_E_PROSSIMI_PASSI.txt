@@ -666,6 +666,17 @@ Il capitolo 7 ne tiene la memoria e i numeri.
        che ha permessi 0600.
      Da fare, se serve: la ricerca sul server, le raccolte e le liste di
      lettura di Komga/Kavita.
+  4b. [x] EPUB (27 ottobre, fumetto-core\src\epub.rs). Quelli fatti di
+     immagini: META-INF/container.xml -> pacchetto .opf -> spine; da ogni
+     paginetta XHTML le sue immagini (<img src>, <svg><image href>), in
+     ordine, senza ripetere quella appena messa. Dal pacchetto: titolo,
+     autori (dc:creator), serie e numero (Calibre o EPUB 3
+     belongs-to-collection + group-position), editore, generi (dc:subject),
+     le altre collezioni, e il verso (page-progression-direction rtl: si
+     apre da destra a sinistra). Un EPUB di testo (meno di una paginetta su
+     due con immagini) non si apre e lo dice; in libreria non entra (si
+     contano solo i nomi nello zip). Anche "Apri con" su Windows, macOS e
+     Linux. Provato con un EPUB di tre pagine in ordine diverso dal nome.
   5. Il peso dell'eseguibile: da 15,3 a 20,7 MB con AVIF, JPEG XL e appunti
      (vedi 5, Tecnici).
   6. Distribuzione (capitolo 5).

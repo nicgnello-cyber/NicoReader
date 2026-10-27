@@ -6,8 +6,8 @@ A reader for comics, manga and webtoons: a black gallery where only the page
 exists. Pages are downscaled in linear light (screentones keep their tone, no
 moiré), turn in a millisecond, and reopen where you left off.
 
-It reads folders, CBZ/ZIP, CBR/RAR (solid archives too), CB7/7Z, CBT/TAR and
-PDF, with JPEG, PNG, WebP, GIF, BMP, AVIF and JPEG XL pages. It has a library
+It reads folders, CBZ/ZIP, CBR/RAR (solid archives too), CB7/7Z, CBT/TAR,
+PDF and EPUB (the ones made of images: manga and comics), with JPEG, PNG, WebP, GIF, BMP, AVIF and JPEG XL pages. It has a library
 organized by series (from ComicInfo.xml when a volume has one, so manga also
 open right to left on their own), thumbnails, bookmarks, two-page spreads, a vertical strip
 for webtoons (detected automatically), zoom, a magnifier,
