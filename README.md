@@ -91,6 +91,10 @@ Manager, Keychain), not to the settings file; on Linux it stays in
 `impostazioni.json`, readable only by you. Either way it is handed to curl
 on its standard input, never on the command line.
 
+A password-protected PDF asks for its password when you open it. On
+Windows and macOS NicoReader keeps it in the system keychain and doesn't
+ask again; on Linux it asks at each launch.
+
 Once a day NicoReader asks GitHub which version is the latest (nothing else
 is sent); when a newer one is out, it offers to open its page, once per
 version. Turn it off in Settings → Reading.

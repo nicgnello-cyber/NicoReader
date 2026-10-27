@@ -168,6 +168,8 @@ pub enum Command {
     Trash(PathBuf),
     /// Toglie una cartella dalla libreria (i file restano dove sono).
     RemoveFolder(PathBuf),
+    /// Apre un PDF protetto con la password scritta.
+    OpenWithPassword(PathBuf, String),
     /// Prova il collegamento a un server e, se risponde, lo aggiunge.
     AddServer(fumetto_core::remote::Server),
     /// Toglie un server dalla libreria (per indirizzo).
@@ -361,12 +363,28 @@ impl Ui {
         self.goto.is_some() || self.menu.is_some() || self.prefs.is_some() || self.server.is_some()
     }
 
-    /// Il modulo per aggiungere un server e' aperto: i tasti sono per lui.
+    /// Un modulo da scrivere e' aperto (un server, la password di un PDF):
+    /// i tasti sono per lui.
     pub fn server_open(&self) -> bool {
         self.server.is_some()
     }
 
-    /// Testo incollato (Ctrl+V), nel campo scelto del modulo del server.
+    /// Chiede la password di un PDF protetto, per aprirlo.
+    pub fn ask_password(&mut self, path: PathBuf, title: String) {
+        self.menu = None;
+        self.goto = None;
+        self.prefs = None;
+        self.server = Some(ServerForm::pdf(path, title));
+    }
+
+    /// Com'e' andata la password: giusta, il modulo si chiude; sbagliata, lo dice.
+    pub fn password_checked(&mut self, result: Result<(), String>) {
+        if self.server.as_ref().is_some_and(ServerForm::is_pdf) {
+            self.server_checked(result);
+        }
+    }
+
+    /// Testo incollato (Ctrl+V), nel campo scelto del modulo.
     pub fn paste(&mut self, text: &str) {
         if let Some(f) = &mut self.server {
             f.type_text(text);
@@ -654,7 +672,7 @@ impl Ui {
                     self.server = None;
                     None
                 }
-                Outcome::Submit(server) => Some(Command::AddServer(server)),
+                Outcome::Submit(cmd) => Some(cmd),
             });
         }
         // Tab serve solo al modulo: altrove resta ai tasti scelti da chi legge
@@ -1048,6 +1066,28 @@ mod tests {
         ui.ask_page(23, 212, &[]);
         ui.key(Key::Up, &c);
         assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::Act(Action::GoTo(24)))));
+    }
+
+    #[test]
+    fn la_password_di_un_pdf() {
+        let mut ui = Ui::new();
+        let c = ctx(None, &[]);
+        ui.ask_password("protetto.pdf".into(), "Protetto".into());
+        assert!(ui.modal() && ui.server_open());
+        assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(None), "vuota non si prova");
+        assert_eq!(ui.key(Key::Tab, &c), Handled::Yes(None), "un campo solo");
+        ui.paste("seg");
+        for ch in "reto".chars() {
+            ui.key(Key::Char(ch), &c);
+        }
+        let open = |pw: &str| Handled::Yes(Some(Command::OpenWithPassword("protetto.pdf".into(), pw.into())));
+        assert_eq!(ui.key(Key::Enter, &c), open("segreto"));
+        ui.password_checked(Err("Password sbagliata.".into()));
+        assert!(ui.server_open(), "sbagliata: si riscrive");
+        ui.key(Key::Char('x'), &c);
+        assert_eq!(ui.key(Key::Enter, &c), open("x"), "la sbagliata si cancella");
+        ui.password_checked(Ok(()));
+        assert!(!ui.server_open());
     }
 
     #[test]

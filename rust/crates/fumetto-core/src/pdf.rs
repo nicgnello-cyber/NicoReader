@@ -14,6 +14,7 @@
 //! pdfium non si puo' usare da piu' thread insieme: ogni chiamata passa da un
 //! lucchetto solo.
 
+use std::collections::HashMap;
 use std::ffi::{CString, c_char, c_int, c_ulong, c_void};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, OnceLock};
@@ -183,6 +184,43 @@ fn api() -> Result<MutexGuard<'static, Api>, Error> {
     }
 }
 
+/// Le password dei PDF protetti, per percorso intero, finche' il programma e'
+/// aperto: copertine e miniature riaprono lo stesso file. Fra un avvio e
+/// l'altro le tiene il portachiavi del sistema (Windows, macOS; vedi
+/// keychain); su Linux, dove non c'e' sempre, si richiedono.
+static PASSWORDS: Mutex<Option<HashMap<PathBuf, String>>> = Mutex::new(None);
+
+/// Il nome del "conto" nel portachiavi per le password dei PDF.
+const KEYCHAIN_USER: &str = "pdf";
+
+fn password_for(path: &Path) -> Option<String> {
+    let abs = std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
+    if let Some(p) = PASSWORDS.lock().unwrap_or_else(|e| e.into_inner()).as_ref().and_then(|m| m.get(&abs)) {
+        return Some(p.clone());
+    }
+    let p = crate::keychain::load(&abs.to_string_lossy(), KEYCHAIN_USER)?;
+    remember(&abs, &p, false);
+    Some(p)
+}
+
+/// Ricorda la password di un PDF (e, se `keep`, la mette nel portachiavi).
+pub(crate) fn remember(path: &Path, password: &str, keep: bool) {
+    let abs = std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
+    if keep {
+        crate::keychain::store(&abs.to_string_lossy(), KEYCHAIN_USER, password);
+    }
+    PASSWORDS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(abs, password.into());
+}
+
+/// Dimentica la password di un PDF: non apre piu' il file (e' cambiato).
+pub(crate) fn forget(path: &Path) {
+    let abs = std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
+    if let Some(m) = PASSWORDS.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+        m.remove(&abs);
+    }
+    crate::keychain::delete(&abs.to_string_lossy(), KEYCHAIN_USER);
+}
+
 /// Un documento aperto e la misura delle sue pagine, in punti tipografici.
 pub struct PdfDoc {
     handle: Handle,
@@ -194,19 +232,28 @@ unsafe impl Send for PdfDoc {}
 unsafe impl Sync for PdfDoc {}
 
 impl PdfDoc {
+    /// Apre il PDF, con la password che si ricorda per lui se ce n'e' una.
+    /// Protetto e senza password giusta: `Error::Password`.
     pub fn open(path: &Path) -> Result<PdfDoc, Error> {
+        let password = password_for(path);
         let api = api()?;
         let c_path = CString::new(path.to_string_lossy().as_bytes())
             .map_err(|_| Error::Pdf(t("percorso con un carattere nullo", "path with a null character").into()))?;
-        // SAFETY: stringa UTF-8 terminata da zero, come chiede pdfium; nessuna password.
-        let handle = unsafe { (api.load_document)(c_path.as_ptr(), std::ptr::null()) };
+        // pdfium vuole la password in UTF-8 (per i PDF moderni, AES-256) o in
+        // Latin-1 (per i vecchi): la prova lui in tutti e due i modi
+        let c_password = password.as_deref().map(|p| CString::new(p.replace('\0', ""))).transpose().ok().flatten();
+        let pw = c_password.as_ref().map_or(std::ptr::null(), |p| p.as_ptr());
+        // SAFETY: stringhe UTF-8 terminate da zero, come chiede pdfium; la
+        // password puo' mancare (puntatore nullo).
+        let handle = unsafe { (api.load_document)(c_path.as_ptr(), pw) };
         if handle.is_null() {
             // SAFETY: nessun argomento; legge l'ultimo errore di questo thread.
             let code = unsafe { (api.last_error)() };
             let why = match code {
                 2 => t("file non trovato o illeggibile", "file not found or unreadable"),
                 3 => t("non è un PDF, o è rovinato", "not a PDF, or damaged"),
-                4 => t("protetto da password", "password protected"),
+                // FPDF_ERR_PASSWORD: manca, o e' sbagliata
+                4 => return Err(Error::Password),
                 _ => t("errore di pdfium", "pdfium error"),
             };
             return Err(Error::Pdf(format!("{why} ({code})")));
@@ -459,6 +506,45 @@ mod tests {
     fn pixel(p: &Page, x: u32, y: u32) -> [u8; 4] {
         let i = ((y * p.width + x) * 4) as usize;
         [p.rgba[i], p.rgba[i + 1], p.rgba[i + 2], p.rgba[i + 3]]
+    }
+
+    /// Copia un PDF di prova in un file suo (la password si ricorda per
+    /// percorso: ogni prova il suo).
+    fn copy(tag: &str, bytes: &[u8]) -> PathBuf {
+        let path = std::env::temp_dir().join(format!("fumetto-{tag}-{}.pdf", std::process::id()));
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    fn red_at_center(book: &Book) -> bool {
+        let fit = Fit::Contain { width: 100, height: 150 };
+        let Content::Exact(page, _) = book.content(0, fit).unwrap() else { return false };
+        pixel(&page, 50, 75) == [255, 0, 0, 255]
+    }
+
+    /// Fatti con qpdf da un PDF con una pagina rossa: AES-256 (i PDF di
+    /// oggi) con una password con le lettere accentate, RC4 a 128 bit (i
+    /// vecchi), e uno protetto solo per la stampa (si apre senza password).
+    #[test]
+    fn pdf_con_password() {
+        for (tag, bytes, password) in [
+            ("aes", &include_bytes!("../prove/protetto-aes.pdf")[..], "segreto \u{e0}\u{e8}"),
+            ("rc4", &include_bytes!("../prove/protetto-rc4.pdf")[..], "vecchia"),
+        ] {
+            let path = copy(&format!("password-{tag}"), bytes);
+            assert!(matches!(Book::open(&path), Err(Error::Password)), "{tag}: senza password");
+            assert!(matches!(Book::open_with_password(&path, "sbagliata"), Err(Error::Password)), "{tag}");
+            assert!(matches!(Book::open(&path), Err(Error::Password)), "{tag}: la sbagliata non si ricorda");
+            let book = Book::open_with_password(&path, password).unwrap();
+            assert!(red_at_center(&book), "{tag}: la pagina si legge");
+            // copertine e miniature riaprono il file: la password si ricorda
+            assert!(red_at_center(&Book::open(&path).unwrap()), "{tag}: riaperto senza chiederla");
+            forget(&path);
+            let _ = std::fs::remove_file(path);
+        }
+        let path = copy("solo-permessi", include_bytes!("../prove/solo-permessi.pdf"));
+        assert!(red_at_center(&Book::open(&path).unwrap()), "protetto solo per la stampa: si apre");
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]

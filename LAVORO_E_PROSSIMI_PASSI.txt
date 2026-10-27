@@ -863,7 +863,14 @@ Il capitolo 7 ne tiene la memoria e i numeri.
         con cui il desktop la lega a fumetto.desktop, su X11 il WM_CLASS
         (verificato con xprop). Si propone per CBZ, CBR, CB7, CBT e PDF
         ("Apri con"); il desktop lo usa da solo solo dove non c'e' altro.
-    [ ] PDF protetti da password: oggi lo dice ma non chiede la password.
+    [x] PDF protetti da password (27 ottobre): aprendoli si chiede la
+        password (lo stesso modulo dei server, un campo solo); sbagliata,
+        lo dice e si riscrive. pdf.rs la passa a FPDF_LoadDocument
+        (AES-256 con lettere accentate, RC4, e i PDF protetti solo per la
+        stampa, che si aprono senza chiedere: prove/protetto-*.pdf, fatti
+        con qpdf). Si ricorda per percorso finche' il programma e' aperto
+        (copertine e miniature riaprono il file) e nel portachiavi su
+        Windows e macOS; su Linux si richiede a ogni avvio.
     [ ] Zoom molto grandi: la pagina ingrandita si carica sulla scheda
         video dal thread principale (fino a ~100 ms, una volta): spostarlo.
     [ ] RAR solidi e 7z si tengono interi in memoria all'apertura: per

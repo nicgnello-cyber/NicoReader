@@ -1,6 +1,8 @@
-//! Aggiungere un server alla libreria (Komga, Kavita): indirizzo, nome e
-//! password, scritti o incollati. Invio prova il collegamento; il server
-//! entra nella libreria solo se risponde.
+//! I moduli da scrivere: aggiungere un server alla libreria (Komga, Kavita:
+//! indirizzo, nome e password; Invio prova il collegamento, il server entra
+//! nella libreria solo se risponde) e la password di un PDF protetto.
+
+use std::path::PathBuf;
 
 use super::*;
 use fumetto_core::remote::Server;
@@ -10,8 +12,10 @@ use fumetto_core::remote::Server;
 const MAX_FIELD: usize = 2000;
 
 pub(crate) struct ServerForm {
-    /// Indirizzo, nome, password.
+    /// Indirizzo, nome, password; per un PDF solo la password.
     fields: [String; 3],
+    /// La password di un PDF: il volume e il suo titolo.
+    pdf: Option<(PathBuf, String)>,
     focus: usize,
     /// Si sta provando il collegamento: si aspetta.
     busy: bool,
@@ -23,12 +27,32 @@ pub(crate) struct ServerForm {
 pub(super) enum Outcome {
     Stay,
     Close,
-    Submit(Server),
+    Submit(Command),
 }
 
 impl ServerForm {
     pub(super) fn new() -> ServerForm {
-        ServerForm { fields: Default::default(), focus: 0, busy: false, error: None }
+        ServerForm { fields: Default::default(), pdf: None, focus: 0, busy: false, error: None }
+    }
+
+    /// La password per aprire un PDF protetto.
+    pub(super) fn pdf(path: PathBuf, title: String) -> ServerForm {
+        ServerForm { pdf: Some((path, title)), ..ServerForm::new() }
+    }
+
+    /// E' la richiesta della password di un PDF (non un server).
+    pub(super) fn is_pdf(&self) -> bool {
+        self.pdf.is_some()
+    }
+
+    /// Quanti campi ha il modulo.
+    fn count(&self) -> usize {
+        if self.pdf.is_some() { 1 } else { 3 }
+    }
+
+    /// Il campo si scrive a pallini.
+    fn masked(&self, i: usize) -> bool {
+        i == self.count() - 1
     }
 
     pub(super) fn key(&mut self, key: Key) -> Outcome {
@@ -44,8 +68,8 @@ impl ServerForm {
             Key::Backspace => {
                 self.fields[self.focus].pop();
             }
-            Key::Tab | Key::Down => self.focus = (self.focus + 1) % 3,
-            Key::Up => self.focus = (self.focus + 2) % 3,
+            Key::Tab | Key::Down => self.focus = (self.focus + 1) % self.count(),
+            Key::Up => self.focus = (self.focus + self.count() - 1) % self.count(),
             Key::Enter => return self.submit(),
             _ => {}
         }
@@ -67,6 +91,14 @@ impl ServerForm {
     }
 
     fn submit(&mut self) -> Outcome {
+        if let Some((path, _)) = &self.pdf {
+            if self.fields[0].is_empty() {
+                return Outcome::Stay;
+            }
+            self.busy = true;
+            self.error = None;
+            return Outcome::Submit(Command::OpenWithPassword(path.clone(), self.fields[0].clone()));
+        }
         let url = self.fields[0].trim();
         if url.is_empty() {
             self.error = Some(t("Manca l'indirizzo del server.", "The server address is missing.").into());
@@ -77,7 +109,8 @@ impl ServerForm {
         let url = if url.contains("://") { url.to_owned() } else { format!("http://{url}") };
         self.busy = true;
         self.error = None;
-        Outcome::Submit(Server { url, user: self.fields[1].trim().to_owned(), password: self.fields[2].clone() })
+        let server = Server { url, user: self.fields[1].trim().to_owned(), password: self.fields[2].clone() };
+        Outcome::Submit(Command::AddServer(server))
     }
 
     /// La prova del collegamento e' andata male: si dice perche', e si puo'
@@ -85,13 +118,17 @@ impl ServerForm {
     pub(super) fn failed(&mut self, error: String) {
         self.busy = false;
         self.error = Some(error);
+        // la password sbagliata si riscrive da capo
+        if self.pdf.is_some() {
+            self.fields[0].clear();
+        }
     }
 
     /// Un clic: sceglie il campo sotto il mouse.
     pub(super) fn click(&mut self, ctx: &Context, x: f32, y: f32) {
         let (x0, w, ys) = geo(ctx);
         let s = ctx.scale;
-        if let Some(i) = ys.iter().position(|&fy| y > fy - 44.0 * s && y < fy + 12.0 * s)
+        if let Some(i) = ys[..self.count()].iter().position(|&fy| y > fy - 44.0 * s && y < fy + 12.0 * s)
             && x >= x0
             && x <= x0 + w
             && !self.busy
@@ -107,27 +144,53 @@ impl ServerForm {
         let mut l = Layer::default();
         l.rects.push(Rect::new(0.0, 0.0, vw, vh, [0.0, 0.0, 0.0, 0.96]));
         let top = ys[0] - 178.0 * s;
-        l.texts.push(caps(t("Aggiungi un server", "Add a server"), 11.0 * s, MUTED).on_baseline(x0, top));
-        l.texts.push(Text::new("Komga, Kavita", Face::Serif, 40.0 * s, INK).on_baseline(x0, top + 46.0 * s));
-        let help = [
-            t(
-                "Komga: l'indirizzo del server (http://casa:25600), con nome e password.",
-                "Komga: the server address (http://home:25600), with user name and password.",
-            ),
-            t(
-                "Kavita: il link OPDS che c'\u{e8} nelle impostazioni dell'utente; nome e password non servono.",
-                "Kavita: the OPDS link from the user settings; no user name or password needed.",
-            ),
-        ];
-        for (k, line) in help.into_iter().enumerate() {
+        if let Some((_, title)) = &self.pdf {
+            l.texts.push(caps(t("PDF protetto", "Protected PDF"), 11.0 * s, MUTED).on_baseline(x0, top));
+            let name = Text::new(title.as_str(), Face::Serif, 40.0 * s, INK);
+            l.texts.push(fit(m, name, w).on_baseline(x0, top + 46.0 * s));
+            let help = [
+                t("Per aprirlo serve la sua password.", "It needs its password to open."),
+                t(
+                    "Su Windows e macOS resta nel portachiavi; su Linux si chiede a ogni avvio.",
+                    "Windows and macOS keep it in the keychain; on Linux it is asked at each launch.",
+                ),
+            ];
+            for (k, line) in help.into_iter().enumerate() {
+                let text = Text::new(line, Face::Sans, 13.0 * s, MUTED);
+                l.texts.push(fit(m, text, w).on_baseline(x0, top + (78.0 + 20.0 * k as f32) * s));
+            }
+        } else {
+            l.texts.push(caps(t("Aggiungi un server", "Add a server"), 11.0 * s, MUTED).on_baseline(x0, top));
+            l.texts.push(Text::new("Komga, Kavita", Face::Serif, 40.0 * s, INK).on_baseline(x0, top + 46.0 * s));
+        }
+        let help = if self.pdf.is_some() {
+            &[][..]
+        } else {
+            &[
+                t(
+                    "Komga: l'indirizzo del server (http://casa:25600), con nome e password.",
+                    "Komga: the server address (http://home:25600), with user name and password.",
+                ),
+                t(
+                    "Kavita: il link OPDS che c'\u{e8} nelle impostazioni dell'utente; nome e password non servono.",
+                    "Kavita: the OPDS link from the user settings; no user name or password needed.",
+                ),
+            ][..]
+        };
+        for (k, &line) in help.iter().enumerate() {
             let text = Text::new(line, Face::Sans, 13.0 * s, MUTED);
             l.texts.push(fit(m, text, w).on_baseline(x0, top + (78.0 + 20.0 * k as f32) * s));
         }
-        let labels = [t("Indirizzo", "Address"), t("Nome", "User name"), t("Password", "Password")];
-        for (i, &y) in ys.iter().enumerate() {
+        let labels = if self.pdf.is_some() {
+            [t("Password", "Password"); 1].to_vec()
+        } else {
+            vec![t("Indirizzo", "Address"), t("Nome", "User name"), t("Password", "Password")]
+        };
+        for (i, &y) in ys[..self.count()].iter().enumerate() {
             let focused = i == self.focus && !self.busy;
             l.texts.push(caps(labels[i], 9.5 * s, if focused { INK } else { MUTED }).on_baseline(x0, y - 30.0 * s));
-            let shown = if i == 2 { "\u{2022}".repeat(self.fields[i].chars().count()) } else { self.fields[i].clone() };
+            let shown =
+                if self.masked(i) { "\u{2022}".repeat(self.fields[i].chars().count()) } else { self.fields[i].clone() };
             let shown = tail(m, &shown, 17.0 * s, w - 12.0 * s);
             let text = Text::new(shown, Face::Sans, 17.0 * s, INK);
             let tw = m.width(&text);
@@ -150,10 +213,16 @@ impl ServerForm {
                 ));
             }
         }
-        let below = ys[2] + 50.0 * s;
+        let below = ys[self.count() - 1] + 50.0 * s;
         let (line, color) = match (&self.error, self.busy) {
+            (_, true) if self.pdf.is_some() => (t("Apertura\u{2026}", "Opening\u{2026}").to_owned(), MUTED),
             (_, true) => (t("Collegamento in corso\u{2026}", "Connecting\u{2026}").to_owned(), MUTED),
             (Some(e), _) => (e.clone(), ACCENT_TEXT),
+            (None, _) if self.pdf.is_some() => (
+                t("Invio per aprire   \u{00b7}   Esc per lasciar stare", "Enter to open   \u{00b7}   Esc to cancel")
+                    .to_owned(),
+                MUTED,
+            ),
             (None, _) => (
                 t(
                     "Tab per il campo dopo   \u{00b7}   Invio per aggiungere   \u{00b7}   Esc per lasciar stare",
