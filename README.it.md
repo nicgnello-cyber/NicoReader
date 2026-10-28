@@ -26,6 +26,7 @@ italiano e in inglese.
 | **Windows su ARM** (Snapdragon X, Surface Pro 11) | [NicoReader-windows-arm64-setup.exe](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-windows-arm64-setup.exe) |
 | **macOS** 10.15 o piu' recente, Intel e Apple Silicon | [NicoReader-macos.dmg](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-macos.dmg) |
 | **Linux**: Ubuntu, Debian, Mint | [NicoReader-linux-x64.deb](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-linux-x64.deb) |
+| **Linux**: qualsiasi distribuzione, un file solo | [NicoReader-linux-x64.AppImage](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-linux-x64.AppImage) |
 | **Linux**: le altre distribuzioni | [NicoReader-linux-x64.tar.gz](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-linux-x64.tar.gz) |
 
 Senza installare niente, su Windows: [zip x64](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-windows-x64.zip),
@@ -55,7 +56,9 @@ cartella, sull'icona nel Dock) e dall'app (Cmd+O, la libreria).
 applicazioni e c'e' il comando `nicoreader`. Con il tar.gz: si scompatta dove
 si vuole e `./installa.sh` mette NicoReader nel menu e tra i programmi per aprire
 CBZ, CBR, CB7, CBT e PDF (solo per l'utente, senza sudo); `./installa.sh
---rimuovi` lo toglie. Servono i driver Vulkan (Mesa, o quelli NVIDIA) e
+--rimuovi` lo toglie. L'AppImage non s'installa: lo si rende eseguibile
+(`chmod +x NicoReader-linux-x64.AppImage`, o Proprieta' → Consenti
+l'esecuzione) e lo si apre. Servono i driver Vulkan (Mesa, o quelli NVIDIA) e
 libxkbcommon-x11, che ogni desktop ha gia'.
 
 Il codice e' pronto anche per Linux ARM64, ma per lui non si fanno ancora
@@ -126,9 +129,9 @@ nient'altro); se ne è uscita una nuova chiede, una volta per versione:
 Aggiorna, Novità (la pagina della Release) o Più tardi. Aggiorna scarica la
 versione nuova, la controlla con l'impronta SHA-256 che pubblica GitHub, si
 chiude, la installa e si riapre dove eri. Funziona con l'installer di
-Windows, su macOS e con la cartella del tar.gz di Linux; con lo zip di
-Windows o il .deb apre invece la pagina della Release. Il controllo si spegne
-in Impostazioni → Lettura.
+Windows, su macOS, con l'AppImage e con la cartella del tar.gz di Linux;
+con lo zip di Windows o il .deb apre invece la pagina della Release. Il
+controllo si spegne in Impostazioni → Lettura.
 
 Da riga di comando, dopo averlo compilato:
 
@@ -151,7 +154,7 @@ Su Linux e macOS le prove dei PDF vogliono pdfium in `vendor/pdfium/`: lo
 scaricano `pacchetto.sh` e `pacchetto-mac.sh` la prima volta.
 
 I pacchetti da distribuire (eseguibile, pdfium, licenze; lo zip e l'installer
-per Windows, il tar.gz e il .deb per Linux, il dmg per macOS):
+per Windows, l'AppImage, il tar.gz e il .deb per Linux, il dmg per macOS):
 
     powershell -ExecutionPolicy Bypass -File pacchetto.ps1               (Windows x64)
     powershell -ExecutionPolicy Bypass -File pacchetto.ps1 -Arch arm64   (Windows ARM64)

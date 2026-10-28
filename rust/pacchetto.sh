@@ -4,7 +4,7 @@
 # Uso (nella cartella rust):
 #   ./pacchetto.sh [--senza-prove]
 #
-# Serve: Rust (rustup), nasm (su x86_64), curl, tar e python3.
+# Serve: Rust (rustup), nasm (su x86_64), curl e tar.
 #
 # Fa, in ordine:
 #   1. pdfium per questo sistema in vendor/pdfium/linux-<arch>, se manca
@@ -16,7 +16,10 @@
 #      nicoreader.desktop e installa.sh (per il menu delle applicazioni) e la
 #      cartella licenze/ con le licenze di tutto cio' che sta dentro
 #   5. dist/NicoReader-<versione>-linux-<arch>.tar.gz, da mettere nelle Release
-#   6. dist/nicoreader_<versione>_<arch>.deb, il pacchetto per Debian, Ubuntu,
+#   6. dist/NicoReader-<versione>-linux-<arch>.AppImage, un file solo che gira
+#      su qualunque distribuzione (con appimagetool, scaricato la prima volta
+#      in vendor/appimagetool e controllato con SHA-256)
+#   7. dist/nicoreader_<versione>_<arch>.deb, il pacchetto per Debian, Ubuntu,
 #      Mint e simili (si installa con un doppio clic o con apt), se c'e'
 #      dpkg-deb: NicoReader in /opt/nicoreader, il comando nicoreader, il menu e
 #      l'icona per tutti gli utenti
@@ -30,9 +33,11 @@ prove=1
 
 case "$(uname -m)" in
     x86_64) arch=x64; deb=amd64; triple=x86_64-unknown-linux-gnu
-            sha=0b43f405477cf2cfc4dbff06905093c3309756c6bca1fb9da99234a2ca97fed2 ;;
+            sha=0b43f405477cf2cfc4dbff06905093c3309756c6bca1fb9da99234a2ca97fed2
+            appimage_arch=x86_64; appimage_sha=ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0 ;;
     aarch64|arm64) arch=arm64; deb=arm64; triple=aarch64-unknown-linux-gnu
-            sha=0e6f90dccbc6b81fd5d7106abaf164c4222178f024c204d00d526b60fd2ad535 ;;
+            sha=0e6f90dccbc6b81fd5d7106abaf164c4222178f024c204d00d526b60fd2ad535
+            appimage_arch=aarch64; appimage_sha=f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158 ;;
     *) echo "sistema non previsto: $(uname -m)" >&2; exit 1 ;;
 esac
 
@@ -81,7 +86,7 @@ cp ../LICENSE-MIT "$dist/licenze/NicoReader-LICENSE-MIT.txt"
 cp ../LICENSE-APACHE "$dist/licenze/NicoReader-LICENSE-APACHE.txt"
 
 # --- le licenze delle librerie Rust (e di quelle in C e C++ che contengono) ---
-librerie=$(python3 terze_parti.py "$versione" "$dist/licenze/terze-parti.txt" "$triple")
+librerie=$(cargo run -q -p fumetto-strumenti -- licenze "$versione" "$dist/licenze/terze-parti.txt" "$triple")
 
 mb=$(du -sm "$dist" | cut -f1)
 echo
@@ -91,6 +96,40 @@ pacchetto="dist/NicoReader-$versione-linux-$arch.tar.gz"
 rm -f "$pacchetto"
 tar -czf "$pacchetto" -C dist NicoReader
 echo "Pacchetto -> $pacchetto  ($(du -h "$pacchetto" | cut -f1) da scaricare)"
+
+# --- l'AppImage ---
+# appimagetool di una versione fissata; il runtime che apre l'AppImage e'
+# quello dentro appimagetool stesso (anche lui e' un AppImage): niente altro da
+# scaricare. Senza FUSE (container, CI) gli AppImage si estraggono da se'.
+appimagetool="vendor/appimagetool/1.9.1/appimagetool-$appimage_arch.AppImage"
+if [[ ! -x "$appimagetool" ]]; then
+    mkdir -p "$(dirname "$appimagetool")"
+    curl --location --fail --silent --show-error --output "$appimagetool.parziale" \
+        "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-$appimage_arch.AppImage"
+    echo "$appimage_sha  $appimagetool.parziale" | sha256sum --check --quiet
+    chmod +x "$appimagetool.parziale"
+    mv "$appimagetool.parziale" "$appimagetool"
+fi
+export APPIMAGE_EXTRACT_AND_RUN=1
+appdir=$(mktemp -d)
+trap 'rm -rf "$appdir" "$appdir.runtime"' EXIT
+mkdir -p "$appdir/usr/bin"
+# l'eseguibile e pdfium insieme: NicoReader lo cerca accanto a se'
+cp "$dist/nicoreader" "$dist/libpdfium.so" "$appdir/usr/bin/"
+cp -r "$dist/licenze" "$appdir/"
+ln -s usr/bin/nicoreader "$appdir/AppRun"
+cp crates/fumetto/risorse/linux/nicoreader.desktop "$appdir/"
+cp crates/fumetto/risorse/icona.png "$appdir/nicoreader.png"
+ln -s nicoreader.png "$appdir/.DirIcon"
+runtime="$appdir.runtime"
+offset=$("$appimagetool" --appimage-offset)
+head -c "$offset" "$appimagetool" > "$runtime"
+pacchetto_appimage="dist/NicoReader-$versione-linux-$arch.AppImage"
+rm -f "$pacchetto_appimage"
+ARCH=$appimage_arch "$appimagetool" --no-appstream --runtime-file "$runtime" "$appdir" "$pacchetto_appimage" > /dev/null
+rm -rf "$appdir" "$runtime"
+trap - EXIT
+echo "AppImage -> $pacchetto_appimage  ($(du -h "$pacchetto_appimage" | cut -f1) da scaricare)"
 
 # --- il .deb ---
 if ! command -v dpkg-deb > /dev/null; then

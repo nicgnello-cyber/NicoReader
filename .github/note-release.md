@@ -6,6 +6,7 @@
 | Windows on ARM (Snapdragon X, Surface Pro 11) | `NicoReader-windows-arm64-setup.exe` |
 | macOS 10.15 or later (Intel and Apple Silicon) | `NicoReader-macos.dmg` |
 | Linux: Ubuntu, Debian, Mint | `NicoReader-linux-x64.deb` |
+| Linux: any distribution, one file | `NicoReader-linux-x64.AppImage` |
 | Linux: other distributions | `NicoReader-linux-x64.tar.gz` |
 
 To use it on Windows without installing anything, take the zip.

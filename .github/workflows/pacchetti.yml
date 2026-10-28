@@ -1,8 +1,8 @@
 # I pacchetti di NicoReader per Windows x64, Windows ARM64, Linux x64 e macOS,
 # fatti dagli stessi script che si usano a mano (rust/pacchetto.ps1,
 # rust/pacchetto.sh, rust/pacchetto-mac.sh): per Windows lo zip e
-# l'installer, per Linux il tar.gz e il .deb, per macOS il dmg. Finiscono
-# negli "Artifacts" dell'esecuzione, da scaricare.
+# l'installer, per Linux l'AppImage, il tar.gz e il .deb, per macOS il dmg.
+# Finiscono negli "Artifacts" dell'esecuzione, da scaricare.
 #
 # Per i tag v* (git tag v0.1.0 && git push origin v0.1.0) li pubblica anche in
 # una Release di GitHub, con nomi senza versione: i link del README
@@ -104,6 +104,7 @@ jobs:
           name: NicoReader-linux-x64
           path: |
             rust/dist/*.tar.gz
+            rust/dist/*.AppImage
             rust/dist/*.deb
           if-no-files-found: error
 
@@ -175,6 +176,7 @@ jobs:
           done
           mv "nicoreader_${versione}_amd64.deb" ../uscita/NicoReader-linux-x64.deb
           mv "NicoReader-$versione-linux-x64.tar.gz" ../uscita/NicoReader-linux-x64.tar.gz
+          mv "NicoReader-$versione-linux-x64.AppImage" ../uscita/NicoReader-linux-x64.AppImage
           mv "NicoReader-$versione-macos.dmg" ../uscita/NicoReader-macos.dmg
           ls -l ../uscita
 

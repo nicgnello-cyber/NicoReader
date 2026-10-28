@@ -314,7 +314,7 @@ Il capitolo 7 ne tiene la memoria e i numeri.
     - winresource (solo in compilazione): icona, nome "Fumetto" in Gestione
       attivita', manifest (DPI, percorsi lunghi, controlli moderni).
       L'icona (rust\crates\fumetto\risorse\fumetto.ico, 17 KB, 8 misure
-      rimpicciolite in luce lineare) si rifa' con fai_icona.py accanto.
+      rimpicciolite in luce lineare) si rifa' con fumetto-strumenti (icona).
   Formati: cartelle, CBZ/ZIP, CBR/RAR (anche solidi), CB7/7Z, CBT/TAR,
   PDF; immagini JPEG, PNG, WebP, GIF, BMP, AVIF, JPEG XL. Il tipo si riconosce dal
   contenuto, non dall'estensione (nella libreria invece dall'estensione:
@@ -730,15 +730,37 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      in coda a lib.entries (da lib.found_from) e la libreria li mostra in
      "Sul server". Provato con Komga 1.24: una serie aggiunta al server
      dopo la lettura del catalogo si trova e si apre.
+  4i. [x] Una finestra sola (28 ottobre, fumetto\src\instance.rs). Aprire
+     un volume a NicoReader gia' aperto (doppio clic, jump list, "Apri
+     con") non apre una seconda finestra: la seconda copia manda il
+     percorso alla prima e si chiude; la prima torna in primo piano (anche
+     se era ridotta a icona) e lo apre. Su Windows una named pipe
+     (FILE_FLAG_FIRST_PIPE_INSTANCE, e AllowSetForegroundWindow per il
+     primo piano), su Linux e macOS un socket Unix in XDG_RUNTIME_DIR (o
+     nella cartella temporanea), solo per lo stesso utente; il nome viene
+     dalla cartella dei dati, cosi' FUMETTO_DATI diversi restano
+     separati. Se la prima non risponde in 3 s, la seconda fa da se'.
+     Provato su Linux (Xvfb): il volume passa in 16 ms. Windows compilato
+     e passato da clippy (MinGW); NON provato su un Windows vero.
+  4j. [x] Le cartelle degli autori come raccolte (28 ottobre, library.rs,
+     folder_collections). Una cartella con dentro piu' serie o volumi
+     diversi (tipo "ANRAKUGAI - AUTORE" con 6 titoli) diventa una
+     raccolta col suo nome; i volumi sciolti senza numero diventano una
+     serie solo se il nome comincia con quello della cartella.
+  4k. [x] AppImage per Linux (28 ottobre, pacchetto.sh). Un file solo che
+     va su ogni distribuzione: NicoReader-linux-x64.AppImage, con pdfium
+     dentro. appimagetool 1.9.1, scaricato e controllato con lo SHA-256.
+     L'aggiornamento automatico lo sostituisce (variabile APPIMAGE).
+  4l. [x] Niente piu' Python (28 ottobre). terze_parti.py e fai_icona.py
+     sono ora il crate fumetto-strumenti: "licenze" (anche per Windows, al
+     posto del pezzo in PowerShell), "icona" (pixel per pixel uguale al
+     disegno di prima) e "volumi-di-prova" (per prova-finder.sh). Si
+     lancia con cargo run -q -p fumetto-strumenti -- <comando>.
   5. Il peso dell'eseguibile: da 15,3 a 20,7 MB con AVIF, JPEG XL e appunti
      (vedi 5, Tecnici).
   6. Distribuzione (capitolo 5).
 
   Da decidere tu, quando vuoi:
-    - Le cartelle degli autori (tipo "ANRAKUGAI - AUTORE" con 6 titoli
-      dentro) oggi nella libreria diventano pile, come le serie. Tenerle
-      come raccolte, o solo le serie vere dai nomi? (Una riga in
-      fumetto-core\src\library.rs, group_by_folder.)
     - La "sensazione" dello scorrimento: la funzione glide_step in
       rust\crates\fumetto\src\strip.rs (segnata TODO(human)); oggi
       rallenta in modo esponenziale e si ferma in circa 0,3 s. La usa
@@ -921,7 +943,8 @@ Il capitolo 7 ne tiene la memoria e i numeri.
         Finche' il repository e' privato, i link funzionano solo per chi
         ha accesso: per tutti serve renderlo pubblico (e allora la licenza).
     [x] Jump list (27 ottobre, jumplist.rs).
-    [ ] Linux: RPM (Fedora, openSUSE) o AppImage, se servono.
+    [x] Linux: AppImage (28 ottobre).
+    [ ] Linux: RPM (Fedora, openSUSE), se serve.
     [x] Accanto all'eseguibile: pdfium.dll e le sue licenze (lo fa
         pacchetto.ps1).
     [x] File delle licenze di terze parti di tutte le librerie, e dei

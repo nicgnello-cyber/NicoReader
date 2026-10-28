@@ -26,6 +26,7 @@ Italian.
 | **Windows on ARM** (Snapdragon X, Surface Pro 11) | [NicoReader-windows-arm64-setup.exe](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-windows-arm64-setup.exe) |
 | **macOS** 10.15 or later, Intel and Apple Silicon | [NicoReader-macos.dmg](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-macos.dmg) |
 | **Linux**: Ubuntu, Debian, Mint | [NicoReader-linux-x64.deb](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-linux-x64.deb) |
+| **Linux**: any distribution, one file | [NicoReader-linux-x64.AppImage](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-linux-x64.AppImage) |
 | **Linux**: other distributions | [NicoReader-linux-x64.tar.gz](https://github.com/nicgnello-cyber/NicoReader/releases/latest/download/NicoReader-linux-x64.tar.gz) |
 
 To use it on Windows without installing anything:
@@ -59,7 +60,9 @@ application menu, and the `nicoreader` command is available. With the
 tar.gz: extract it wherever you like, then `./installa.sh` adds NicoReader to
 the menu and to the programs that open CBZ, CBR, CB7, CBT and PDF files (for
 the current user only, no sudo needed); `./installa.sh --rimuovi` removes it
-again. You need Vulkan drivers (Mesa or NVIDIA's) and libxkbcommon-x11, which
+again. The AppImage needs no installing: make it executable (`chmod +x
+NicoReader-linux-x64.AppImage`, or Properties → Allow executing) and open it.
+You need Vulkan drivers (Mesa or NVIDIA's) and libxkbcommon-x11, which
 every desktop already has.
 
 The code also builds for Linux ARM64, but there are no packages for it yet.
@@ -126,9 +129,9 @@ At each launch NicoReader asks GitHub which version is the latest (nothing
 else is sent); when a newer one is out, it asks once per version: Update, What's
 new (the Release page) or Later. Update downloads the new version, checks it
 against the SHA-256 that GitHub publishes, closes, installs it and reopens
-where you were. It works with the Windows installer, on macOS, and with the
-Linux tar.gz folder; with the Windows zip or the .deb it opens the Release
-page instead. Turn the check off in Settings → Reading.
+where you were. It works with the Windows installer, on macOS, with the
+AppImage and with the Linux tar.gz folder; with the Windows zip or the .deb
+it opens the Release page instead. Turn the check off in Settings → Reading.
 
 From the command line, after building it:
 
@@ -151,7 +154,8 @@ On Linux and macOS the PDF tests need pdfium in `vendor/pdfium/`:
 `pacchetto.sh` and `pacchetto-mac.sh` download it the first time they run.
 
 The packages to distribute (executable, pdfium, licenses; the zip and the
-installer for Windows, the tar.gz and the .deb for Linux, the dmg for macOS):
+installer for Windows, the AppImage, the tar.gz and the .deb for Linux, the dmg
+for macOS):
 
     powershell -ExecutionPolicy Bypass -File pacchetto.ps1               (Windows x64)
     powershell -ExecutionPolicy Bypass -File pacchetto.ps1 -Arch arm64   (Windows ARM64)

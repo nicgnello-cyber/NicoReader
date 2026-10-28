@@ -86,51 +86,12 @@ Copy-Item "..\LICENSE-APACHE" "$dist\licenze\NicoReader-LICENSE-APACHE.txt"
 # --- le licenze delle librerie Rust (e di quelle in C e C++ che contengono) ---
 # Per ogni pacchetto che finisce nell'eseguibile di Windows: nome, versione,
 # licenza dichiarata, e i testi di licenza che il pacchetto porta con se'.
-# Le dipendenze solo per compilare o solo per le prove restano fuori.
-$meta = cargo metadata --format-version 1 --filter-platform $triple | ConvertFrom-Json
-$per_id = @{}
-foreach ($p in $meta.packages) { $per_id[$p.id] = $p }
-$nodi = @{}
-foreach ($n in $meta.resolve.nodes) { $nodi[$n.id] = $n }
-$radice = ($meta.packages | Where-Object { $_.name -eq "fumetto" }).id
-$visti = @{}
-$coda = New-Object System.Collections.Queue
-$coda.Enqueue($radice)
-while ($coda.Count -gt 0) {
-    $id = $coda.Dequeue()
-    if ($visti.ContainsKey($id)) { continue }
-    $visti[$id] = $true
-    foreach ($d in $nodi[$id].deps) {
-        # solo le dipendenze normali: niente build.rs ne' prove
-        if ($d.dep_kinds | Where-Object { $null -eq $_.kind }) { $coda.Enqueue($d.pkg) }
-    }
-}
-$testo = New-Object System.Text.StringBuilder
-[void]$testo.AppendLine("NicoReader $versione contiene queste librerie. Qui sotto le loro licenze.")
-[void]$testo.AppendLine("NicoReader contains these libraries. Their licenses follow.")
-[void]$testo.AppendLine("")
-$pacchetti = $visti.Keys | ForEach-Object { $per_id[$_] } | Where-Object { $_.source } | Sort-Object name, version
-foreach ($p in $pacchetti) {
-    [void]$testo.AppendLine("=" * 78)
-    [void]$testo.AppendLine("$($p.name) $($p.version)   ($($p.license))")
-    if ($p.repository) { [void]$testo.AppendLine($p.repository) }
-    [void]$testo.AppendLine("=" * 78)
-    $cartella = Split-Path $p.manifest_path
-    $file = Get-ChildItem $cartella -File -Recurse -Depth 2 |
-        Where-Object { $_.Name -match '^(LICEN[CS]E|COPYING|NOTICE|UNLICENSE|license)' } |
-        Sort-Object FullName
-    foreach ($f in $file) {
-        [void]$testo.AppendLine("--- $($f.FullName.Substring($cartella.Length + 1))")
-        [void]$testo.AppendLine((Get-Content $f.FullName -Raw))
-    }
-    if (-not $file) { [void]$testo.AppendLine("(testo non incluso nel pacchetto: vale la licenza dichiarata)") }
-    [void]$testo.AppendLine("")
-}
-[System.IO.File]::WriteAllText("$PWD\$dist\licenze\terze-parti.txt", $testo.ToString(), (New-Object System.Text.UTF8Encoding $false))
+$librerie = cargo run -q -p fumetto-strumenti -- licenze $versione "$dist\licenze\terze-parti.txt" $triple
+if ($LASTEXITCODE -ne 0) { throw "licenze delle librerie non scritte (exit $LASTEXITCODE)" }
 
 $mb = [math]::Round(((Get-ChildItem $dist -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
 Write-Host ""
-Write-Host "Fatto -> $dist\NicoReader.exe  ($mb MB, $($pacchetti.Count) librerie nelle licenze)" -ForegroundColor Green
+Write-Host "Fatto -> $dist\NicoReader.exe  ($mb MB, $librerie librerie nelle licenze)" -ForegroundColor Green
 
 $zip = "dist\NicoReader-$versione-windows-$Arch.zip"
 Remove-Item $zip -ErrorAction SilentlyContinue

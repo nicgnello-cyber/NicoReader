@@ -17,19 +17,8 @@ prova=$(mktemp -d)
 dati="$prova/dati"
 trap 'osascript -e "quit app \"NicoReader\"" >/dev/null 2>&1 || true; rm -rf "$prova"' EXIT
 
-# due CBZ con una pagina (un PNG 8x8 grigio), fatti a mano: niente librerie
-python3 - "$prova" <<'EOF'
-import struct, sys, zipfile, zlib
-def png(w, h):
-    def chunk(tipo, dati):
-        return struct.pack(">I", len(dati)) + tipo + dati + struct.pack(">I", zlib.crc32(tipo + dati))
-    righe = b"".join(b"\x00" + b"\x80" * w for _ in range(h))
-    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0))
-            + chunk(b"IDAT", zlib.compress(righe)) + chunk(b"IEND", b""))
-for nome in ("Primo", "Secondo"):
-    with zipfile.ZipFile(f"{sys.argv[1]}/{nome}.cbz", "w") as z:
-        z.writestr("001.png", png(8, 8))
-EOF
+# due CBZ con una pagina (un PNG 8x8 grigio)
+cargo run -q -p fumetto-strumenti -- volumi-di-prova "$prova" Primo Secondo
 
 open -n -a "$app" --env FUMETTO_DATI="$dati" --stderr "$prova/errori.txt" "$prova/Primo.cbz"
 sleep 15
