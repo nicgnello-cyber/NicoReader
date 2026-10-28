@@ -122,8 +122,8 @@ A password-protected PDF asks for its password when you open it. On
 Windows and macOS NicoReader keeps it in the system keychain and doesn't
 ask again; on Linux it asks at each launch.
 
-Once a day NicoReader asks GitHub which version is the latest (nothing else
-is sent); when a newer one is out, it asks once per version: Update, What's
+At each launch NicoReader asks GitHub which version is the latest (nothing
+else is sent); when a newer one is out, it asks once per version: Update, What's
 new (the Release page) or Later. Update downloads the new version, checks it
 against the SHA-256 that GitHub publishes, closes, installs it and reopens
 where you were. It works with the Windows installer, on macOS, and with the

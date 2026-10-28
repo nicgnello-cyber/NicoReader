@@ -1,26 +1,21 @@
-//! L'avviso di una versione nuova: una volta al giorno al massimo si chiede a
-//! GitHub qual e' l'ultima Release (in sottofondo, senza fermare niente) e, se
-//! e' piu' nuova di questa, la si propone una volta sola: installarla adesso
-//! (dove si puo', vedi update::installa), leggerne le novita', o lasciar
-//! stare. Si spegne dalle impostazioni.
+//! L'avviso di una versione nuova: a ogni avvio si chiede a GitHub qual e'
+//! l'ultima Release (una richiesta di pochi KB, in sottofondo, senza fermare
+//! niente) e, se e' piu' nuova di questa, la si propone una volta sola:
+//! installarla adesso (dove si puo', vedi update::installa), leggerne le
+//! novita', o lasciar stare. Si spegne dalle impostazioni.
 
 use super::*;
 use fumetto_core::update::{self, installa};
 
-/// Ogni quanto, al massimo, si chiede a GitHub.
-const CHECK_EVERY: u64 = 24 * 60 * 60;
-
 impl App {
-    /// Se e' il momento, chiede a GitHub l'ultima versione; la risposta torna
-    /// come `UserEvent::Update`. Senza rete non torna niente, e si riprova
-    /// alla prossima apertura.
+    /// Chiede a GitHub l'ultima versione (all'avvio, e quando lo si
+    /// riaccende dalle impostazioni); la risposta torna come
+    /// `UserEvent::Update`. Senza rete non torna niente, e si riprova alla
+    /// prossima apertura.
     pub(super) fn check_update(&mut self) {
-        // la prova automatica non esce sulla rete, e senza impostazioni da
-        // salvare chiederebbe a ogni avvio
+        // la prova automatica non esce sulla rete, e senza impostazioni non
+        // ricorderebbe quale versione ha gia' proposto
         if self.script.is_some() || self.settings_path.is_none() || !self.settings.check_updates {
-            return;
-        }
-        if unix_now().saturating_sub(self.settings.update_checked) < CHECK_EVERY {
             return;
         }
         // l'installer scaricato la volta prima non serve piu'
@@ -37,12 +32,10 @@ impl App {
     /// La risposta di GitHub: se la versione e' nuova e non la si e' ancora
     /// proposta, la si propone appena non c'e' altro da mostrare.
     pub(super) fn update_arrived(&mut self, release: Release) {
-        self.settings.update_checked = unix_now();
         if update::newer(&release.version, env!("CARGO_PKG_VERSION")) && self.settings.update_offered != release.version
         {
             self.update_offer = Some(release);
         }
-        self.save_settings();
         self.show_pending();
     }
 
@@ -123,8 +116,4 @@ impl App {
         self.settings.last_version = this.to_owned();
         self.save_settings();
     }
-}
-
-fn unix_now() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }

@@ -121,8 +121,8 @@ Un PDF protetto da password la chiede quando lo si apre. Su Windows e
 macOS NicoReader la tiene nel portachiavi del sistema e non la richiede; su
 Linux la chiede a ogni avvio.
 
-Una volta al giorno NicoReader chiede a GitHub qual è l'ultima versione (non
-manda nient'altro); se ne è uscita una nuova chiede, una volta per versione:
+A ogni avvio NicoReader chiede a GitHub qual è l'ultima versione (non manda
+nient'altro); se ne è uscita una nuova chiede, una volta per versione:
 Aggiorna, Novità (la pagina della Release) o Più tardi. Aggiorna scarica la
 versione nuova, la controlla con l'impronta SHA-256 che pubblica GitHub, si
 chiude, la installa e si riapre dove eri. Funziona con l'installer di

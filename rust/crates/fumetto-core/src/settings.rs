@@ -38,10 +38,8 @@ pub struct Settings {
     /// I tasti scelti da chi legge, per nome del comando ("lente": ["Z"]);
     /// i comandi che non ci sono hanno i tasti di serie.
     pub keys: BTreeMap<String, Vec<String>>,
-    /// Chiedere a GitHub, una volta al giorno, se c'e' una versione nuova.
+    /// Chiedere a GitHub, a ogni avvio, se c'e' una versione nuova.
     pub check_updates: bool,
-    /// Quando lo si e' chiesto l'ultima volta (secondi dal 1970).
-    pub update_checked: u64,
     /// L'ultima versione nuova gia' proposta: non la si ripropone.
     pub update_offered: String,
     /// La versione dell'ultimo avvio: se e' cambiata, NicoReader e' stato
@@ -66,7 +64,6 @@ impl Default for Settings {
             lens_size: 150.0,
             keys: BTreeMap::new(),
             check_updates: true,
-            update_checked: 0,
             update_offered: String::new(),
             last_version: String::new(),
         }
