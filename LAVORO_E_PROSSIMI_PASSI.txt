@@ -1,5 +1,5 @@
 NICOREADER (prima: Fumetto) - lettore di fumetti, manga e webtoon
-Stato del progetto al 27 ottobre 2026 (versione 0.4.1)
+Stato del progetto al 28 ottobre 2026 (versione 0.4.2)
 =====================================================================
 
 Dal 27 settembre il programma si chiama NicoReader e il progetto e'
@@ -852,8 +852,8 @@ Il capitolo 7 ne tiene la memoria e i numeri.
     [x] Avviso delle versioni nuove (6 ottobre; dal 28 ottobre a ogni
         avvio, non piu' una volta al giorno: e' una richiesta di pochi KB,
         e GitHub ne concede 60 l'ora). In sottofondo, curl chiede a
-        api.github.com l'ultima
-        Release (fumetto-core\src\update.rs; come per l'ingranditore, niente
+        api.github.com l'ultima Release (fumetto-core\src\update.rs; come
+        per l'ingranditore, niente
         librerie di rete nell'eseguibile). Se e' piu' nuova (confronto dei
         numeri: 0.10 dopo 0.9) e non la si e' gia' proposta, una finestra di
         sistema chiede se aprirne la pagina; si apre solo un indirizzo delle

@@ -169,13 +169,13 @@ every `v*` tag, and for pull requests that touch the code.
 To publish a new version, with the Download links following it
 automatically: raise `version` in `rust/Cargo.toml`, merge, then create the
 tag, either from the GitHub website (Releases → Draft a new release → tag
-`v0.4.1`, create on publish → Publish release) or with
+`v0.4.2`, create on publish → Publish release) or with
 
-    git tag v0.4.1
-    git push origin v0.4.1
+    git tag v0.4.2
+    git push origin v0.4.2
 
 Actions builds the packages for every system and publishes them in the
-`v0.4.1` Release, under the version-less names the links use (it stops if the
+`v0.4.2` Release, under the version-less names the links use (it stops if the
 tag doesn't match the version in Cargo.toml), with the notes from
 `.github/note-release.md` if the Release has none. To rewrite only the notes
 of the current version: Run workflow with "note" checked.
