@@ -121,8 +121,8 @@ Un PDF protetto da password la chiede quando lo si apre. Su Windows e
 macOS NicoReader la tiene nel portachiavi del sistema e non la richiede; su
 Linux la chiede a ogni avvio.
 
-Una volta al giorno NicoReader chiede a GitHub qual è l'ultima versione (non
-manda nient'altro); se ne è uscita una nuova chiede, una volta per versione:
+A ogni avvio NicoReader chiede a GitHub qual è l'ultima versione (non manda
+nient'altro); se ne è uscita una nuova chiede, una volta per versione:
 Aggiorna, Novità (la pagina della Release) o Più tardi. Aggiorna scarica la
 versione nuova, la controlla con l'impronta SHA-256 che pubblica GitHub, si
 chiude, la installa e si riapre dove eri. Funziona con l'installer di
@@ -168,13 +168,13 @@ e per le pull request che toccano il codice.
 
 Una nuova versione, con i link di "Scarica" che la seguono da soli: si alza
 `version` in `rust/Cargo.toml`, e dopo il merge si crea il tag, dal sito di
-GitHub (Releases -> Draft a new release -> tag `v0.4.1`, "create on publish"
+GitHub (Releases -> Draft a new release -> tag `v0.4.2`, "create on publish"
 -> Publish release) oppure con
 
-    git tag v0.4.1
-    git push origin v0.4.1
+    git tag v0.4.2
+    git push origin v0.4.2
 
-Actions fa i pacchetti di tutti i sistemi e li pubblica nella Release `v0.4.1`,
+Actions fa i pacchetti di tutti i sistemi e li pubblica nella Release `v0.4.2`,
 con i nomi senza versione dei link (se il tag non e' la versione di
 Cargo.toml si ferma), e con le note di `.github/note-release.md` se la
 Release non ne ha. Per riscrivere solo le note della versione attuale: Run

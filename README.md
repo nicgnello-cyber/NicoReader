@@ -122,8 +122,8 @@ A password-protected PDF asks for its password when you open it. On
 Windows and macOS NicoReader keeps it in the system keychain and doesn't
 ask again; on Linux it asks at each launch.
 
-Once a day NicoReader asks GitHub which version is the latest (nothing else
-is sent); when a newer one is out, it asks once per version: Update, What's
+At each launch NicoReader asks GitHub which version is the latest (nothing
+else is sent); when a newer one is out, it asks once per version: Update, What's
 new (the Release page) or Later. Update downloads the new version, checks it
 against the SHA-256 that GitHub publishes, closes, installs it and reopens
 where you were. It works with the Windows installer, on macOS, and with the
@@ -169,13 +169,13 @@ every `v*` tag, and for pull requests that touch the code.
 To publish a new version, with the Download links following it
 automatically: raise `version` in `rust/Cargo.toml`, merge, then create the
 tag, either from the GitHub website (Releases → Draft a new release → tag
-`v0.4.1`, create on publish → Publish release) or with
+`v0.4.2`, create on publish → Publish release) or with
 
-    git tag v0.4.1
-    git push origin v0.4.1
+    git tag v0.4.2
+    git push origin v0.4.2
 
 Actions builds the packages for every system and publishes them in the
-`v0.4.1` Release, under the version-less names the links use (it stops if the
+`v0.4.2` Release, under the version-less names the links use (it stops if the
 tag doesn't match the version in Cargo.toml), with the notes from
 `.github/note-release.md` if the Release has none. To rewrite only the notes
 of the current version: Run workflow with "note" checked.

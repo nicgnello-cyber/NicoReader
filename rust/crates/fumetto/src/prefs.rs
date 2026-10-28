@@ -287,8 +287,8 @@ impl Prefs {
                         pref: Pref::CheckUpdates(!settings.check_updates),
                     },
                     Row::Note(t(
-                        "Una volta al giorno chiede a GitHub qual è l'ultima versione. Non manda nient'altro.",
-                        "Once a day it asks GitHub which version is the latest. Nothing else is sent.",
+                        "A ogni avvio chiede a GitHub qual è l'ultima versione. Non manda nient'altro.",
+                        "At each launch it asks GitHub which version is the latest. Nothing else is sent.",
                     )),
                 ]
             }
