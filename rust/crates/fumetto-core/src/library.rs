@@ -17,7 +17,7 @@
 //! gli archivi.
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -158,6 +158,7 @@ fn scan_with(roots: &[PathBuf], info: &mut dyn FnMut(&Path) -> Option<ComicInfo>
     found.sort_by(|a: &Entry, b| natural_cmp(&a.title, &b.title).then_with(|| a.path.cmp(&b.path)));
     found.dedup_by(|a, b| a.path == b.path);
     group_by_folder(&mut found, roots);
+    folder_collections(&mut found, roots);
     found
 }
 
@@ -249,19 +250,38 @@ fn cache_key(path: &Path) -> Option<String> {
 }
 
 /// I volumi senza numero nel nome, nella stessa cartella (che non sia una
-/// della libreria) insieme ad altri: la cartella e' la serie. Una cartella
-/// che dice solo "Vol 1" o "Ch 3" non e' la serie, e' un pezzo del volume: la
-/// serie e' piu' su (Berserk/Vol 1/Ch 1 e' "Berserk", volume "Vol 1 · Ch 1"),
-/// altrimenti i "Vol 1" di tutti i manga diventerebbero una serie sola.
+/// della libreria) insieme ad altri: la cartella e' la serie, se sembrano i
+/// pezzi di una serie (vedi `pieces_of_a_series`). Una cartella che dice solo
+/// "Vol 1" o "Ch 3" non e' la serie, e' un pezzo del volume: la serie e' piu'
+/// su (Berserk/Vol 1/Ch 1 e' "Berserk", volume "Vol 1 · Ch 1"), altrimenti i
+/// "Vol 1" di tutti i manga diventerebbero una serie sola.
 fn group_by_folder(found: &mut [Entry], roots: &[PathBuf]) {
     let anchors: Vec<_> = found.iter().map(|e| series_folder(&e.path, roots)).collect();
+    // per cartella: i volumi ancora senza serie che ci stanno direttamente
+    let mut loose: HashMap<&Path, Vec<usize>> = HashMap::new();
+    for (i, a) in anchors.iter().enumerate() {
+        if let Some((folder, parts)) = a
+            && parts.is_empty()
+            && found[i].series.is_none()
+        {
+            loose.entry(folder.as_path()).or_default().push(i);
+        }
+    }
+    let series_folders: HashSet<&Path> = loose
+        .iter()
+        .filter(|(folder, members)| {
+            let titles: Vec<&str> = members.iter().map(|&i| found[i].title.as_str()).collect();
+            pieces_of_a_series(&title_of(folder), &titles)
+        })
+        .map(|(folder, _)| *folder)
+        .collect();
     for i in 0..found.len() {
         if found[i].series.is_some() {
             continue;
         }
         let Some((folder, parts)) = &anchors[i] else { continue };
         let siblings = anchors.iter().filter(|a| a.as_ref().is_some_and(|(f, _)| f == folder)).count();
-        if siblings < 2 {
+        if siblings < 2 || (parts.is_empty() && !series_folders.contains(folder.as_path())) {
             continue;
         }
         found[i].series = Some(title_of(folder));
@@ -273,6 +293,59 @@ fn group_by_folder(found: &mut [Entry], roots: &[PathBuf]) {
             found[i].number = None;
         }
     }
+}
+
+/// Dei volumi senza numero nella stessa cartella sono i pezzi di una serie se
+/// qualcuno ha un numero nel titolo ("Cap 1 - Vite") o se cominciano tutti
+/// con il nome della cartella ("Akira/Akira parte uno"). Titoli diversi
+/// senza numeri ("Moebius/Arzach", "Moebius/Il garage ermetico") sono opere
+/// diverse: la cartella e' una raccolta, non una serie.
+fn pieces_of_a_series(folder: &str, titles: &[&str]) -> bool {
+    let folder = without_brackets(folder).to_lowercase();
+    titles.iter().any(|t| first_number(t).is_some())
+        || (!folder.is_empty() && titles.iter().all(|t| t.to_lowercase().starts_with(&folder)))
+}
+
+/// Le cartelle che riuniscono serie (o volumi) diverse diventano raccolte:
+/// quella di un autore, "Manga", "Webtoon". Non la cartella della serie
+/// stessa (One Piece/), non quelle che dicono solo "Vol 1", non quelle della
+/// libreria. Per ogni volume conta la prima cartella sopra di lui (e sopra
+/// la sua serie), se dentro ci sono almeno due serie o volumi diversi.
+fn folder_collections(found: &mut [Entry], roots: &[PathBuf]) {
+    let homes: Vec<Option<PathBuf>> = found.iter().map(|e| collection_folder(e, roots)).collect();
+    // per cartella: le serie e i volumi senza serie che contiene
+    let mut units: HashMap<&Path, HashSet<String>> = HashMap::new();
+    for (e, home) in found.iter().zip(&homes) {
+        if let Some(home) = home {
+            let unit = e.series.clone().unwrap_or_else(|| e.path.to_string_lossy().into_owned());
+            units.entry(home.as_path()).or_default().insert(unit);
+        }
+    }
+    for (e, home) in found.iter_mut().zip(&homes) {
+        let Some(home) = home.as_deref().filter(|h| units.get(h).is_some_and(|u| u.len() >= 2)) else { continue };
+        let name = title_of(home);
+        if !e.groups.iter().any(|g| g.kind == GroupKind::Collection && g.name == name) {
+            e.groups.push(Group::new(GroupKind::Collection, name, None));
+        }
+    }
+}
+
+/// La cartella che potrebbe raccogliere il volume: la sua, saltando quelle
+/// dei capitoli ("Vol 1") e quella della sua serie; `None` se si arriva a
+/// una cartella della libreria.
+fn collection_folder(e: &Entry, roots: &[PathBuf]) -> Option<PathBuf> {
+    let mut folder = e.path.parent()?;
+    let is_root = |f: &Path| roots.iter().any(|r| r.as_path() == f);
+    while !is_root(folder) && chapter_like(&title_of(folder)) {
+        folder = folder.parent()?;
+    }
+    if let Some(series) = &e.series
+        && !is_root(folder)
+        && without_brackets(&title_of(folder)).eq_ignore_ascii_case(without_brackets(series))
+    {
+        folder = folder.parent()?;
+    }
+    (!is_root(folder) && roots.iter().any(|r| folder.starts_with(r))).then(|| folder.to_owned())
 }
 
 /// La cartella che fa da serie per un volume, saltando quelle che dicono solo
@@ -593,6 +666,45 @@ mod tests {
         berserk.sort_by(|a, b| by_number(a, b));
         let order: Vec<&str> = berserk.iter().map(|e| e.title.as_str()).collect();
         assert_eq!(order, ["Vol 1 \u{00b7} Ch 1", "Vol 1 \u{00b7} Ch 2", "Vol 2 \u{00b7} Ch 1"]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn le_cartelle_degli_autori_sono_raccolte() {
+        let root = std::env::temp_dir().join(format!("fumetto-libreria-autori-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let mk = |p: &str| {
+            let p = root.join(p);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b"x").unwrap();
+        };
+        // un autore: due opere sciolte e una serie in una sua cartella
+        mk("Moebius/Arzach.cbz");
+        mk("Moebius/Il garage ermetico.cbz");
+        mk("Moebius/Incal/Incal v01.cbz");
+        mk("Moebius/Incal/Incal v02.cbz");
+        // una serie senza numeri: i titoli cominciano con il nome della cartella
+        mk("Akira/Akira parte uno.cbz");
+        mk("Akira/Akira parte due.cbz");
+        // una cartella che ordina: due serie
+        mk("Manga/One Piece/One Piece v01.cbz");
+        mk("Manga/Berserk/Berserk v01.cbz");
+        // un volume da solo nella sua cartella: niente raccolta
+        mk("Sciolti/Unico.cbz");
+        let found = scan(std::slice::from_ref(&root));
+        let get = |title: &str| found.iter().find(|e| e.title == title).unwrap();
+        let collections = |title: &str| -> Vec<String> {
+            get(title).groups.iter().filter(|g| g.kind == GroupKind::Collection).map(|g| g.name.clone()).collect()
+        };
+        assert_eq!(get("Arzach").series, None, "opere diverse non sono una serie");
+        assert_eq!(get("Il garage ermetico").series, None);
+        assert_eq!(collections("Arzach"), ["Moebius"]);
+        assert_eq!(collections("Incal v02"), ["Moebius"], "anche la serie dentro la cartella dell'autore");
+        assert_eq!(get("Akira parte uno").series.as_deref(), Some("Akira"));
+        assert!(collections("Akira parte uno").is_empty(), "la cartella della serie non e' una raccolta");
+        assert_eq!(collections("One Piece v01"), ["Manga"]);
+        assert_eq!(collections("Berserk v01"), ["Manga"]);
+        assert!(collections("Unico").is_empty() && get("Unico").series.is_none());
         let _ = std::fs::remove_dir_all(&root);
     }
 

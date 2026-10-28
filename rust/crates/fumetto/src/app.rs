@@ -149,6 +149,9 @@ pub enum UserEvent {
     Opened(PathBuf, Box<Result<Book, fumetto_core::Error>>, bool),
     /// Un volume di un server scaricato (o l'errore).
     Downloaded(PathBuf, Result<(), String>),
+    /// Un altro NicoReader, aperto con un volume (o senza), l'ha passato a
+    /// questo e si e' chiuso (vedi instance.rs).
+    Forwarded(Option<PathBuf>),
     /// La ricerca sui server: cosa si cercava, i volumi trovati, i server
     /// che non hanno risposto.
     Searched(String, Vec<Entry>, Vec<String>),

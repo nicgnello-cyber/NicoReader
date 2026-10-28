@@ -9,6 +9,8 @@ rust/vendor/pdfium/win-arm64/
 rust/vendor/pdfium/linux-x64/
 rust/vendor/pdfium/linux-arm64/
 rust/vendor/pdfium/mac-univ/
+# appimagetool, per l'AppImage: lo scarica pacchetto.sh
+rust/vendor/appimagetool/
 
 # pagine di prova: fumetti veri, protetti da diritto d'autore, e pesanti
 scan per prove/

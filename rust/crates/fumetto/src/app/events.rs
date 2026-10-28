@@ -204,6 +204,17 @@ impl ApplicationHandler<UserEvent> for App {
                 }
             }
             UserEvent::Searched(query, found, failed) => self.searched(query, found, failed),
+            UserEvent::Forwarded(path) => {
+                // la finestra davanti, anche se era ridotta a icona
+                if let Some(w) = &self.window {
+                    w.set_minimized(false);
+                    w.focus_window();
+                }
+                if let Some(path) = path {
+                    self.open(&path);
+                }
+                self.request_redraw();
+            }
             UserEvent::Done(result) => match result {
                 Ok(text) => {
                     self.ui.toast(text, Instant::now());

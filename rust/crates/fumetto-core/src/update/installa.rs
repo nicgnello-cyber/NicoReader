@@ -8,7 +8,9 @@
 //!   sopra a questo e alla fine riapre NicoReader;
 //! - macOS: si sostituisce NicoReader.app con quella del dmg nuovo;
 //! - Linux, la cartella del tar.gz (quella con installa.sh): si sostituisce
-//!   la cartella.
+//!   la cartella;
+//! - Linux, l'AppImage: si sostituisce il file .AppImage (il programma gira
+//!   da una cartella montata in sola lettura, che non si tocca).
 //!
 //! Altrimenti (lo zip di Windows, il .deb installato in /opt, un'app in una
 //! cartella in sola lettura) si apre la pagina della Release, come prima.
@@ -31,12 +33,17 @@ pub enum Plan {
     Mac { asset: Asset, bundle: PathBuf },
     /// Il tar.gz di Linux: la sua cartella al posto di `dir`.
     Folder { asset: Asset, dir: PathBuf },
+    /// L'AppImage nuovo al posto di `file`.
+    AppImage { asset: Asset, file: PathBuf },
 }
 
 impl Plan {
     pub fn asset(&self) -> &Asset {
         match self {
-            Plan::Windows { asset } | Plan::Mac { asset, .. } | Plan::Folder { asset, .. } => asset,
+            Plan::Windows { asset }
+            | Plan::Mac { asset, .. }
+            | Plan::Folder { asset, .. }
+            | Plan::AppImage { asset, .. } => asset,
         }
     }
 }
@@ -56,6 +63,13 @@ fn wanted() -> String {
 /// Come installare `release` al posto di questa versione; `None` se qui non
 /// si puo' (allora si apre la pagina della Release).
 pub fn plan(release: &Release) -> Option<Plan> {
+    // dentro un AppImage: il suo file lo dice lui, in APPIMAGE
+    if cfg!(target_os = "linux")
+        && let Some(file) = std::env::var_os("APPIMAGE")
+    {
+        let arch = if cfg!(target_arch = "aarch64") { "arm64" } else { "x64" };
+        return plan_appimage(release, Path::new(&file), &format!("NicoReader-linux-{arch}.AppImage"));
+    }
     let exe = std::env::current_exe().ok()?;
     let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
     plan_for(release, &exe, &wanted())
@@ -80,6 +94,13 @@ fn plan_for(release: &Release, exe: &Path, wanted: &str) -> Option<Plan> {
     let unpacked = dir.join("installa.sh").is_file() && dir.join("nicoreader.desktop").is_file();
     let ok = unpacked && writable(dir) && writable(dir.parent()?);
     ok.then(|| Plan::Folder { asset, dir: dir.to_owned() })
+}
+
+/// L'AppImage si sostituisce se si puo' scrivere accanto a lui.
+fn plan_appimage(release: &Release, file: &Path, wanted: &str) -> Option<Plan> {
+    let asset = release.assets.iter().find(|a| a.name == wanted)?.clone();
+    let ok = file.is_file() && writable(file.parent()?);
+    ok.then(|| Plan::AppImage { asset, file: file.to_owned() })
 }
 
 /// Si puo' scrivere nella cartella (lo si prova davvero: i permessi da soli
@@ -178,7 +199,36 @@ pub fn install(plan: &Plan, file: &Path) -> Result<(), String> {
             install_folder(file, dir)?;
             relaunch_after_exit(&[&dir.join("nicoreader").to_string_lossy()])
         }
+        Plan::AppImage { file: target, .. } => {
+            install_appimage(file, target)?;
+            relaunch_after_exit(&[&target.to_string_lossy()])
+        }
     }
+}
+
+/// Il file nuovo accanto al vecchio (la cartella temporanea puo' stare su un
+/// altro disco), eseguibile, poi al suo posto in un colpo solo: il programma
+/// che gira ha ancora aperto il vecchio, che sparisce quando si chiude.
+fn install_appimage(new: &Path, target: &Path) -> Result<(), String> {
+    let name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let next = target.with_file_name(format!(".{name}.nuovo"));
+    let placed =
+        std::fs::copy(new, &next).and_then(|_| make_executable(&next)).and_then(|_| std::fs::rename(&next, target));
+    if placed.is_err() {
+        let _ = std::fs::remove_file(&next);
+    }
+    placed.map_err(|e| e.to_string())
+}
+
+#[cfg(unix)]
+fn make_executable(file: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o755))
+}
+
+#[cfg(not(unix))]
+fn make_executable(_: &Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 /// Esegue un comando e aspetta; l'errore e' quello che scrive.
@@ -321,6 +371,35 @@ mod tests {
             plan_for(&release, &exe, "NicoReader-linux-x64.tar.gz"),
             Some(Plan::Folder { asset: release.assets[2].clone(), dir: tgz })
         );
+        // l'AppImage: dove si puo' scrivere accanto a lui
+        let mut with_appimage = release.clone();
+        with_appimage.assets.push(asset("NicoReader-linux-x64.AppImage", b"a"));
+        let image = root.join("NicoReader-linux-x64.AppImage");
+        assert_eq!(plan_appimage(&with_appimage, &image, "NicoReader-linux-x64.AppImage"), None, "il file non c'e'");
+        std::fs::write(&image, b"vecchio").unwrap();
+        assert_eq!(plan_appimage(&release, &image, "NicoReader-linux-x64.AppImage"), None, "la Release non ce l'ha");
+        let Some(Plan::AppImage { file, .. }) = plan_appimage(&with_appimage, &image, "NicoReader-linux-x64.AppImage")
+        else {
+            panic!("doveva essere l'AppImage")
+        };
+        assert_eq!(file, image);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn l_appimage_si_sostituisce() {
+        let root = temp("appimage");
+        let (old, new) = (root.join("NicoReader.AppImage"), root.join("scaricato"));
+        std::fs::write(&old, b"0.4.1").unwrap();
+        std::fs::write(&new, b"0.4.2").unwrap();
+        install_appimage(&new, &old).unwrap();
+        assert_eq!(std::fs::read(&old).unwrap(), b"0.4.2");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&old).unwrap().permissions().mode() & 0o777, 0o755, "eseguibile");
+        }
+        assert!(!root.join(".NicoReader.AppImage.nuovo").exists());
         let _ = std::fs::remove_dir_all(root);
     }
 

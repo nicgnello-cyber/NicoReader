@@ -936,6 +936,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fumetto-strumenti"
+version = "0.4.2"
+dependencies = [
+ "png",
+ "serde",
+ "serde_json",
+ "zip",
+]
+
+[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"

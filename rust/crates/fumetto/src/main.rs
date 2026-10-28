@@ -43,6 +43,7 @@ mod dialog;
 #[cfg(target_os = "macos")]
 mod finder;
 mod gpu_start;
+mod instance;
 mod jumplist;
 mod script;
 mod stats;
@@ -68,6 +69,18 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let prova = args.iter().any(|a| a == "--prova");
     let asked = args.iter().find(|a| !a.starts_with("--")).map(PathBuf::from);
+    // NicoReader e' gia' aperto: il volume va a lui (vedi instance.rs). Il
+    // percorso intero: l'altra copia puo' stare in un'altra cartella
+    if !prova {
+        let proxy = event_loop.create_proxy();
+        let forwarded = asked.as_deref().map(fumetto_core::absolute);
+        let open = move |path| {
+            let _ = proxy.send_event(app::UserEvent::Forwarded(path));
+        };
+        if let instance::Start::Forwarded = instance::start(&data_dir(), forwarded.as_deref(), open) {
+            return;
+        }
+    }
     // la prova automatica non tocca i progressi veri, ne' li usa (a meno di
     // darle una cartella tutta sua con FUMETTO_DATI)
     let own_dir = std::env::var_os("FUMETTO_DATI").is_some();

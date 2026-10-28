@@ -7,7 +7,7 @@
 # Serve: Rust (rustup) con i due sistemi,
 #   rustup target add aarch64-apple-darwin x86_64-apple-darwin
 # gli strumenti da riga di comando di Xcode (xcode-select --install), nasm
-# (brew install nasm: per la parte Intel), curl e python3.
+# (brew install nasm: per la parte Intel) e curl.
 #
 # Fa, in ordine:
 #   1. pdfium per macOS (Intel e Apple Silicon insieme) in
@@ -75,7 +75,7 @@ cp crates/fumetto-render/modelli/LICENSE-Real-ESRGAN.txt "$app/Contents/Resource
 # la licenza di NicoReader stesso
 cp ../LICENSE-MIT "$app/Contents/Resources/licenze/NicoReader-LICENSE-MIT.txt"
 cp ../LICENSE-APACHE "$app/Contents/Resources/licenze/NicoReader-LICENSE-APACHE.txt"
-librerie=$(python3 terze_parti.py "$versione" "$app/Contents/Resources/licenze/terze-parti.txt" "${sistemi[@]}")
+librerie=$(cargo run -q -p fumetto-strumenti -- licenze "$versione" "$app/Contents/Resources/licenze/terze-parti.txt" "${sistemi[@]}")
 plutil -lint "$app/Contents/Info.plist" > /dev/null
 
 # Firma "ad hoc": senza, su Apple Silicon il programma non parte proprio.
