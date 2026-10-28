@@ -65,7 +65,9 @@ pacchetti.
 
 Si apre un volume dal menu (tasto destro), con Ctrl+O (Cmd+O sul Mac), dalla
 libreria o con doppio clic sul file. Senza volume riprende l'ultimo letto.
-Ctrl+, apre le impostazioni (anche i tasti).
+Ctrl+, apre le impostazioni (anche i tasti). Su Windows gli ultimi volumi
+letti sono anche nella jump list: tasto destro sull'icona di NicoReader nella
+barra delle applicazioni.
 
 All'ultima pagina, andando avanti ancora una volta l'app dice quale volume
 viene dopo, e andando avanti di nuovo lo apre: il seguente della serie (o
@@ -97,7 +99,10 @@ con nome e password; per Kavita il link OPDS che c'è nelle impostazioni
 dell'utente (dentro c'è la chiave, la password non serve). Il server entra
 nella libreria solo se risponde; serie e volumi compaiono accanto a quelli
 dei file, e le pagine si chiedono una alla volta (lo "streaming" delle
-pagine di OPDS): il volume si apre subito.
+pagine di OPDS): il volume si apre subito. Scrivendo nella libreria si cerca
+anche sui server, dopo una breve pausa: quello che la libreria non ha (un
+server troppo grande per leggerlo tutto, o una parola trovata in un riassunto
+o in un'etichetta) compare sotto, in "Sul server".
 
 Il punto di lettura è lo stesso del server: si legge un capitolo sul
 telefono con l'app di Komga o Kavita e NicoReader riparte da lì, e

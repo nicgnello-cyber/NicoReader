@@ -68,6 +68,13 @@ const GROUP_ROOTS: &[(GroupKind, &[&str], &[&str])] = &[
 const MAX_GROUPS: usize = 300;
 const MAX_PAGES: usize = 50;
 
+/// Il segnaposto delle parole cercate negli indirizzi di ricerca (OpenSearch).
+const SEARCH_TERMS: &str = "{searchTerms}";
+/// Una ricerca sul server: quante serie trovate si aprono per prenderne i
+/// volumi, e quante richieste al massimo in tutto.
+const MAX_SEARCH_SERIES: usize = 30;
+const MAX_SEARCH_REQUESTS: usize = 120;
+
 /// Un server nella libreria.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -99,6 +106,10 @@ pub struct Links {
 
 /// I cataloghi letti di recente.
 static CRAWLED: Mutex<Vec<(Server, Catalog)>> = Mutex::new(Vec::new());
+
+/// L'indirizzo di ricerca di ogni server (con `{searchTerms}`), una volta
+/// trovato; `None`: il server non offre la ricerca.
+static SEARCH: Mutex<Vec<(Server, Option<String>)>> = Mutex::new(Vec::new());
 
 /// Cio' che si sa di un server: i volumi, dove ciascuno e' arrivato secondo il
 /// server, copertine e file.
@@ -293,9 +304,151 @@ pub fn volumes(server: &Server) -> Result<Catalog, String> {
     Ok(catalog)
 }
 
+impl Server {
+    /// Nome e password per curl, se il server li chiede.
+    fn login(&self) -> Option<(&str, &str)> {
+        (!self.user.is_empty()).then_some((self.user.as_str(), self.password.as_str()))
+    }
+}
+
+/// Cerca sul server, come la sua pagina di ricerca: i volumi delle serie
+/// trovate (e quelli trovati da soli), come voci della libreria. La
+/// libreria ha gia' tutto il catalogo, ma un server enorme supera i limiti
+/// della lettura, e il server cerca anche dove l'app non guarda (riassunti,
+/// etichette). Niente, se il server non offre la ricerca.
+pub fn search(server: &Server, query: &str) -> Result<Vec<Entry>, String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let login = server.login();
+    let Some(template) = search_template(server)? else { return Ok(Vec::new()) };
+    let url = fill_search(&template, query);
+    let mut found = Found::default();
+    let mut seen = HashSet::from([url.clone()]);
+    let mut level = vec![Visit { origin: url.clone(), url, series: None, depth: 0 }];
+    let (mut requests, mut series) = (0, 0);
+    while !level.is_empty() && requests < MAX_SEARCH_REQUESTS {
+        level.truncate(MAX_SEARCH_REQUESTS - requests);
+        let first_round = requests == 0;
+        requests += level.len();
+        let mut next = Vec::new();
+        for (visit, feed) in level.iter().zip(fetch_feeds(&level, login)) {
+            let feed = match feed {
+                Ok(Some(feed)) => feed,
+                // la ricerca stessa non risponde: lo si dice; una serie, si salta
+                Err(e) if first_round => return Err(e),
+                _ => continue,
+            };
+            found.add(&feed, visit.series.as_deref(), None);
+            if let Some(url) = feed.next.clone().filter(|u| seen.insert(u.clone())) {
+                next.push(Visit { url, ..visit.clone() });
+            }
+            // dai risultati si scende nelle serie, non oltre
+            if visit.depth > 0 {
+                continue;
+            }
+            for e in feed.entries.iter().filter(|e| e.stream.is_none()) {
+                if series < MAX_SEARCH_SERIES
+                    && let Some(url) = e.nav.clone().filter(|u| seen.insert(u.clone()))
+                {
+                    series += 1;
+                    next.push(Visit { origin: url.clone(), url, series: Some(e.title.clone()), depth: 1 });
+                }
+            }
+        }
+        level = next;
+    }
+    remember_links(&found.links);
+    Ok(found.entries)
+}
+
+/// L'indirizzo di ricerca del server, con `{searchTerms}`: dalla radice del
+/// catalogo, o dalla descrizione OpenSearch a cui la radice rimanda.
+fn search_template(server: &Server) -> Result<Option<String>, String> {
+    {
+        let known = SEARCH.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((_, template)) = known.iter().find(|(s, _)| s == server) {
+            return Ok(template.clone());
+        }
+    }
+    let login = server.login();
+    let (_, root) = root(server.url.trim(), login)?;
+    let template = match root.search {
+        Some(href) if href.contains(SEARCH_TERMS) => Some(href),
+        Some(href) => opensearch_template(&fetch(&href, login, 30)?, &href),
+        None => None,
+    };
+    SEARCH.lock().unwrap_or_else(|e| e.into_inner()).push((server.clone(), template.clone()));
+    Ok(template)
+}
+
+/// L'indirizzo di ricerca in una descrizione OpenSearch: quello che da' un
+/// feed Atom (il catalogo), se ce n'e' piu' d'uno.
+fn opensearch_template(xml: &[u8], base: &str) -> Option<String> {
+    let mut r = quick_xml::Reader::from_reader(xml);
+    let mut candidates: Vec<(bool, String)> = Vec::new();
+    loop {
+        match r.read_event().ok()? {
+            Event::Start(e) | Event::Empty(e) if e.local_name().as_ref() == b"Url" => {
+                let (mut kind, mut template) = (String::new(), None);
+                for a in e.attributes().flatten() {
+                    let Ok(value) = a.normalized_value(XmlVersion::Implicit1_0) else { continue };
+                    match a.key.local_name().as_ref() {
+                        b"type" => kind = value.to_ascii_lowercase(),
+                        b"template" => template = Some(value.into_owned()),
+                        _ => {}
+                    }
+                }
+                if let Some(t) = template.filter(|t| t.contains(SEARCH_TERMS)) {
+                    candidates.push((kind.starts_with("application/atom+xml"), join(base, &t)));
+                }
+            }
+            Event::Eof => break,
+            _ => {}
+        }
+    }
+    candidates.sort_by_key(|(atom, _)| !atom);
+    candidates.into_iter().next().map(|(_, t)| t)
+}
+
+/// L'indirizzo della ricerca di `query`: le parole al posto di
+/// `{searchTerms}`, i parametri facoltativi (`{startPage?}`) tolti.
+fn fill_search(template: &str, query: &str) -> String {
+    let mut out = String::new();
+    let mut rest = template;
+    while let Some(open) = rest.find('{') {
+        let Some(close) = rest[open..].find('}').map(|c| open + c) else { break };
+        out.push_str(&rest[..open]);
+        let name = &rest[open..=close];
+        if name == SEARCH_TERMS {
+            out.push_str(&percent_encode(query));
+        } else if !name.ends_with("?}") {
+            out.push_str(name);
+        }
+        rest = &rest[close + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Le parole cercate dentro un indirizzo: tutto tranne lettere, cifre e
+/// `-_.~` diventa `%XX` (in UTF-8).
+fn percent_encode(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for b in text.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
 /// Legge il catalogo, dalla radice ai volumi.
 fn crawl(server: &Server) -> Result<Catalog, String> {
-    let login = (!server.user.is_empty()).then_some((server.user.as_str(), server.password.as_str()));
+    let login = server.login();
     let (root_url, root) = root(server.url.trim(), login)?;
     let mut found = Found::default();
     found.add(&root, None, None);
@@ -704,11 +857,13 @@ fn join(base: &str, href: &str) -> String {
     format!("{dir}{sep}{}", href.trim_start_matches("./"))
 }
 
-/// Un feed del catalogo: le voci, e la pagina dopo se la lista continua.
+/// Un feed del catalogo: le voci, la pagina dopo se la lista continua, e
+/// (nella radice) dove si cerca.
 #[derive(Debug, Default)]
 struct Feed {
     entries: Vec<FeedEntry>,
     next: Option<String>,
+    search: Option<String>,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -826,8 +981,12 @@ fn link(r: &NsReader<&[u8]>, e: &BytesStart, base: &str, entry: Option<&mut Feed
     }
     let Some(href) = href else { return };
     let Some(e) = entry else {
-        if rel == "next" {
-            feed.next = Some(href);
+        match rel.as_str() {
+            "next" => feed.next = Some(href),
+            "search" => {
+                feed.search.get_or_insert(href);
+            }
+            _ => {}
         }
         return;
     };
@@ -1027,6 +1186,35 @@ mod tests {
         assert_eq!(quoted(r#"io:pa"ss\"#), r#""io:pa\"ss\\""#);
     }
 
+    #[test]
+    fn dove_si_cerca() {
+        let root = r#"<feed xmlns="http://www.w3.org/2005/Atom"><id>root</id>
+            <link type="application/opensearchdescription+xml" rel="search" href="/opds/v1.2/search"/>
+            <entry><id>allSeries</id><title>All series</title></entry></feed>"#;
+        let feed = parse_feed(root.as_bytes(), "http://casa:25600/opds/v1.2/catalog").unwrap();
+        assert_eq!(feed.search.as_deref(), Some("http://casa:25600/opds/v1.2/search"));
+        assert!(feed.entries[0].nav.is_none(), "il link di ricerca non e' di una voce");
+
+        let komga = r#"<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/"><ShortName>Search</ShortName>
+            <Url template="http://casa:25600/opds/v1.2/series?search={searchTerms}" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/></OpenSearchDescription>"#;
+        assert_eq!(
+            opensearch_template(komga.as_bytes(), "http://casa:25600/opds/v1.2/search").as_deref(),
+            Some("http://casa:25600/opds/v1.2/series?search={searchTerms}")
+        );
+        // Kavita: indirizzo relativo, e prima una pagina web da scartare
+        let kavita = r#"<?xml version="1.0"?><OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">
+            <Url type="text/html" template="/search?q={searchTerms}"/>
+            <Url type="application/atom+xml" template="/api/opds/KEY/series?query={searchTerms}&amp;page={startPage?}"/></OpenSearchDescription>"#;
+        let template = opensearch_template(kavita.as_bytes(), "http://casa:5000/api/opds/KEY/search").unwrap();
+        assert_eq!(template, "http://casa:5000/api/opds/KEY/series?query={searchTerms}&page={startPage?}");
+        assert_eq!(
+            fill_search(&template, "città & mare"),
+            "http://casa:5000/api/opds/KEY/series?query=citt%C3%A0%20%26%20mare&page="
+        );
+        assert_eq!(fill_search("http://x/s?q={searchTerms}&n={count}", "a"), "http://x/s?q=a&n={count}");
+        assert_eq!(opensearch_template(b"<html>nope</html>", "http://x/"), None);
+    }
+
     /// Con un server vero: FUMETTO_PROVA_OPDS="indirizzo|nome|password".
     #[test]
     #[ignore]
@@ -1044,6 +1232,13 @@ mod tests {
         let catalog = volumes(&server).unwrap();
         assert!(catalog.stale.is_none());
         let found = &catalog.entries;
+        // la ricerca del server: i volumi della prima serie, cercandone il nome
+        if let Some(series) = found.iter().find_map(|e| e.series.clone()) {
+            let hits = search(&server, &series).unwrap();
+            println!("cercando {series:?}: {:?}", hits.iter().map(|e| &e.title).collect::<Vec<_>>());
+            assert!(hits.iter().any(|e| e.series.as_ref() == Some(&series)), "la serie si trova");
+            assert!(hits.iter().all(|e| catalog.entries.iter().any(|c| c.path == e.path)), "gli stessi volumi");
+        }
         for r in &catalog.reads {
             println!("letto: {} {} {:?}", r.path.display(), r.last_read, r.date);
         }

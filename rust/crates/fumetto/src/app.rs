@@ -36,6 +36,7 @@ use winit::window::{Fullscreen, Window, WindowId};
 use crate::cpu_view::{self, CpuView};
 use crate::dialog;
 use crate::gpu_start::{self, GpuStart};
+use crate::jumplist::{self, JumpList};
 use crate::script::{Script, Step};
 use crate::stats::Stats;
 use crate::system;
@@ -52,7 +53,9 @@ macro_rules! input_context {
             &$app.recent,
             &[],
             $app.settings.hud,
-            $app.shelf_shown().then(|| shelf_data(&$app.lib, &$app.settings.library, &always, $app.book.is_some())),
+            $app.shelf_shown().then(|| {
+                shelf_data(&$app.lib, &$app.settings.library, &always, $app.book.is_some(), $app.search.waiting())
+            }),
             $app.thumbs_shown().then(|| thumbs_data(&$app.book, $app.reader.as_ref(), &always_ready)).flatten(),
             look!($app),
         )
@@ -97,6 +100,7 @@ struct NextOffer {
 mod actions;
 mod draw;
 mod events;
+mod search;
 mod shelf;
 mod tools;
 mod touch;
@@ -145,6 +149,9 @@ pub enum UserEvent {
     Opened(PathBuf, Box<Result<Book, fumetto_core::Error>>, bool),
     /// Un volume di un server scaricato (o l'errore).
     Downloaded(PathBuf, Result<(), String>),
+    /// La ricerca sui server: cosa si cercava, i volumi trovati, i server
+    /// che non hanno risposto.
+    Searched(String, Vec<Entry>, Vec<String>),
     /// La prova del collegamento a un server: quanti volumi ha, o l'errore.
     ServerChecked(Server, Result<usize, String>),
     /// Una copertina pronta.
@@ -193,6 +200,9 @@ struct Lib {
     raw: Vec<Entry>,
     /// Allineati con `entries`: il volume ha dei dati corretti a mano.
     edited: Vec<bool>,
+    /// Da qui in poi `entries` sono volumi trovati cercando sui server, che
+    /// la libreria non ha.
+    found_from: usize,
     /// I volumi dei server, a parte: le cartelle si rileggono prima.
     remote: Vec<Entry>,
     /// Quali volumi dei server sono scaricati (si leggono senza rete).
@@ -358,6 +368,10 @@ pub struct App {
     touches: touch::Touches,
     /// I dati dei volumi corretti a mano.
     edits: fumetto_core::edits::Edits,
+    /// Gli ultimi letti anche nella jump list di Windows.
+    jumplist: JumpList,
+    /// La ricerca della libreria fatta anche sui server.
+    search: search::ServerSearch,
     /// L'ultimo clic, per riconoscere il doppio clic.
     last_click: Option<(Instant, f32, f32)>,
     /// Il thread degli appunti: tiene la pagina copiata (su Linux gli appunti
@@ -397,6 +411,7 @@ impl App {
         remote::set_servers(&settings.servers);
         // i punti di lettura visti sui server e i volumi scaricati: accanto ai
         // progressi (la prova automatica, senza cartella sua, non ne ha)
+        let jumplist = JumpList::new(settings_path.as_deref().and_then(Path::parent));
         let edits = match settings_path.as_deref().and_then(Path::parent) {
             Some(data) => fumetto_core::edits::Edits::load(data.join("correzioni.json")),
             None => fumetto_core::edits::Edits::in_memory(),
@@ -498,6 +513,8 @@ impl App {
             next_offer: None,
             touches: touch::Touches::default(),
             edits,
+            jumplist,
+            search: search::ServerSearch::default(),
             last_click: None,
             copier: None,
             to_save: None,

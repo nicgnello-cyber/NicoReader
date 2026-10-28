@@ -43,6 +43,7 @@ mod dialog;
 #[cfg(target_os = "macos")]
 mod finder;
 mod gpu_start;
+mod jumplist;
 mod script;
 mod stats;
 mod system;

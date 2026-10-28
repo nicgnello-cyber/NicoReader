@@ -210,7 +210,7 @@ impl App {
         let scale = self.scale();
         let covers = &self.covers;
         let covered = |p: &Path| covers.contains_key(p);
-        let d = shelf_data(&self.lib, &self.settings.library, &covered, self.book.is_some());
+        let d = shelf_data(&self.lib, &self.settings.library, &covered, self.book.is_some(), self.search.waiting());
         let slots = self.ui.shelf.cover_slots(&d, view, scale);
         let px = |v: f32| v.round().max(1.0) as u32;
         let wanted: Vec<(PathBuf, (u32, u32))> = slots

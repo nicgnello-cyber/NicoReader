@@ -212,7 +212,10 @@ impl App {
         let mut entries = self.lib.raw.clone();
         self.edits.apply(&mut entries);
         entries.sort_by(|a, b| fumetto_core::natural_cmp(&a.title, &b.title).then_with(|| a.path.cmp(&b.path)));
+        self.lib.found_from = entries.len();
         self.lib.entries = entries;
+        // dopo la libreria, i volumi trovati sui server che lei non ha
+        self.show_found();
         self.refresh_next();
     }
 
@@ -277,10 +280,12 @@ impl App {
 
 /// La libreria come la vede l'interfaccia.
 pub(super) fn shelf_data<'a>(
-    lib: &'a Lib, roots: &'a [PathBuf], covered: &'a dyn Fn(&Path) -> bool, reading: bool,
+    lib: &'a Lib, roots: &'a [PathBuf], covered: &'a dyn Fn(&Path) -> bool, reading: bool, searching: bool,
 ) -> ShelfData<'a> {
     ShelfData {
         entries: &lib.entries,
+        found_from: lib.found_from,
+        searching,
         status: &lib.status,
         offline: &lib.offline,
         edited: &lib.edited,

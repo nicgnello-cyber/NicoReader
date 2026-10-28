@@ -68,7 +68,9 @@ The code also builds for Linux ARM64, but there are no packages for it yet.
 
 Open a volume from the menu (right click), with Ctrl+O (Cmd+O on a Mac), from
 the library, or by double-clicking the file. With no volume, it resumes the
-last one you read. Ctrl+, opens the settings (keys included).
+last one you read. Ctrl+, opens the settings (keys included). On Windows the
+volumes you read last are also in the jump list: right click the NicoReader
+icon on the taskbar.
 
 At the last page, going forward once more tells you which volume comes
 next, and going forward again opens it: the next one in the series (or in
@@ -99,7 +101,9 @@ name and password; for Kavita, the OPDS link from your user settings (it
 contains the key, so no password is needed). The server enters the library
 only if it answers; its series and volumes appear next to the local ones,
 and pages are fetched one at a time (OPDS page streaming), so a volume opens
-right away.
+right away. Typing in the library also searches the servers, after a short
+pause: what the library doesn't have (a server too big to read whole, or a
+match in a summary or a tag) appears below, under "On the server".
 
 The reading position is shared with the server: read a chapter on your
 phone with Komga's or Kavita's app and NicoReader picks up from there, and
