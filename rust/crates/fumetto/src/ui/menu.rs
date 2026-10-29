@@ -58,8 +58,11 @@ pub(super) fn main_rows(ctx: &Context) -> Vec<Row> {
             rows.push(Row::Recent { title, place, cmd: Command::Act(Action::GoTo(p)) });
         }
     }
-    if let Some((path, title)) = b.next {
-        rows.push(Row::Head(t("Volume successivo", "Next volume")));
+    let neighbours =
+        [(b.prev, t("Volume precedente", "Previous volume")), (b.next, t("Volume successivo", "Next volume"))];
+    for (volume, head) in neighbours {
+        let Some((path, title)) = volume else { continue };
+        rows.push(Row::Head(head));
         rows.push(Row::Recent { title: title.to_owned(), place: String::new(), cmd: Command::Open(path.to_owned()) });
     }
     rows.extend([

@@ -467,6 +467,23 @@ impl Reader {
         }
     }
 
+    /// Si e' all'inizio del volume: indietro non c'e' piu' niente (la prima
+    /// pagina a schermo; nel nastro, la cima della prima sul bordo alto).
+    pub fn at_start(&self) -> bool {
+        if self.len == 0 {
+            return false;
+        }
+        match self.mode {
+            Mode::Strip => {
+                let mut further = self.strip_now();
+                let before = further;
+                further.scroll(-1.0, |i| self.strip_height(i), self.len, self.view.1 as f32);
+                further == before && self.glide >= -0.5
+            }
+            _ => self.group_of(self.page).0 == 0,
+        }
+    }
+
     /// Esegue un'azione del lettore. Restituisce `true` se si e' girata
     /// pagina (per misurare quanto ci mette ad arrivare sullo schermo).
     pub fn act(&mut self, action: Action, now: Instant) -> bool {

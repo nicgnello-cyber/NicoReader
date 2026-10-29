@@ -756,6 +756,23 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      posto del pezzo in PowerShell), "icona" (pixel per pixel uguale al
      disegno di prima) e "volumi-di-prova" (per prova-finder.sh). Si
      lancia con cargo run -q -p fumetto-strumenti -- <comando>.
+  4m. [x] La libreria per cartelle (29 ottobre, shelf.rs, folder_sections;
+     library.rs, folder_cmp e folder_contents). L'icona ad albero nella
+     barra: come su disco, prima le sottocartelle (copertina del primo
+     volume, quanti, quanti letti), poi i volumi, in ordine naturale; in
+     alto il percorso, ogni pezzo cliccabile; Backspace ed Esc risalgono.
+     Con una cartella sola si parte da dentro; con piu' cartelle o dei
+     server, dall'elenco (un server non ha cartelle: le sue serie). I
+     filtri valgono dentro; la ricerca resta un elenco unico. Vista e
+     ultima cartella si ricordano (library_folders, library_folder nelle
+     impostazioni). Provato su Linux (Xvfb) con cartelle annidate.
+  4n. [x] Il volume precedente (29 ottobre, library::neighbour). Alla prima
+     pagina, indietro due volte apre il precedente dall'ultima pagina; nel
+     menu "Volume precedente" e "Volume successivo". L'ordine e' quello
+     della vista: lista di lettura, serie (per numero; senza serie come le
+     cartelle) o cartelle (folder_cmp: finita una cartella si passa alla
+     seguente, dentro la stessa cartella della libreria). Provato: da
+     Vol 1/Ch 2 si passa a Vol 2/Ch 9 e si torna indietro.
   5. Il peso dell'eseguibile: da 15,3 a 20,7 MB con AVIF, JPEG XL e appunti
      (vedi 5, Tecnici).
   6. Distribuzione (capitolo 5).

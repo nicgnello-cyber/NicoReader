@@ -309,7 +309,11 @@ impl App {
             Command::EditVolume(path) => self.edit_volume(path),
             Command::SaveVolume(path, edit) => self.save_volume(&path, edit),
             Command::ResetVolume(path) => self.save_volume(&path, fumetto_core::edits::VolumeEdit::default()),
-            Command::Series(_) | Command::Group(..) | Command::FoldersMenu(..) | Command::AskServer => {}
+            Command::Series(_)
+            | Command::Group(..)
+            | Command::Folder(_)
+            | Command::FoldersMenu(..)
+            | Command::AskServer => {}
         }
         self.request_redraw();
     }

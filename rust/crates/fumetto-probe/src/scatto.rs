@@ -108,6 +108,7 @@ pub fn run(
                 trim: reader.trim,
                 slideshow: false,
                 next: None,
+                prev: None,
             }),
             recent: &recent,
             hud,

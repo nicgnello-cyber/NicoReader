@@ -431,21 +431,35 @@ pub fn parse_series(title: &str) -> (String, Option<u32>) {
     }
 }
 
-/// Il volume da leggere dopo quello in `path`. Se e' nella lista di lettura
-/// `list`, il seguente della lista; se no il seguente della sua serie, per
-/// numero; un volume senza serie (o fuori dalla libreria), il seguente della
-/// sua cartella in ordine naturale. Sempre dalla stessa parte: un volume
-/// della cartella non continua con quello del server, e viceversa. `None`:
-/// e' l'ultimo.
-pub fn next_volume(entries: &[Entry], path: &Path, list: Option<&str>) -> Option<PathBuf> {
+/// In che ordine si va da un volume all'altro: quello della vista da cui lo
+/// si e' aperto.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Order<'a> {
+    /// La lista di lettura con questo nome.
+    List(&'a str),
+    /// Le serie, per numero; un volume senza serie, come nelle cartelle.
+    Series,
+    /// Le cartelle come le mostra la libreria ([`folder_cmp`]): finita una
+    /// cartella si passa alla seguente, anche scendendo o risalendo.
+    Folders,
+}
+
+/// Il volume da leggere dopo (o prima, se `forward` e' falso) quello in
+/// `path`, nell'ordine `order`. Una lista di lettura vale solo se il volume
+/// ne fa parte. Sempre dalla stessa parte: un volume della cartella non
+/// continua con quello del server, ne' con quello di un'altra cartella della
+/// libreria. Un volume fuori dalla libreria: il vicino nella sua cartella.
+/// `None`: non c'e'.
+pub fn neighbour(entries: &[Entry], roots: &[PathBuf], path: &Path, order: Order, forward: bool) -> Option<PathBuf> {
     let here = crate::absolute(path);
     let from = origin(&here);
     let same = |e: &Entry| crate::absolute(&e.path) == here;
-    let after = |mut members: Vec<&Entry>, cmp: &dyn Fn(&Entry, &Entry) -> Ordering| {
+    let step = |mut members: Vec<&Entry>, cmp: &dyn Fn(&Entry, &Entry) -> Ordering| {
         members.retain(|e| origin(&e.path) == from);
         members.sort_by(|a, b| cmp(a, b));
         let k = members.iter().position(|e| same(e))?;
-        members.get(k + 1).map(|e| e.path.clone())
+        let to = if forward { k.checked_add(1) } else { k.checked_sub(1) };
+        to.and_then(|k| members.get(k)).map(|e| e.path.clone())
     };
     if let Some(current) = entries.iter().find(|e| same(e)) {
         let place = |e: &Entry, name: &str| {
@@ -454,13 +468,21 @@ pub fn next_volume(entries: &[Entry], path: &Path, list: Option<&str>) -> Option
                 .find(|g| g.kind == GroupKind::ReadingList && g.name == name)
                 .map(|g| g.order.unwrap_or(u32::MAX))
         };
-        if let Some(name) = list.filter(|n| place(current, n).is_some()) {
+        if let Order::List(name) = order
+            && place(current, name).is_some()
+        {
             let members = entries.iter().filter(|e| place(e, name).is_some()).collect();
-            return after(members, &|a, b| place(a, name).cmp(&place(b, name)).then_with(|| by_number(a, b)));
+            return step(members, &|a, b| place(a, name).cmp(&place(b, name)).then_with(|| by_number(a, b)));
         }
-        if let Some(series) = &current.series {
+        let root = root_of(&current.path, roots);
+        // i volumi dei server non hanno cartelle: si va per serie
+        if let Some(series) = current.series.as_ref().filter(|_| order != Order::Folders || root.is_none()) {
             let members = entries.iter().filter(|e| e.series.as_ref() == Some(series)).collect();
-            return after(members, &by_number);
+            return step(members, &by_number);
+        }
+        if let Some(root) = root {
+            let members = entries.iter().filter(|e| root_of(&e.path, roots) == Some(root)).collect();
+            return step(members, &|a, b| folder_cmp(&a.path, &b.path));
         }
     }
     if remote::is_remote(&here) {
@@ -476,13 +498,73 @@ pub fn next_volume(entries: &[Entry], path: &Path, list: Option<&str>) -> Option
             *p == here || !p.extension().is_some_and(|e| e.eq_ignore_ascii_case("epub")) || epub::looks_like_comic(p)
         })
         .collect();
-    files.sort_by(|a, b| natural_cmp(&a.to_string_lossy(), &b.to_string_lossy()));
+    files.sort_by(|a, b| folder_cmp(a, b));
     let k = files.iter().position(|p| *p == here)?;
-    files.get(k + 1).cloned()
+    let to = if forward { k.checked_add(1) } else { k.checked_sub(1) };
+    to.and_then(|k| files.get(k)).cloned()
+}
+
+/// La cartella della libreria che contiene `path` (la piu' interna, se una
+/// sta dentro l'altra).
+pub fn root_of<'a>(path: &Path, roots: &'a [PathBuf]) -> Option<&'a Path> {
+    roots.iter().filter(|r| path.starts_with(r)).max_by_key(|r| r.components().count()).map(PathBuf::as_path)
+}
+
+/// L'ordine delle cartelle, come in Esplora file: in ogni cartella prima le
+/// sottocartelle, poi i volumi, ciascuno in ordine naturale (2 prima di 10).
+/// Letto di fila e' l'ordine in cui si leggono: una cartella intera, poi la
+/// seguente.
+pub fn folder_cmp(a: &Path, b: &Path) -> Ordering {
+    let (ca, cb): (Vec<_>, Vec<_>) = (a.components().collect(), b.components().collect());
+    for (k, (x, y)) in ca.iter().zip(&cb).enumerate() {
+        if x != y {
+            // una cartella (c'e' dell'altro dopo) prima di un volume
+            let (dir_a, dir_b) = (k + 1 < ca.len(), k + 1 < cb.len());
+            return dir_b
+                .cmp(&dir_a)
+                .then_with(|| natural_cmp(&x.as_os_str().to_string_lossy(), &y.as_os_str().to_string_lossy()))
+                .then_with(|| x.cmp(y));
+        }
+    }
+    ca.len().cmp(&cb.len())
+}
+
+/// Cosa sta in una cartella: le sottocartelle, ognuna con i volumi che
+/// contiene a ogni profondita', e i volumi che ci stanno direttamente; tutto
+/// nell'ordine di [`folder_cmp`]. Indici in `entries`, scelti fra `among`.
+#[derive(Debug, Default, PartialEq)]
+pub struct FolderContents {
+    pub folders: Vec<(PathBuf, Vec<usize>)>,
+    pub volumes: Vec<usize>,
+}
+
+pub fn folder_contents(entries: &[Entry], among: &[usize], folder: &Path) -> FolderContents {
+    let mut out = FolderContents::default();
+    for &i in among {
+        let Ok(rest) = entries[i].path.strip_prefix(folder) else { continue };
+        let mut parts = rest.components();
+        let Some(first) = parts.next() else { continue };
+        if parts.next().is_none() {
+            out.volumes.push(i);
+            continue;
+        }
+        let sub = folder.join(first);
+        match out.folders.iter_mut().find(|(p, _)| *p == sub) {
+            Some((_, members)) => members.push(i),
+            None => out.folders.push((sub, vec![i])),
+        }
+    }
+    let by_path = |a: &usize, b: &usize| folder_cmp(&entries[*a].path, &entries[*b].path);
+    out.folders.sort_by(|a, b| folder_cmp(&a.0, &b.0));
+    for (_, members) in &mut out.folders {
+        members.sort_by(by_path);
+    }
+    out.volumes.sort_by(by_path);
+    out
 }
 
 /// Da dove viene un volume: "" dal disco, schema e host dal server.
-fn origin(path: &Path) -> String {
+pub fn origin(path: &Path) -> String {
     if !remote::is_remote(path) {
         return String::new();
     }
@@ -505,7 +587,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn il_volume_dopo() {
+    fn il_volume_dopo_e_prima() {
         let vol = |path: &str, series: Option<(&str, u32)>, list: Option<u32>| Entry {
             path: PathBuf::from(path),
             title: title_of(Path::new(path)),
@@ -523,18 +605,33 @@ mod tests {
             vol(&format!("{server}a/pages/{{n}}#10:Porto v01"), Some(("Porto", 1)), None),
             vol(&format!("{server}b/pages/{{n}}#10:Porto v02"), Some(("Porto", 2)), None),
         ];
-        let next = |p: &str, list| next_volume(&entries, Path::new(p), list);
-        assert_eq!(next("/l/Porto v01.cbz", None), Some("/l/Porto v02.cbz".into()), "per numero, non per titolo");
-        assert_eq!(next("/l/Porto v02.cbz", None), Some("/l/Porto v10.cbz".into()));
-        assert_eq!(next("/l/Porto v10.cbz", None), None, "l'ultimo; quelli del server non contano");
+        let roots = [PathBuf::from("/l")];
+        let next = |p: &str, order| neighbour(&entries, &roots, Path::new(p), order, true);
+        let prev = |p: &str, order| neighbour(&entries, &roots, Path::new(p), order, false);
+        let series = Order::Series;
+        assert_eq!(next("/l/Porto v01.cbz", series), Some("/l/Porto v02.cbz".into()), "per numero, non per titolo");
+        assert_eq!(next("/l/Porto v02.cbz", series), Some("/l/Porto v10.cbz".into()));
+        assert_eq!(next("/l/Porto v10.cbz", series), None, "l'ultimo; quelli del server non contano");
+        assert_eq!(prev("/l/Porto v10.cbz", series), Some("/l/Porto v02.cbz".into()));
+        assert_eq!(prev("/l/Porto v01.cbz", series), None, "il primo");
         assert_eq!(
-            next(&entries[4].path.to_string_lossy(), None),
+            next(&entries[4].path.to_string_lossy(), series),
             Some(entries[5].path.clone()),
             "dal server, il server"
         );
-        assert_eq!(next("/l/Porto v01.cbz", Some("Nebbia")), Some("/l/Orbita v01.cbz".into()), "la lista di lettura");
-        assert_eq!(next("/l/Orbita v01.cbz", Some("Nebbia")), Some("/l/Porto v02.cbz".into()));
-        assert_eq!(next("/l/Porto v10.cbz", Some("Nebbia")), None, "fuori dalla lista: la serie");
+        assert_eq!(
+            next(&entries[4].path.to_string_lossy(), Order::Folders),
+            Some(entries[5].path.clone()),
+            "il server non ha cartelle: la serie"
+        );
+        let list = Order::List("Nebbia");
+        assert_eq!(next("/l/Porto v01.cbz", list), Some("/l/Orbita v01.cbz".into()), "la lista di lettura");
+        assert_eq!(next("/l/Orbita v01.cbz", list), Some("/l/Porto v02.cbz".into()));
+        assert_eq!(prev("/l/Porto v02.cbz", list), Some("/l/Orbita v01.cbz".into()));
+        assert_eq!(next("/l/Porto v10.cbz", list), None, "fuori dalla lista: la serie");
+        // le cartelle: per nome, non per numero
+        assert_eq!(next("/l/Orbita v01.cbz", Order::Folders), Some("/l/Porto v01.cbz".into()));
+        assert_eq!(next("/l/Porto v02.cbz", Order::Folders), Some("/l/Porto v10.cbz".into()));
 
         // un volume fuori dalla libreria: la cartella
         let dir = std::env::temp_dir().join(format!("fumetto-dopo-{}", std::process::id()));
@@ -542,9 +639,51 @@ mod tests {
         for name in ["cap 2.cbz", "cap 10.cbz", "cap 1.cbz", "note.txt"] {
             std::fs::write(dir.join(name), b"x").unwrap();
         }
-        assert_eq!(next_volume(&[], &dir.join("cap 2.cbz"), None), Some(dir.join("cap 10.cbz")));
-        assert_eq!(next_volume(&[], &dir.join("cap 10.cbz"), None), None);
+        let alone = |p: &str, forward| neighbour(&[], &[], &dir.join(p), Order::Series, forward);
+        assert_eq!(alone("cap 2.cbz", true), Some(dir.join("cap 10.cbz")));
+        assert_eq!(alone("cap 10.cbz", true), None);
+        assert_eq!(alone("cap 2.cbz", false), Some(dir.join("cap 1.cbz")));
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn le_cartelle_in_ordine() {
+        let p = |s: &str| PathBuf::from(s);
+        let mut paths = vec![
+            p("/f/Moebius/Arzach.cbz"),
+            p("/f/Manga/Berserk/Vol 10/Ch 2.cbz"),
+            p("/f/Manga/Berserk/Vol 2/Ch 10.cbz"),
+            p("/f/Manga/Berserk/Vol 2/Ch 9.cbz"),
+            p("/f/Sciolto.cbz"),
+            p("/f/Moebius/Incal/Incal 1.cbz"),
+            p("/f/Manga/Akira.cbz"),
+        ];
+        paths.sort_by(|a, b| folder_cmp(a, b));
+        assert_eq!(
+            paths,
+            [
+                p("/f/Manga/Berserk/Vol 2/Ch 9.cbz"),
+                p("/f/Manga/Berserk/Vol 2/Ch 10.cbz"),
+                p("/f/Manga/Berserk/Vol 10/Ch 2.cbz"),
+                p("/f/Manga/Akira.cbz"),
+                p("/f/Moebius/Incal/Incal 1.cbz"),
+                p("/f/Moebius/Arzach.cbz"),
+                p("/f/Sciolto.cbz"),
+            ],
+            "prima le cartelle, poi i volumi; 2 prima di 10"
+        );
+
+        let entries: Vec<Entry> = paths.iter().map(|path| entry(path.clone())).collect();
+        let all: Vec<usize> = (0..entries.len()).collect();
+        let top = folder_contents(&entries, &all, Path::new("/f"));
+        let names: Vec<_> = top.folders.iter().map(|(f, m)| (f.clone(), m.len())).collect();
+        assert_eq!(names, [(p("/f/Manga"), 4), (p("/f/Moebius"), 2)]);
+        assert_eq!(top.folders[0].1[0], 0, "la copertina: il primo da leggere");
+        assert_eq!(top.volumes, [6]);
+        let manga = folder_contents(&entries, &all, Path::new("/f/Manga"));
+        assert_eq!(manga.folders.len(), 1);
+        assert_eq!(manga.volumes, [3]);
+        assert_eq!(folder_contents(&entries, &[6], Path::new("/f/Manga")), FolderContents::default());
     }
 
     #[test]

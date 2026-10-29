@@ -267,6 +267,16 @@ impl App {
         self.changed();
     }
 
+    /// La vista della libreria (per cartelle, e quale) si ricorda fra un
+    /// avvio e l'altro: se e' cambiata, le impostazioni vanno riscritte.
+    pub(super) fn keep_library_view(&mut self) {
+        let shelf = &self.ui.shelf;
+        if (shelf.folders, &shelf.folder) != (self.settings.library_folders, &self.settings.library_folder) {
+            (self.settings.library_folders, self.settings.library_folder) = (shelf.folders, shelf.folder.clone());
+            self.settings_dirty = true;
+        }
+    }
+
     pub(super) fn refresh_shelf(&mut self) {
         let edits = &self.edits;
         self.lib.edited = self.lib.entries.iter().map(|e| edits.get(&e.path).is_some()).collect();

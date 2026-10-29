@@ -364,6 +364,7 @@ impl ApplicationHandler<UserEvent> for App {
         if self.progress.is_dirty() && now - self.last_save >= SAVE_EVERY {
             self.save_progress();
         }
+        self.keep_library_view();
         if self.settings_dirty && now - self.settings_saved_at >= SAVE_EVERY {
             self.settings_dirty = false;
             self.settings_saved_at = now;

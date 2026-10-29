@@ -45,6 +45,10 @@ pub struct Settings {
     /// La versione dell'ultimo avvio: se e' cambiata, NicoReader e' stato
     /// aggiornato e lo dice.
     pub last_version: String,
+    /// La libreria per cartelle invece che per serie, e l'ultima cartella
+    /// guardata: alla riapertura si ritrova li'.
+    pub library_folders: bool,
+    pub library_folder: Option<PathBuf>,
 }
 
 impl Default for Settings {
@@ -66,6 +70,8 @@ impl Default for Settings {
             check_updates: true,
             update_offered: String::new(),
             last_version: String::new(),
+            library_folders: false,
+            library_folder: None,
         }
     }
 }

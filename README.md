@@ -76,9 +76,12 @@ volumes you read last are also in the jump list: right click the NicoReader
 icon on the taskbar.
 
 At the last page, going forward once more tells you which volume comes
-next, and going forward again opens it: the next one in the series (or in
-the reading list you opened it from, or in its folder). It is also in the
-right-click menu, under Next volume.
+next, and going forward again opens it; at the first page, going back twice
+opens the previous one, at its last page. Which one depends on where you
+opened it from: the next in the series (by number), in the reading list, or,
+in the folder view, the next on disk, moving on to the next folder when one
+is finished. Both are also in the right-click menu, under Previous volume and
+Next volume.
 
 On a touch screen, tap the sides to turn pages or swipe; drag to move a
 zoomed page or to scroll the strip, the library and the thumbnails; pinch
@@ -91,6 +94,13 @@ in the library → Edit details… to set its title, series, number and reading
 direction. The corrections live in `correzioni.json` in the data folder, so
 the files stay untouched (server volumes too); "Back to the file's details"
 in the same menu undoes them.
+
+The tree icon in the library bar shows the library by folder, as on disk:
+subfolders first (with the cover of the first volume inside), then the
+volumes, in natural order (2 before 10), with the path at the top to go back
+up (Backspace or Esc too). Folders full of different series, like an
+author's, are also collections. NicoReader remembers the view and the last
+folder you were in.
 
 The shelves icon in the library bar shows the collections, reading lists,
 genres and publishers: from ComicInfo.xml (SeriesGroup, StoryArc with its

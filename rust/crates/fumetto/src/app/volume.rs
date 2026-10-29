@@ -156,6 +156,10 @@ impl App {
         {
             reader.restore(saved);
         }
+        // aperto andando indietro dal seguente: dall'ultima pagina
+        if self.open_at_end.take().is_some_and(|p| fumetto_core::absolute(&p) == fumetto_core::absolute(&book.path)) {
+            reader.act(Action::GoTo(book.len().saturating_sub(1)), Instant::now());
+        }
         if let Some(r) = &self.reader {
             // stessi modi di lettura di chi c'era prima, se il volume e' nuovo
             reader.linear = r.linear;
@@ -202,20 +206,24 @@ impl App {
         self.refresh_next();
     }
 
-    /// Quale volume viene dopo quello aperto: nella lista di lettura da cui
-    /// lo si e' aperto, se no nella sua serie, se no nella sua cartella.
+    /// Quali volumi vengono dopo e prima di quello aperto, nell'ordine della
+    /// libreria da cui lo si e' aperto: la lista di lettura, le cartelle, o
+    /// le serie (un volume senza serie, come nelle cartelle).
     pub(super) fn refresh_next(&mut self) {
         let Some(book) = &self.book else {
-            self.next_volume = None;
+            (self.next_volume, self.prev_volume) = (None, None);
             return;
         };
-        let list = match &self.ui.shelf.group {
-            Some((fumetto_core::library::GroupKind::ReadingList, name)) => Some(name.as_str()),
-            _ => None,
+        let shelf = &self.ui.shelf;
+        let order = match &shelf.group {
+            Some((library::GroupKind::ReadingList, name)) => library::Order::List(name),
+            _ if shelf.folders => library::Order::Folders,
+            _ => library::Order::Series,
         };
-        self.next_volume = library::next_volume(&self.lib.entries, &book.path, list).map(|path| {
+        let entries = &self.lib.entries;
+        let titled = |path: PathBuf| {
             let here = fumetto_core::absolute(&path);
-            let title = match self.lib.entries.iter().find(|e| fumetto_core::absolute(&e.path) == here) {
+            let title = match entries.iter().find(|e| fumetto_core::absolute(&e.path) == here) {
                 Some(e) => match &e.series {
                     Some(s) if !e.title.to_lowercase().contains(&s.to_lowercase()) => format!("{s}: {}", e.title),
                     _ => e.title.clone(),
@@ -223,27 +231,32 @@ impl App {
                 None => fumetto_core::title_of(&path),
             };
             (path, title)
-        });
+        };
+        let near = |forward| library::neighbour(entries, &self.settings.library, &book.path, order, forward);
+        (self.next_volume, self.prev_volume) = (near(true).map(titled), near(false).map(titled));
     }
 
-    /// Avanti alla fine del volume. La prima volta si dice quale viene
-    /// dopo; la seconda lo si apre, se e' un gesto nuovo: non il tasto
-    /// tenuto giu' ne' la rotella (o il trackpad) che continua a scorrere.
-    /// `true` se l'azione finisce qui.
+    /// Avanti alla fine del volume, o indietro all'inizio. La prima volta si
+    /// dice quale viene dopo (o prima); la seconda lo si apre, se e' un gesto
+    /// nuovo: non il tasto tenuto giu' ne' la rotella (o il trackpad) che
+    /// continua a scorrere. Il precedente si apre dall'ultima pagina. `true`
+    /// se l'azione finisce qui.
     pub(super) fn end_of_volume(&mut self, action: Action) -> bool {
         let forward = match action {
             Action::Next => true,
-            Action::Scroll(dy) => dy > 0.0,
-            _ => false,
+            Action::Prev => false,
+            Action::Scroll(dy) if dy != 0.0 => dy > 0.0,
+            _ => return false,
         };
         let (Some(book), Some(reader)) = (&self.book, &self.reader) else { return false };
-        if !forward || !reader.at_end() {
+        if !(if forward { reader.at_end() } else { reader.at_start() }) {
             return false;
         }
         let now = Instant::now();
         let from = book.path.clone();
         if let Some(offer) = &mut self.next_offer
             && offer.from == from
+            && offer.forward == forward
             && now.duration_since(offer.since) < NEXT_OFFER_HOLD
         {
             let fresh = now.duration_since(offer.last) >= Duration::from_millis(250);
@@ -253,23 +266,31 @@ impl App {
                 let to = offer.to.clone();
                 self.next_offer = None;
                 self.ui.clear_toast();
+                if !forward {
+                    self.open_at_end = Some(to.clone());
+                }
                 self.open(&to);
                 return true;
             }
             return false;
         }
-        let Some((to, title)) = self.next_volume.clone() else {
+        let neighbour = if forward { &self.next_volume } else { &self.prev_volume };
+        let Some((to, title)) = neighbour.clone() else {
             self.next_offer = None;
-            self.ui.toast(t("Fine del volume", "End of the volume"), now);
+            // all'inizio senza un precedente non c'e' niente da dire
+            if forward {
+                self.ui.toast(t("Fine del volume", "End of the volume"), now);
+            }
             return false;
         };
-        let text = if fumetto_core::lingua::italian() {
-            format!("Fine del volume\navanti ancora per \u{ab}{title}\u{bb}")
-        } else {
-            format!("End of the volume\nforward again for \u{201c}{title}\u{201d}")
+        let text = match (fumetto_core::lingua::italian(), forward) {
+            (true, true) => format!("Fine del volume\navanti ancora per \u{ab}{title}\u{bb}"),
+            (true, false) => format!("Inizio del volume\nindietro ancora per \u{ab}{title}\u{bb}"),
+            (false, true) => format!("End of the volume\nforward again for \u{201c}{title}\u{201d}"),
+            (false, false) => format!("Start of the volume\nback again for \u{201c}{title}\u{201d}"),
         };
         self.ui.toast_for(text, now, NEXT_OFFER_HOLD);
-        self.next_offer = Some(NextOffer { from, to, since: now, last: now });
+        self.next_offer = Some(NextOffer { from, to, forward, since: now, last: now });
         false
     }
 
@@ -283,7 +304,7 @@ impl App {
         self.forget_volume();
         self.book = None;
         self.reader = None;
-        self.next_volume = None;
+        (self.next_volume, self.prev_volume) = (None, None);
         self.shown.clear();
         self.cpu_pages.clear();
         self.pending_turn = None;
@@ -362,6 +383,7 @@ impl App {
 
     /// Salva i progressi su disco. Va chiamata anche all'uscita.
     pub fn save_progress(&mut self) {
+        self.keep_library_view();
         if std::mem::take(&mut self.settings_dirty) {
             self.save_settings();
         }

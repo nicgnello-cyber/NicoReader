@@ -73,9 +73,12 @@ letti sono anche nella jump list: tasto destro sull'icona di NicoReader nella
 barra delle applicazioni.
 
 All'ultima pagina, andando avanti ancora una volta l'app dice quale volume
-viene dopo, e andando avanti di nuovo lo apre: il seguente della serie (o
-della lista di lettura da cui lo si è aperto, o della sua cartella). C'è
-anche nel menu del tasto destro, sotto Volume successivo.
+viene dopo, e andando avanti di nuovo lo apre; alla prima pagina, andando
+indietro due volte si apre il precedente, dalla sua ultima pagina. Quale
+dipende da dove lo si è aperto: il seguente della serie (per numero), della
+lista di lettura o, nella vista per cartelle, il seguente su disco, passando
+alla cartella dopo quando una è finita. Ci sono anche nel menu del tasto
+destro, sotto Volume precedente e Volume successivo.
 
 Su uno schermo touch si tocca ai lati per girare pagina, o si striscia; si
 trascina per spostare una pagina ingrandita o per scorrere il nastro, la
@@ -89,6 +92,13 @@ sul volume nella libreria → Modifica i dati… per dargli titolo, serie,
 numero e verso di lettura. Le correzioni stanno in `correzioni.json` nella
 cartella dei dati: i file non si toccano (nemmeno quelli dei server); "Torna
 ai dati del file", nello stesso menu, le toglie.
+
+L'icona ad albero nella barra della libreria mostra la libreria per
+cartelle, come su disco: prima le sottocartelle (con la copertina del primo
+volume che contengono), poi i volumi, in ordine naturale (2 prima di 10), e
+in alto il percorso per risalire (anche con Backspace o Esc). Le cartelle con
+dentro serie diverse, come quelle di un autore, sono anche raccolte.
+NicoReader ricorda la vista e l'ultima cartella aperta.
 
 L'icona degli scaffali nella barra della libreria mostra raccolte, liste di
 lettura, generi ed editori: dalla ComicInfo.xml (SeriesGroup, StoryArc con il
