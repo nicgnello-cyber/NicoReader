@@ -1,5 +1,5 @@
 NICOREADER (prima: Fumetto) - lettore di fumetti, manga e webtoon
-Stato del progetto al 29 ottobre 2026 (versione 0.4.4)
+Stato del progetto al 29 ottobre 2026 (versione 0.4.5)
 =====================================================================
 
 Dal 27 settembre il programma si chiama NicoReader e il progetto e'
@@ -779,6 +779,16 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      crates\fumetto\risorse\icona.svg; fumetto-strumenti icona lo disegna
      con resvg a ogni misura: icona.png, fumetto.ico (8 misure) e
      nicoreader.icns (11, con il margine della griglia di Apple).
+  4p. [x] Correzione (29 ottobre, 0.4.5): NicoReader si chiudeva caricando
+     le cartelle, e poi a ogni avvio. folder_cmp non era un ordine totale
+     quando una cartella di immagini (un volume) ne contiene altri ("X" e
+     "X/y.cbz"), e da Rust 1.81 sort_by si ferma con un panic ("does not
+     correctly implement a total order"); riprodotto con 69 volumi. Ora
+     ogni pezzo del percorso conta come (volume?, nome); anche by_number
+     era incoerente mescolando volumi con e senza numero: ora prima i
+     numerati. Una prova controlla che entrambi siano totali. E dopo un
+     errore il programma non riapre da solo l'ultimo volume ne' l'ultima
+     cartella: niente piu' giri di chiusure a ogni avvio.
   5. Il peso dell'eseguibile: da 15,3 a 20,7 MB con AVIF, JPEG XL e appunti
      (vedi 5, Tecnici).
   6. Distribuzione (capitolo 5).

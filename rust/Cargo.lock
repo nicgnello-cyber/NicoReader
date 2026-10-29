@@ -880,7 +880,7 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
 name = "fumetto"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "arboard",
  "dirs",
@@ -902,7 +902,7 @@ dependencies = [
 
 [[package]]
 name = "fumetto-core"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "avif-parse",
  "fast_image_resize",
@@ -926,7 +926,7 @@ dependencies = [
 
 [[package]]
 name = "fumetto-probe"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "fast_image_resize",
  "fumetto",
@@ -938,7 +938,7 @@ dependencies = [
 
 [[package]]
 name = "fumetto-render"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "bytemuck",
  "fumetto-core",
@@ -949,7 +949,7 @@ dependencies = [
 
 [[package]]
 name = "fumetto-strumenti"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "png",
  "resvg",
