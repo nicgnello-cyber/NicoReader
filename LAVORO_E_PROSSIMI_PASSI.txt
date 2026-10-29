@@ -314,7 +314,7 @@ Il capitolo 7 ne tiene la memoria e i numeri.
     - winresource (solo in compilazione): icona, nome "Fumetto" in Gestione
       attivita', manifest (DPI, percorsi lunghi, controlli moderni).
       L'icona (rust\crates\fumetto\risorse\fumetto.ico, 17 KB, 8 misure
-      rimpicciolite in luce lineare) si rifa' con fumetto-strumenti (icona).
+      disegnate da risorse\icona.svg) si rifa' con fumetto-strumenti (icona).
   Formati: cartelle, CBZ/ZIP, CBR/RAR (anche solidi), CB7/7Z, CBT/TAR,
   PDF; immagini JPEG, PNG, WebP, GIF, BMP, AVIF, JPEG XL. Il tipo si riconosce dal
   contenuto, non dall'estensione (nella libreria invece dall'estensione:
@@ -773,6 +773,12 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      cartelle) o cartelle (folder_cmp: finita una cartella si passa alla
      seguente, dentro la stessa cartella della libreria). Provato: da
      Vol 1/Ch 2 si passa a Vol 2/Ch 9 e si torna indietro.
+  4o. [x] Il logo nuovo (29 ottobre): la nuvoletta del fumetto con la N e
+     l'esponente 11, su un fondo blu-viola con il retino (scelto fra tre
+     proposte, poi fra tre modi di mettere l'11). Il disegno e'
+     crates\fumetto\risorse\icona.svg; fumetto-strumenti icona lo disegna
+     con resvg a ogni misura: icona.png, fumetto.ico (8 misure) e
+     nicoreader.icns (11, con il margine della griglia di Apple).
   5. Il peso dell'eseguibile: da 15,3 a 20,7 MB con AVIF, JPEG XL e appunti
      (vedi 5, Tecnici).
   6. Distribuzione (capitolo 5).

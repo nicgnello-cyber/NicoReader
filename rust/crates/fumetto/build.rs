@@ -6,7 +6,8 @@
 //!     anche da solo, ma solo dopo l'avvio);
 //!   - i controlli comuni moderni, per le finestre di sistema.
 //!
-//! L'icona si rifa' con `cargo run -p fumetto-strumenti -- icona`.
+//! L'icona si disegna in `risorse/icona.svg`; le sue misure si rifanno con
+//! `cargo run -p fumetto-strumenti -- icona`.
 
 const MANIFEST: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">

@@ -6,8 +6,8 @@
 //!     cargo run -q -p fumetto-strumenti -- volumi-di-prova <cartella> <nome>...
 //!
 //! `licenze` scrive i testi di licenza delle librerie che finiscono
-//! nell'eseguibile e stampa quante sono; `icona` ridisegna le icone in
-//! crates/fumetto/risorse; `volumi-di-prova` fa dei CBZ di una pagina.
+//! nell'eseguibile e stampa quante sono; `icona` ridisegna le icone da
+//! crates/fumetto/risorse/icona.svg; `volumi-di-prova` fa dei CBZ di una pagina.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
