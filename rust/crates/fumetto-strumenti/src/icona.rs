@@ -1,22 +1,19 @@
 //! L'icona di NicoReader: icona.png (Linux), fumetto.ico (Windows) e
-//! macos/nicoreader.icns (macOS).
+//! macos/nicoreader.icns (macOS), tutte da icona.svg.
 //!
-//! L'icona e' fatta di forme (un quadrato dagli angoli tondi con la sfumatura,
-//! due pagine, la costola fra loro, un riquadro e tre righe per pagina), qui
-//! descritte in un riquadro da 256: si disegna a ogni misura direttamente, con
-//! i bordi sfumati, invece di rimpicciolire o ingrandire un'immagine. Cosi' ci
-//! sono anche le misure del Retina (fino a 1024 px), che da una 256 non si
-//! potrebbero fare.
-//!
-//! I colori si mescolano in luce lineare, come le pagine nel programma, cosi'
-//! i bordi non si scuriscono.
+//! Il disegno e' un SVG (un riquadro da 256): si disegna a ogni misura
+//! direttamente, invece di rimpicciolire o ingrandire un'immagine. Cosi' ogni
+//! misura ha i suoi bordi netti, e ci sono anche quelle del Retina (fino a
+//! 1024 px).
 //!
 //! Per macOS lo stesso disegno, ma piu' piccolo nel suo riquadro: la griglia
-//! di Apple vuole il corpo dell'icona a 824 px su 1024 (qui e' a 236 su 256);
-//! senza il margine, nel Dock sembrerebbe piu' grande delle altre.
+//! di Apple vuole il corpo dell'icona a 824 px su 1024 (nell'SVG e' a 236 su
+//! 256); senza il margine, nel Dock sembrerebbe piu' grande delle altre.
 
 use std::io;
 use std::path::Path;
+
+use resvg::{tiny_skia, usvg};
 
 /// Windows: barra del titolo, taskbar, Esplora file, a ogni scala dello schermo.
 const MISURE: [u32; 8] = [16, 20, 24, 32, 40, 48, 64, 256];
@@ -36,101 +33,37 @@ const MISURE_MAC: [(&[u8; 4], u32); 11] = [
     (b"ic10", 1024),
 ];
 /// Il corpo (236 su 256) diventa 824/1024 del riquadro.
-const SCALA_MAC: f64 = 224.0 / 256.0;
-
-// --- il disegno, in un riquadro da 256 ---
-
-/// Un rettangolo dagli angoli tondi: x0, y0, x1, y1, raggio.
-type Forma = (f64, f64, f64, f64, f64);
-type Rgb = [f64; 3];
-
-/// La sfumatura va in diagonale, da (10, 10) a (246, 246).
-const SFUMATURA: (Rgb, Rgb) = ([80.7, 122.4, 255.0], [121.3, 63.6, 255.0]);
-const FONDO: Forma = (10.0, 10.0, 246.0, 246.0, 50.0);
-/// La costola fra le pagine: il fondo piu' scuro.
-const COSTOLA: Forma = (124.0, 62.0, 132.0, 194.0, 0.0);
-const OMBRA_COSTOLA: f64 = 210.0 / 255.0;
-const PAGINA: Rgb = [246.0, 246.0, 255.0];
-const RIQUADRO: Rgb = [79.0, 125.0, 255.0];
-const RIGA: Rgb = [187.0, 191.0, 207.0];
-/// La pagina sinistra; la destra e' 86 piu' in la'.
-const DESTRA: f64 = 86.0;
-const FORME: [(Forma, Rgb); 5] = [
-    ((46.0, 62.0, 124.0, 194.0, 8.0), PAGINA),
-    ((56.0, 74.0, 114.0, 114.0, 5.0), RIQUADRO),
-    ((56.0, 124.0, 114.0, 136.0, 4.0), RIGA),
-    ((56.0, 146.0, 114.0, 158.0, 4.0), RIGA),
-    ((56.0, 168.0, 91.0, 180.0, 4.0), RIGA),
-];
+const SCALA_MAC: f32 = 224.0 / 256.0;
 
 pub fn scrivi(risorse: &Path) -> io::Result<()> {
-    std::fs::write(risorse.join("icona.png"), png(256, &disegna(256, 1.0))?)?;
+    let svg = std::fs::read(risorse.join("icona.svg"))?;
+    let tree = usvg::Tree::from_data(&svg, &usvg::Options::default()).map_err(io::Error::other)?;
+    std::fs::write(risorse.join("icona.png"), png(256, &disegna(&tree, 256, 1.0)?)?)?;
     let immagini: Vec<_> =
-        MISURE.iter().map(|&lato| Ok((lato, png(lato, &disegna(lato, 1.0))?))).collect::<io::Result<_>>()?;
+        MISURE.iter().map(|&lato| Ok((lato, png(lato, &disegna(&tree, lato, 1.0)?)?))).collect::<io::Result<_>>()?;
     std::fs::write(risorse.join("fumetto.ico"), ico(&immagini))?;
     let blocchi: Vec<_> = MISURE_MAC
         .iter()
-        .map(|&(tipo, lato)| Ok((tipo, png(lato, &disegna(lato, SCALA_MAC))?)))
+        .map(|&(tipo, lato)| Ok((tipo, png(lato, &disegna(&tree, lato, SCALA_MAC)?)?)))
         .collect::<io::Result<_>>()?;
     std::fs::write(risorse.join("macos/nicoreader.icns"), icns(&blocchi))
 }
 
-fn lineare(c: f64) -> f64 {
-    if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
-}
-
-fn srgb(c: f64) -> f64 {
-    let c = c.clamp(0.0, 1.0);
-    if c <= 0.0031308 { c * 12.92 } else { 1.055 * c.powf(1.0 / 2.4) - 0.055 }
-}
-
-fn colore(rgb: Rgb) -> Rgb {
-    rgb.map(|c| lineare(c / 255.0))
-}
-
-/// Quanto del pixel in (x, y) copre il rettangolo dagli angoli tondi: dalla
-/// distanza dal bordo (negativa dentro), su un pixel di sfumatura. `px`: i
-/// pixel per unita' del riquadro da 256.
-fn copertura(x: f64, y: f64, (x0, y0, x1, y1, r): Forma, px: f64) -> f64 {
-    let qx = (x - (x0 + x1) / 2.0).abs() - ((x1 - x0) / 2.0 - r);
-    let qy = (y - (y0 + y1) / 2.0).abs() - ((y1 - y0) / 2.0 - r);
-    let fuori = qx.max(0.0).hypot(qy.max(0.0)) + qx.max(qy).min(0.0) - r;
-    (0.5 - fuori * px).clamp(0.0, 1.0)
-}
-
-/// L'icona a `lato` pixel, RGBA sRGB a 8 bit; `scala` la rimpicciolisce nel
-/// suo riquadro, centrata.
-fn disegna(lato: u32, scala: f64) -> Vec<u8> {
-    let px = f64::from(lato) / 256.0 * scala;
-    // il centro di ogni pixel, nelle coordinate del riquadro da 256
-    let centri: Vec<f64> = (0..lato).map(|i| (f64::from(i) + 0.5 - f64::from(lato) / 2.0) / px + 128.0).collect();
-    let ombra = lineare(OMBRA_COSTOLA);
-    let mut out = Vec::with_capacity((lato * lato * 4) as usize);
-    for &y in &centri {
-        for &x in &centri {
-            let t = (((x + y) - 20.0) / 472.0).clamp(0.0, 1.0);
-            // la sfumatura e' fra i due colori come si scrivono (sRGB), non in luce lineare
-            let (a, b) = SFUMATURA;
-            let fondo = colore([0, 1, 2].map(|i| a[i] * (1.0 - t) + b[i] * t));
-            let k = copertura(x, y, COSTOLA, px);
-            let mut rgb = fondo.map(|c| c * (1.0 - k) + c * ombra * k);
-            for dx in [0.0, DESTRA] {
-                for ((x0, y0, x1, y1, r), col) in FORME {
-                    let k = copertura(x, y, (x0 + dx, y0, x1 + dx, y1, r), px);
-                    let col = colore(col);
-                    rgb = [0, 1, 2].map(|i| rgb[i] * (1.0 - k) + col[i] * k);
-                }
-            }
-            let alfa = copertura(x, y, FONDO, px);
-            out.extend(rgb.map(srgb).into_iter().chain([alfa]).map(otto_bit));
-        }
-    }
-    out
-}
-
-/// Da 0..1 a 0..255; a meta' strada verso il pari, come numpy.
-fn otto_bit(c: f64) -> u8 {
-    (c * 255.0).round_ties_even() as u8
+/// L'icona a `lato` pixel, RGBA a 8 bit (non premoltiplicato); `scala` la
+/// rimpicciolisce nel suo riquadro, centrata.
+fn disegna(tree: &usvg::Tree, lato: u32, scala: f32) -> io::Result<Vec<u8>> {
+    let mut pixmap = tiny_skia::Pixmap::new(lato, lato).ok_or_else(|| io::Error::other("misura impossibile"))?;
+    let k = lato as f32 / tree.size().width() * scala;
+    let margine = lato as f32 * (1.0 - scala) / 2.0;
+    resvg::render(tree, tiny_skia::Transform::from_row(k, 0.0, 0.0, k, margine, margine), &mut pixmap.as_mut());
+    Ok(pixmap
+        .pixels()
+        .iter()
+        .flat_map(|p| {
+            let c = p.demultiply();
+            [c.red(), c.green(), c.blue(), c.alpha()]
+        })
+        .collect())
 }
 
 /// Il PNG piu' piccolo fra quelli con i vari filtri: le icone vanno in ogni
@@ -193,17 +126,16 @@ mod tests {
 
     #[test]
     fn il_disegno() {
-        let img = disegna(256, 1.0);
+        let svg = include_bytes!("../../fumetto/risorse/icona.svg");
+        let tree = usvg::Tree::from_data(svg, &usvg::Options::default()).unwrap();
+        let img = disegna(&tree, 256, 1.0).unwrap();
         let pixel = |x: usize, y: usize| &img[(y * 256 + x) * 4..][..4];
         assert_eq!(pixel(0, 0)[3], 0, "fuori dal fondo: trasparente");
-        assert_eq!(pixel(128, 30)[3], 255, "dentro: pieno");
-        assert_eq!(pixel(60, 190), [246, 246, 255, 255], "la pagina");
-        assert_eq!(pixel(80, 90), [79, 125, 255, 255], "il riquadro");
-        let costola = pixel(128, 150);
-        let fondo = pixel(128, 30);
-        assert!(costola[..3].iter().zip(fondo).all(|(c, f)| c <= f), "la costola e' piu' scura");
+        let fondo = pixel(128, 20);
+        assert!(fondo[3] == 255 && fondo[2] > fondo[0], "dentro: pieno, blu-viola");
+        assert!(pixel(110, 168).iter().all(|&c| c > 240), "la nuvoletta e' bianca");
         // nel Mac c'e' piu' margine
-        let mac = disegna(256, SCALA_MAC);
+        let mac = disegna(&tree, 256, SCALA_MAC).unwrap();
         assert_eq!(mac[(14 * 256 + 128) * 4 + 3], 0);
     }
 
