@@ -72,6 +72,7 @@ macro_rules! look {
             slideshow: $app.slideshow.is_some(),
             lens: $app.lens_circle(),
             next: $app.next_volume.as_ref(),
+            prev: $app.prev_volume.as_ref(),
         }
     };
 }
@@ -83,13 +84,16 @@ struct Look<'a> {
     slideshow: bool,
     lens: Option<(f32, f32, f32)>,
     next: Option<&'a (PathBuf, String)>,
+    prev: Option<&'a (PathBuf, String)>,
 }
 
-/// Avanti alla fine di un volume: quale si e' finito, quale viene dopo,
-/// quando lo si e' detto e l'ultima spinta in avanti.
+/// Avanti alla fine di un volume (o indietro all'inizio): quale si e'
+/// finito, quale viene dopo (o prima), quando lo si e' detto e l'ultima
+/// spinta.
 struct NextOffer {
     from: PathBuf,
     to: PathBuf,
+    forward: bool,
     since: Instant,
     last: Instant,
 }
@@ -125,7 +129,8 @@ const BUDGET: usize = 768 << 20;
 /// Ogni quanto, al massimo, si riscrive il file dei progressi.
 const SAVE_EVERY: Duration = Duration::from_secs(1);
 
-/// Per quanto, alla fine di un volume, avanti apre il seguente.
+/// Per quanto, alla fine di un volume, avanti apre il seguente (e indietro,
+/// all'inizio, il precedente).
 const NEXT_OFFER_HOLD: Duration = Duration::from_secs(8);
 
 pub enum UserEvent {
@@ -363,10 +368,14 @@ pub struct App {
     slideshow: Option<Instant>,
     /// Dove si era al giro precedente: se non ci si muove piu', e' finita.
     slide_last: Option<(usize, f32)>,
-    /// Il volume da leggere dopo quello aperto, e come si chiama.
+    /// I volumi da leggere dopo e prima di quello aperto, e come si chiamano.
     next_volume: Option<(PathBuf, String)>,
-    /// Si e' andati avanti alla fine del volume: il seguente e' stato detto.
+    prev_volume: Option<(PathBuf, String)>,
+    /// Si e' andati avanti alla fine del volume (o indietro all'inizio): il
+    /// seguente (o il precedente) e' stato detto.
     next_offer: Option<NextOffer>,
+    /// Il volume aperto andando indietro dal seguente: si comincia dalla fine.
+    open_at_end: Option<PathBuf>,
     /// Le dita sullo schermo, e il gesto che fanno.
     touches: touch::Touches,
     /// I dati dei volumi corretti a mano.
@@ -513,7 +522,9 @@ impl App {
             slideshow: None,
             slide_last: None,
             next_volume: None,
+            prev_volume: None,
             next_offer: None,
+            open_at_end: None,
             touches: touch::Touches::default(),
             edits,
             jumplist,
@@ -533,6 +544,9 @@ impl App {
             stats: Stats::new(started),
             script,
         };
+        // la libreria come la si era lasciata: per cartelle, e in quale
+        (app.ui.shelf.folders, app.ui.shelf.folder) =
+            (app.settings.library_folders, app.settings.library_folder.clone());
         app.refresh_recent();
         app.rescan();
         app.note_version();

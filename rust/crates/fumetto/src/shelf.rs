@@ -6,6 +6,9 @@
 //! la libreria con le serie raccolte in una pila; un clic sulla pila la apre.
 //! Un tasto della barra mostra invece i gruppi delle schede e dei server:
 //! raccolte, liste di lettura, generi, editori, ognuno una pila da aprire.
+//! Un altro mostra la libreria per cartelle, come su disco: prima le
+//! sottocartelle (con la copertina del primo volume), poi i volumi, in ordine
+//! naturale, e in alto il percorso per risalire.
 //! Le celle si allargano per riempire la finestra: niente vuoti a destra.
 //!
 //! Come `ui`, qui non c'e' grafica: si decide cosa sta dove, cosa scrivere e
@@ -13,10 +16,11 @@
 //! immagini, come le pagine) nei riquadri che dice [`Shelf::cover_slots`]; il
 //! resto e' una [`Layer`] dell'interfaccia sopra di loro.
 
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use fumetto_core::library::{Entry, GroupKind, Status, by_number};
+use fumetto_core::library::{self, Entry, GroupKind, Status, by_number};
 use fumetto_core::lingua::{italian, t};
 use fumetto_core::natural_cmp;
 use fumetto_core::remote::{self, Server};
@@ -109,6 +113,14 @@ pub enum Tile {
         count: usize,
         done: usize,
     },
+    /// Nella vista per cartelle: una cartella, o un server.
+    Folder {
+        path: PathBuf,
+        name: String,
+        cover: usize,
+        count: usize,
+        done: usize,
+    },
 }
 
 impl Tile {
@@ -116,7 +128,7 @@ impl Tile {
     fn cover(&self) -> usize {
         match self {
             Tile::Volume(i) => *i,
-            Tile::Series { cover, .. } | Tile::Group { cover, .. } => *cover,
+            Tile::Series { cover, .. } | Tile::Group { cover, .. } | Tile::Folder { cover, .. } => *cover,
         }
     }
 }
@@ -129,6 +141,10 @@ pub enum Hit {
     ClearSearch,
     Folders,
     Groups,
+    /// Il tasto della vista per cartelle.
+    Browse,
+    /// Un pezzo del percorso, per risalire (indice in `Shelf::crumbs`).
+    Crumb(usize),
     Return,
     Back,
     Bar,
@@ -141,6 +157,15 @@ pub struct Placed {
     pub y: f32,
     pub w: f32,
     pub h: f32,
+}
+
+/// Un pezzo del percorso in cima alla vista per cartelle: da `x0` a `x1`;
+/// porta a `to` (`None`: l'inizio).
+#[derive(Clone, Debug, Default)]
+struct Crumb {
+    x0: f32,
+    x1: f32,
+    to: Option<PathBuf>,
 }
 
 struct Section {
@@ -195,6 +220,14 @@ pub struct Shelf {
     pub groups: bool,
     /// Dentro un gruppo (si arriva dalla vista dei gruppi).
     pub group: Option<(GroupKind, String)>,
+    /// La libreria per cartelle, come su disco, invece che per serie.
+    pub folders: bool,
+    /// Nella vista per cartelle, la cartella (o il server) che si guarda;
+    /// `None`: l'inizio.
+    pub folder: Option<PathBuf>,
+    /// Il percorso disegnato in cima, per i clic: dove sta ogni pezzo e dove
+    /// porta. Lo scrive `layers`, che misura i testi.
+    crumbs: RefCell<Vec<Crumb>>,
     scroll: f32,
     /// Pixel di scorrimento ancora da percorrere (come nel nastro).
     glide: f32,
@@ -237,6 +270,16 @@ impl Shelf {
         if self.groups {
             return group_sections(d, self.filter, &needle, &found);
         }
+        // per cartelle: la ricerca resta un elenco unico, i filtri valgono dentro
+        if self.folders && needle.is_empty() {
+            let mut sections = Vec::new();
+            let (here, top) = self.folder_here(d);
+            if top && self.filter == Filter::All {
+                sections.extend(reading_row(d, &visible));
+            }
+            sections.extend(folder_sections(d, &visible, here.as_deref()));
+            return sections;
+        }
         if self.filter != Filter::All || !needle.is_empty() {
             if self.filter == Filter::Reading {
                 recent_first(&mut visible);
@@ -253,17 +296,7 @@ impl Shelf {
             return sections;
         }
 
-        let mut sections = Vec::new();
-        let mut reading: Vec<usize> =
-            visible.iter().copied().filter(|&i| matches!(d.status[i], Status::Reading(..))).collect();
-        if !reading.is_empty() {
-            recent_first(&mut reading);
-            sections.push(Section {
-                title: t("Continua a leggere", "Continue reading").to_owned(),
-                tiles: reading.into_iter().map(Tile::Volume).collect(),
-                one_row: true,
-            });
-        }
+        let mut sections: Vec<Section> = reading_row(d, &visible).into_iter().collect();
         let n = d.library_len();
         sections.push(Section {
             title: if italian() {
@@ -278,8 +311,55 @@ impl Shelf {
     }
 
     /// Non si e' nella libreria intera: c'e' un'intestazione per tornarci.
-    fn inside(&self) -> bool {
-        self.series.is_some() || self.group.is_some() || self.groups
+    fn inside(&self, d: &ShelfData) -> bool {
+        self.series.is_some() || self.group.is_some() || self.groups || (self.folders && !self.folder_here(d).1)
+    }
+
+    /// Nella vista per cartelle, la cartella (o il server) da mostrare, e se
+    /// e' l'inizio. Con una sola cartella della libreria (e nessun server)
+    /// l'inizio e' lei; con piu' d'una, l'elenco delle cartelle (`None`).
+    /// Una cartella che non e' piu' nella libreria riporta all'inizio.
+    fn folder_here(&self, d: &ShelfData) -> (Option<PathBuf>, bool) {
+        let sources = sources(d);
+        let only = (sources.len() == 1).then(|| sources[0].clone());
+        match &self.folder {
+            Some(p) if sources.iter().any(|s| p.starts_with(s)) && Some(p) != only.as_ref() => (Some(p.clone()), false),
+            _ => (only, true),
+        }
+    }
+
+    /// La cartella sopra quella che si guarda (`None`: l'inizio).
+    fn parent_folder(&self, d: &ShelfData) -> Option<PathBuf> {
+        let (Some(here), false) = self.folder_here(d) else { return None };
+        let sources = sources(d);
+        let parent = here.parent().filter(|_| !sources.contains(&here))?;
+        // la cartella sola della libreria e' l'inizio
+        (sources.len() > 1 || parent != sources[0]).then(|| parent.to_path_buf())
+    }
+
+    /// Il percorso dall'inizio alla cartella sopra quella che si guarda:
+    /// nome e dove porta ciascun pezzo.
+    fn trail(&self, d: &ShelfData) -> Vec<(String, Option<PathBuf>)> {
+        let sources = sources(d);
+        let (Some(here), false) = self.folder_here(d) else { return Vec::new() };
+        let mut trail = Vec::new();
+        if sources.len() > 1 {
+            trail.push((t("Cartelle", "Folders").to_owned(), None));
+        }
+        if let Some(source) = sources.iter().find(|s| here.starts_with(s)) {
+            let mut up: Vec<&Path> = here.ancestors().skip(1).take_while(|a| a.starts_with(source)).collect();
+            up.reverse();
+            for a in up {
+                let to = (sources.len() > 1 || a != source.as_path()).then(|| a.to_path_buf());
+                trail.push((folder_name(a), to));
+            }
+        }
+        trail
+    }
+
+    pub fn enter_folder(&mut self, path: PathBuf) {
+        (self.folders, self.folder, self.series) = (true, Some(path), None);
+        self.reset_view();
     }
 
     fn layout(&self, d: &ShelfData, g: &Geo) -> Layout {
@@ -289,7 +369,7 @@ impl Shelf {
         let mut placed = Vec::new();
         let mut heads = Vec::new();
         let mut head = None;
-        if self.inside() {
+        if self.inside(d) {
             head = Some(y);
             y += (128.0 * s).round();
         }
@@ -327,6 +407,8 @@ impl Shelf {
             series: self.series.clone(),
             groups: self.groups,
             group: self.group.clone(),
+            folders: self.folders,
+            folder: self.folder.clone(),
             ..Shelf::default()
         }
     }
@@ -361,9 +443,15 @@ impl Shelf {
         if let Some(top) = lay.head
             && y >= top
             && y < top + 40.0 * s
-            && x < g.pad + 200.0 * s
         {
-            return Some(Hit::Back);
+            // per cartelle, ogni pezzo del percorso porta piu' su
+            if self.browsing() {
+                let crumbs = self.crumbs.borrow();
+                return crumbs.iter().position(|c| x >= c.x0 && x < c.x1).map(Hit::Crumb);
+            }
+            if x < g.pad + 200.0 * s {
+                return Some(Hit::Back);
+            }
         }
         lay.placed
             .iter()
@@ -410,9 +498,23 @@ impl Shelf {
                 self.reset_view();
                 Handled::Yes(None)
             }
+            Some(Hit::Browse) => {
+                // per cartelle o per serie; la cartella in cui si era resta
+                (self.folders, self.groups, self.group, self.series) = (!self.browsing(), false, None, None);
+                self.reset_view();
+                Handled::Yes(None)
+            }
+            Some(Hit::Crumb(k)) => {
+                let to = self.crumbs.borrow().get(k).map(|c| c.to.clone());
+                if let Some(to) = to {
+                    self.folder = to;
+                    self.reset_view();
+                }
+                Handled::Yes(None)
+            }
             Some(Hit::Return) => Handled::Yes(Some(Command::Act(Action::ToggleLibrary))),
             Some(Hit::Back) => {
-                self.back();
+                self.back(d);
                 Handled::Yes(None)
             }
             Some(Hit::Bar) | None => Handled::Yes(None),
@@ -431,7 +533,17 @@ impl Shelf {
                 self.enter_group(kind, name);
                 None
             }
+            Tile::Folder { path, .. } => {
+                self.enter_folder(path);
+                None
+            }
         }
+    }
+
+    /// Si guardano le cartelle: la vista per cartelle, non dentro una serie
+    /// (quelle dei server) ne' fra i gruppi.
+    fn browsing(&self) -> bool {
+        self.folders && !self.groups && self.group.is_none() && self.series.is_none()
     }
 
     pub fn enter_series(&mut self, name: String) {
@@ -444,11 +556,16 @@ impl Shelf {
         self.reset_view();
     }
 
-    /// Un passo indietro: dalla serie al gruppo (o alla libreria), dal gruppo
-    /// all'elenco dei gruppi, da questo alla libreria.
-    fn back(&mut self) {
+    /// Un passo indietro: dalla serie al gruppo (o alla libreria, o alla sua
+    /// cartella), dal gruppo all'elenco dei gruppi, da questo alla libreria;
+    /// per cartelle, alla cartella sopra.
+    fn back(&mut self, d: &ShelfData) {
         if self.series.take().is_none() && self.group.take().is_none() {
-            self.groups = false;
+            if self.groups {
+                self.groups = false;
+            } else if self.folders {
+                self.folder = self.parent_folder(d);
+            }
         }
         self.reset_view();
     }
@@ -505,8 +622,8 @@ impl Shelf {
                 if !self.search.is_empty() {
                     self.search.clear();
                     self.reset_view();
-                } else if self.inside() {
-                    self.back();
+                } else if self.inside(d) {
+                    self.back(d);
                 } else if d.reading {
                     return Handled::Yes(Some(Command::Act(Action::ToggleLibrary)));
                 } else {
@@ -516,8 +633,8 @@ impl Shelf {
             Key::Backspace => {
                 if self.search.pop().is_some() {
                     self.reset_view();
-                } else if self.inside() {
-                    self.back();
+                } else if self.inside(d) {
+                    self.back(d);
                 }
             }
             Key::Char(c) if !c.is_control() => {
@@ -595,6 +712,26 @@ impl Shelf {
                     cmd: Command::Group(*kind, name.clone()),
                 },
             ],
+            Tile::Folder { path, .. } => {
+                let mut rows = vec![
+                    ui::Row::Head(t("Cartella", "Folder")),
+                    ui::Row::Item {
+                        label: t("Apri la cartella", "Open the folder"),
+                        key: String::new(),
+                        on: false,
+                        cmd: Command::Folder(path.clone()),
+                    },
+                ];
+                if !remote::is_remote(path) {
+                    rows.push(ui::Row::Item {
+                        label: t("Mostra nel gestore dei file", "Show in the file manager"),
+                        key: String::new(),
+                        on: false,
+                        cmd: Command::Reveal(path.clone()),
+                    });
+                }
+                rows
+            }
             Tile::Volume(i) => {
                 let path = d.entries[*i].path.clone();
                 let mut rows = vec![ui::Row::Item {
@@ -704,31 +841,55 @@ impl Shelf {
         let lay = self.layout(d, &g);
         let mut l = Layer::default();
 
+        let mut crumbs = Vec::new();
         if let Some(top) = lay.head {
-            let back_hover = self.hover == Some(Hit::Back);
-            // dove si torna, e dove si e'
-            let (to, here) = match (&self.series, &self.group) {
-                (Some(series), Some((_, group))) => (group.clone(), series.clone()),
-                (Some(series), None) => (t("Libreria", "Library").to_owned(), series.clone()),
-                (None, Some((_, group))) => (groups_title().to_owned(), group.clone()),
-                (None, None) => (t("Libreria", "Library").to_owned(), groups_title().to_owned()),
+            let base = top + 20.0 * s;
+            let here = if self.browsing() {
+                // il percorso, dall'inizio: ogni pezzo porta li'
+                let mut x = g.pad;
+                for (k, (name, to)) in self.trail(d).into_iter().enumerate() {
+                    let label = if k == 0 { format!("\u{2039}   {name}") } else { name };
+                    let color = if self.hover == Some(Hit::Crumb(k)) { INK } else { MUTED };
+                    let text = caps(&label, 11.0 * s, color);
+                    let w = m.width(&text);
+                    l.texts.push(text.on_baseline(x, base));
+                    crumbs.push(Crumb { x0: x - 6.0 * s, x1: x + w + 6.0 * s, to });
+                    let sep = caps("   \u{203a}   ", 11.0 * s, MUTED);
+                    let sep_w = m.width(&sep);
+                    l.texts.push(sep.on_baseline(x + w, base));
+                    x += w + sep_w;
+                }
+                self.folder_here(d).0.as_deref().map(folder_name).unwrap_or_default()
+            } else {
+                // dove si torna, e dove si e'
+                let home = match self.folder_here(d).0.filter(|_| self.folders) {
+                    Some(folder) => folder_name(&folder),
+                    None => t("Libreria", "Library").to_owned(),
+                };
+                let (to, here) = match (&self.series, &self.group) {
+                    (Some(series), Some((_, group))) => (group.clone(), series.clone()),
+                    (Some(series), None) => (home, series.clone()),
+                    (None, Some((_, group))) => (groups_title().to_owned(), group.clone()),
+                    (None, None) => (home, groups_title().to_owned()),
+                };
+                let color = if self.hover == Some(Hit::Back) { INK } else { MUTED };
+                l.texts.push(caps(&format!("\u{2039}   {to}"), 11.0 * s, color).on_baseline(g.pad, base));
+                here
             };
-            l.texts.push(
-                caps(&format!("\u{2039}   {to}"), 11.0 * s, if back_hover { INK } else { MUTED })
-                    .on_baseline(g.pad, top + 20.0 * s),
-            );
             l.texts.push(
                 fit(m, Text::new(here, Face::Serif, 44.0 * s, INK), g.view.0 - 2.0 * g.pad)
                     .on_baseline(g.pad, top + 78.0 * s),
             );
-            let text = if self.series.is_none() && self.group.is_none() {
+            let text = if self.groups && self.series.is_none() && self.group.is_none() {
                 t("Dalle schede dei volumi e dai server", "From the volumes\u{2019} metadata and the servers")
                     .to_owned()
             } else {
                 let (n, done) =
                     self.sections(d).iter().flat_map(|sec| &sec.tiles).fold((0, 0), |(n, k), tile| match tile {
                         Tile::Volume(i) => (n + 1, k + usize::from(d.status[*i] == Status::Done)),
-                        Tile::Series { count, done, .. } | Tile::Group { count, done, .. } => (n + count, k + done),
+                        Tile::Series { count, done, .. }
+                        | Tile::Group { count, done, .. }
+                        | Tile::Folder { count, done, .. } => (n + count, k + done),
                     });
                 let count = if italian() {
                     format!("{n} volumi \u{00b7} {done} letti")
@@ -742,6 +903,7 @@ impl Shelf {
             };
             l.texts.push(caps(&text, 11.0 * s, MUTED).on_baseline(g.pad, top + 104.0 * s));
         }
+        *self.crumbs.borrow_mut() = crumbs;
         for (title, base) in &lay.heads {
             l.texts.push(caps(title, 11.0 * s, MUTED).on_baseline(g.pad, *base));
         }
@@ -768,6 +930,12 @@ impl Shelf {
                     l.rects.push(Rect::line(x + o, y - o, x + w + o, y - o, s.max(1.0), alpha(MUTED_F, a)));
                     l.rects.push(Rect::line(x + w + o, y - o, x + w + o, y + h - o, s.max(1.0), alpha(MUTED_F, a)));
                 }
+            }
+            if let Tile::Folder { .. } = p.tile {
+                // la cartella: la linguetta in alto a sinistra, e un bordo dietro
+                let (tab_w, tab_h) = ((w * 0.38).round(), (7.0 * s).round());
+                l.rects.push(Rect::new(x, y - tab_h, tab_w, tab_h + 2.0 * s, alpha(MUTED_F, 0.7)).radius(2.0 * s));
+                l.rects.push(Rect::line(x + tab_w, y - 1.0, x + w, y - 1.0, (2.0 * s).max(1.0), alpha(MUTED_F, 0.7)));
             }
             if self.selected == Some(k) {
                 let o = 5.0 * s;
@@ -797,7 +965,9 @@ impl Shelf {
                     };
                     (self.volume_title(&d.entries[*i]), meta)
                 }
-                Tile::Series { name, count, done, .. } | Tile::Group { name, count, done, .. } => (
+                Tile::Series { name, count, done, .. }
+                | Tile::Group { name, count, done, .. }
+                | Tile::Folder { name, count, done, .. } => (
                     name.clone(),
                     if italian() {
                         format!("{count} volumi \u{00b7} {done} letti")
@@ -836,8 +1006,14 @@ impl Shelf {
     }
 
     /// Il titolo di un volume nella sua cella: fuori dalla sua serie, se il
-    /// titolo non la dice ("Volume 1" dalla scheda), la serie davanti.
+    /// titolo non la dice ("Volume 1" dalla scheda), la serie davanti. Per
+    /// cartelle, senza le cartelle dei capitoli ("Vol 1 · Ch 2" dentro Vol 1
+    /// e' "Ch 2"): si vedono gia' nel percorso.
     fn volume_title(&self, e: &Entry) -> String {
+        if self.browsing() {
+            let own = fumetto_core::title_of(&e.path);
+            return if e.title.ends_with(&format!(" \u{00b7} {own}")) { own } else { e.title.clone() };
+        }
         match &e.series {
             Some(series) if self.series.is_none() && !e.title.to_lowercase().contains(&series.to_lowercase()) => {
                 format!("{series}: {}", e.title)
@@ -899,13 +1075,14 @@ impl Shelf {
 
         let buttons = [
             (Hit::Groups, Icon::Shelf, geo.groups_x),
+            (Hit::Browse, Icon::Tree, geo.browse_x),
             (Hit::Folders, Icon::Open, geo.folders_x),
             (Hit::Return, Icon::Close, geo.return_x),
         ];
         for (hit, icon, x) in buttons {
             let Some(x) = x else { continue };
             let hovered = self.hover == Some(hit.clone());
-            let on = hit == Hit::Groups && self.groups;
+            let on = (hit == Hit::Groups && self.groups) || (hit == Hit::Browse && self.browsing());
             let by = ((h - 36.0 * s) / 2.0).round();
             if hovered {
                 l.rects.push(Rect::new(x, by, 36.0 * s, 36.0 * s, [1.0, 1.0, 1.0, 0.075]).radius(8.0 * s));
@@ -919,6 +1096,8 @@ impl Shelf {
                 let tip = match hit {
                     Hit::Groups => t("Raccolte, liste, generi, editori", "Collections, lists, genres, publishers"),
                     Hit::Folders => t("Cartelle della libreria", "Library folders"),
+                    Hit::Browse if self.browsing() => t("Torna alle serie", "Back to the series"),
+                    Hit::Browse => t("Per cartelle, come su disco", "By folder, as on disk"),
                     _ => t("Torna alla lettura   \u{00b7}   Esc", "Back to reading   \u{00b7}   Esc"),
                 };
                 ui::tooltip(&mut l, m, tip, x + 18.0 * s, h, vw, s);
@@ -935,6 +1114,8 @@ struct BarGeo {
     search_x: f32,
     search_w: f32,
     folders_x: Option<f32>,
+    /// La vista per cartelle.
+    browse_x: Option<f32>,
     /// Solo se qualche volume fa parte di un gruppo.
     groups_x: Option<f32>,
     return_x: Option<f32>,
@@ -949,6 +1130,8 @@ impl BarGeo {
         });
         r -= 36.0 * s + 4.0 * s;
         let folders_x = Some(r.round());
+        r -= 36.0 * s + 4.0 * s;
+        let browse_x = Some(r.round());
         let groups_x = d.entries[..d.library_len()].iter().any(|e| !e.groups.is_empty()).then(|| {
             r -= 36.0 * s + 4.0 * s;
             r.round()
@@ -971,6 +1154,7 @@ impl BarGeo {
             search_x,
             search_w,
             folders_x,
+            browse_x,
             groups_x,
             return_x,
         }
@@ -989,6 +1173,9 @@ fn bar_hit(d: &ShelfData, shelf: &Shelf, view: (f32, f32), s: f32, x: f32) -> Op
     if inside(g.folders_x) {
         return Some(Hit::Folders);
     }
+    if inside(g.browse_x) {
+        return Some(Hit::Browse);
+    }
     if inside(g.groups_x) {
         return Some(Hit::Groups);
     }
@@ -1001,7 +1188,7 @@ fn bar_hit(d: &ShelfData, shelf: &Shelf, view: (f32, f32), s: f32, x: f32) -> Op
 fn tile_name(d: &ShelfData, t: &Tile) -> String {
     match t {
         Tile::Volume(i) => d.entries[*i].title.clone(),
-        Tile::Series { name, .. } | Tile::Group { name, .. } => name.clone(),
+        Tile::Series { name, .. } | Tile::Group { name, .. } | Tile::Folder { name, .. } => name.clone(),
     }
 }
 
@@ -1031,6 +1218,92 @@ fn stacks(d: &ShelfData, visible: &[usize]) -> Vec<Tile> {
     }
     tiles.sort_by(|a, b| natural_cmp(&tile_name(d, a), &tile_name(d, b)));
     tiles
+}
+
+/// La fila dei volumi a meta', dal piu' recente.
+fn reading_row(d: &ShelfData, visible: &[usize]) -> Option<Section> {
+    let mut reading: Vec<usize> =
+        visible.iter().copied().filter(|&i| matches!(d.status[i], Status::Reading(..))).collect();
+    reading.sort_by_key(|&i| std::cmp::Reverse(d.read_at[i]));
+    (!reading.is_empty()).then(|| Section {
+        title: t("Continua a leggere", "Continue reading").to_owned(),
+        tiles: reading.into_iter().map(Tile::Volume).collect(),
+        one_row: true,
+    })
+}
+
+/// Da dove vengono i volumi, per la vista per cartelle: le cartelle della
+/// libreria che ne hanno, poi i server ("http://casa:25600").
+fn sources(d: &ShelfData) -> Vec<PathBuf> {
+    let lib = &d.entries[..d.library_len()];
+    let mut out: Vec<PathBuf> = d
+        .roots
+        .iter()
+        .filter(|root| lib.iter().any(|e| library::root_of(&e.path, d.roots) == Some(root.as_path())))
+        .cloned()
+        .collect();
+    for e in lib.iter().filter(|e| remote::is_remote(&e.path)) {
+        let server = PathBuf::from(library::origin(&e.path));
+        if !out.contains(&server) {
+            out.push(server);
+        }
+    }
+    out
+}
+
+/// Il nome di una cartella; di un server, l'indirizzo senza "http://".
+fn folder_name(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    if remote::is_remote(path) {
+        return s.split_once("://").map_or(&*s, |(_, host)| host).to_owned();
+    }
+    path.file_name().map_or_else(|| s.to_string(), |n| n.to_string_lossy().into_owned())
+}
+
+/// La vista per cartelle: in `here` prima le sottocartelle, poi i volumi; un
+/// server (non ha cartelle) le sue serie; all'inizio (`None`) le cartelle
+/// della libreria e i server.
+fn folder_sections(d: &ShelfData, visible: &[usize], here: Option<&Path>) -> Vec<Section> {
+    let folder_tile = |path: PathBuf, members: &[usize]| {
+        let done = members.iter().filter(|&&j| d.status[j] == Status::Done).count();
+        // in copertina il primo da leggere: la cartella si riconosce sempre
+        Tile::Folder { name: folder_name(&path), cover: members[0], count: members.len(), done, path }
+    };
+    let section = |title: &str, tiles: Vec<Tile>| Section {
+        title: format!("{title} \u{00b7} {}", tiles.len()),
+        tiles,
+        one_row: false,
+    };
+    let within = |place: &Path| -> Vec<usize> {
+        visible.iter().copied().filter(|&i| d.entries[i].path.starts_with(place)).collect()
+    };
+    let tiles: Vec<Tile> = match here {
+        None => sources(d)
+            .into_iter()
+            .filter_map(|source| {
+                let mut members = within(&source);
+                members.sort_by(|&a, &b| library::folder_cmp(&d.entries[a].path, &d.entries[b].path));
+                (!members.is_empty()).then(|| folder_tile(source, &members))
+            })
+            .collect(),
+        Some(server) if remote::is_remote(server) => stacks(d, &within(server)),
+        Some(folder) => {
+            let c = library::folder_contents(d.entries, visible, folder);
+            let mut out = Vec::new();
+            if !c.folders.is_empty() {
+                out.push(section(
+                    t("Cartelle", "Folders"),
+                    c.folders.into_iter().map(|(path, members)| folder_tile(path, &members)).collect(),
+                ));
+            }
+            if !c.volumes.is_empty() {
+                out.push(section(t("Volumi", "Volumes"), c.volumes.into_iter().map(Tile::Volume).collect()));
+            }
+            return out;
+        }
+    };
+    let title = if here.is_none() { t("Cartelle", "Folders") } else { t("Sul server", "On the server") };
+    if tiles.is_empty() { Vec::new() } else { vec![section(title, tiles)] }
 }
 
 /// In copertina il volume che si sta leggendo, se c'e'; se no il primo. E
@@ -1191,6 +1464,92 @@ mod tests {
         (entries, status, vec![0, 5, 20, 10])
     }
 
+    #[test]
+    fn la_libreria_per_cartelle() {
+        let at = |path: &str, series: Option<(&str, u32)>| Entry {
+            path: PathBuf::from(path),
+            title: fumetto_core::title_of(Path::new(path)),
+            series: series.map(|s| s.0.to_owned()),
+            number: series.map(|s| s.1),
+            authors: None,
+            groups: Vec::new(),
+        };
+        let server = "http://casa:25600/opds/v1.2/books";
+        let e = vec![
+            at("/f/Manga/Berserk/Vol 2/Ch 10.cbz", None),
+            at("/f/Manga/Berserk/Vol 2/Ch 9.cbz", None),
+            at("/f/Manga/Akira.cbz", None),
+            at("/f/Moebius/Arzach.cbz", None),
+            at("/f/Sciolto.cbz", None),
+            at(&format!("{server}/a/pages/{{n}}#3:Porto v01"), Some(("Porto", 1))),
+            at(&format!("{server}/b/pages/{{n}}#3:Porto v02"), Some(("Porto", 2))),
+        ];
+        let st = vec![Status::New; e.len()];
+        let read_at = vec![0; e.len()];
+        let roots = [PathBuf::from("/f")];
+        let d = ShelfData { roots: &roots, ..data(&e, &st, &read_at) };
+        let folder = |path: &str, cover: usize, count: usize| Tile::Folder {
+            path: PathBuf::from(path),
+            name: folder_name(Path::new(path)),
+            cover,
+            count,
+            done: 0,
+        };
+        let tiles = |shelf: &Shelf| -> Vec<Vec<Tile>> { shelf.sections(&d).into_iter().map(|s| s.tiles).collect() };
+        let mut shelf = Shelf { folders: true, ..Shelf::default() };
+
+        // una cartella e un server: si parte da loro
+        assert_eq!(tiles(&shelf), [vec![folder("/f", 1, 5), folder("http://casa:25600", 5, 2)]]);
+        assert!(!shelf.inside(&d));
+        shelf.enter_folder(PathBuf::from("/f"));
+        assert_eq!(
+            tiles(&shelf),
+            [vec![folder("/f/Manga", 1, 3), folder("/f/Moebius", 3, 1)], vec![Tile::Volume(4)]],
+            "prima le cartelle, poi i volumi; in copertina il primo da leggere"
+        );
+        shelf.enter_folder(PathBuf::from("/f/Manga"));
+        assert_eq!(tiles(&shelf), [vec![folder("/f/Manga/Berserk", 1, 2)], vec![Tile::Volume(2)]]);
+        assert_eq!(
+            shelf.trail(&d),
+            [(t("Cartelle", "Folders").to_owned(), None), ("f".to_owned(), Some(PathBuf::from("/f")))]
+        );
+        shelf.enter_folder(PathBuf::from("/f/Manga/Berserk/Vol 2"));
+        assert_eq!(tiles(&shelf), [vec![Tile::Volume(1), Tile::Volume(0)]], "9 prima di 10");
+        let view = (1920.0, 1080.0);
+        shelf.key(Key::Backspace, &d, view, 1.0);
+        assert_eq!(shelf.folder, Some(PathBuf::from("/f/Manga/Berserk")), "indietro: la cartella sopra");
+        shelf.key(Key::Escape, &d, view, 1.0);
+        shelf.key(Key::Escape, &d, view, 1.0);
+        shelf.key(Key::Escape, &d, view, 1.0);
+        assert_eq!(shelf.folder, None, "fino all'inizio");
+
+        // un server non ha cartelle: le sue serie, e dalla serie si torna li'
+        shelf.enter_folder(PathBuf::from("http://casa:25600"));
+        assert_eq!(tiles(&shelf), [vec![Tile::Series { name: "Porto".into(), cover: 5, count: 2, done: 0 }]]);
+        shelf.enter_series("Porto".into());
+        shelf.key(Key::Escape, &d, view, 1.0);
+        assert_eq!((shelf.series.as_deref(), shelf.folder.as_deref()), (None, Some(Path::new("http://casa:25600"))));
+
+        // i filtri valgono dentro le cartelle; cercando, un elenco solo
+        shelf.enter_folder(PathBuf::from("/f/Manga"));
+        shelf.filter = Filter::Done;
+        assert!(tiles(&shelf).is_empty());
+        shelf.filter = Filter::All;
+        shelf.search = "arz".into();
+        assert_eq!(tiles(&shelf), [vec![Tile::Volume(3)]]);
+        shelf.search.clear();
+
+        // con una cartella sola si parte da dentro, e il percorso comincia da lei
+        let local = &e[..5];
+        let d = ShelfData { roots: &roots, ..data(local, &st[..5], &read_at[..5]) };
+        let mut shelf = Shelf { folders: true, ..Shelf::default() };
+        assert_eq!(shelf.sections(&d).len(), 2, "le cartelle e i volumi di /f");
+        assert!(!shelf.inside(&d));
+        shelf.enter_folder(PathBuf::from("/f/Manga"));
+        assert_eq!(shelf.trail(&d), [("f".to_owned(), None)]);
+        shelf.key(Key::Escape, &d, view, 1.0);
+        assert_eq!(shelf.folder, None);
+    }
     #[test]
     fn continua_a_leggere_poi_la_libreria_con_le_serie() {
         let (e, st, at) = library();

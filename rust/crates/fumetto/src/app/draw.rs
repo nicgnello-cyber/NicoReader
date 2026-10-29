@@ -532,6 +532,7 @@ pub(super) fn context<'a>(
             trim: r.trim,
             slideshow,
             next: look.next.map(|(p, title)| (p.as_path(), title.as_str())),
+            prev: look.prev.map(|(p, title)| (p.as_path(), title.as_str())),
         }
     });
     let fullscreen = window.is_some_and(|w| w.fullscreen().is_some());

@@ -120,8 +120,9 @@ pub struct BookInfo<'a> {
     pub bookmarks: &'a [usize],
     pub trim: bool,
     pub slideshow: bool,
-    /// Il volume da leggere dopo questo: percorso e titolo.
+    /// I volumi da leggere dopo e prima di questo: percorso e titolo.
     pub next: Option<(&'a std::path::Path, &'a str)>,
+    pub prev: Option<(&'a std::path::Path, &'a str)>,
 }
 
 pub struct Context<'a> {
@@ -190,10 +191,11 @@ pub enum Command {
     Page(usize),
     /// Una scelta fatta nelle impostazioni.
     Pref(crate::prefs::Pref),
-    /// Interni all'interfaccia: aprire una serie o un gruppo, il menu delle
-    /// cartelle, il modulo per aggiungere un server.
+    /// Interni all'interfaccia: aprire una serie, un gruppo o una cartella,
+    /// il menu delle cartelle, il modulo per aggiungere un server.
     Series(String),
     Group(fumetto_core::library::GroupKind, String),
+    Folder(PathBuf),
     FoldersMenu(f32, f32),
     AskServer,
 }
@@ -517,6 +519,10 @@ impl Ui {
             }
             Command::Group(kind, name) => {
                 self.shelf.enter_group(kind, name);
+                None
+            }
+            Command::Folder(path) => {
+                self.shelf.enter_folder(path);
                 None
             }
             Command::FoldersMenu(x, y) => {
@@ -1026,6 +1032,7 @@ mod tests {
             trim: false,
             slideshow: false,
             next: None,
+            prev: None,
         }
     }
 
