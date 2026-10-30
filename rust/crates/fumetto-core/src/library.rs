@@ -514,19 +514,39 @@ pub fn root_of<'a>(path: &Path, roots: &'a [PathBuf]) -> Option<&'a Path> {
 /// sottocartelle, poi i volumi, ciascuno in ordine naturale (2 prima di 10).
 /// Letto di fila e' l'ordine in cui si leggono: una cartella intera, poi la
 /// seguente.
+///
+/// Dev'essere un ordine totale: con uno incoerente l'ordinamento della
+/// libreria standard si ferma con un panic. Per questo ogni pezzo del
+/// percorso conta come (volume?, nome), e i percorsi si confrontano pezzo
+/// per pezzo: l'ultimo pezzo e' il volume, gli altri cartelle. Cosi' anche
+/// una cartella di immagini che e' un volume e ne contiene altri ("X" e
+/// "X/y.cbz") ha un posto solo: "X" fra i volumi, cio' che contiene fra le
+/// cartelle.
 pub fn folder_cmp(a: &Path, b: &Path) -> Ordering {
-    let (ca, cb): (Vec<_>, Vec<_>) = (a.components().collect(), b.components().collect());
-    for (k, (x, y)) in ca.iter().zip(&cb).enumerate() {
-        if x != y {
-            // una cartella (c'e' dell'altro dopo) prima di un volume
-            let (dir_a, dir_b) = (k + 1 < ca.len(), k + 1 < cb.len());
-            return dir_b
-                .cmp(&dir_a)
-                .then_with(|| natural_cmp(&x.as_os_str().to_string_lossy(), &y.as_os_str().to_string_lossy()))
-                .then_with(|| x.cmp(y));
+    let (mut ka, mut kb) = (pieces(a), pieces(b));
+    loop {
+        match (ka.next(), kb.next()) {
+            (None, None) => return Ordering::Equal,
+            (None, Some(_)) => return Ordering::Less,
+            (Some(_), None) => return Ordering::Greater,
+            (Some((va, x)), Some((vb, y))) => {
+                // false (una cartella) prima di true (un volume)
+                let o = va
+                    .cmp(&vb)
+                    .then_with(|| natural_cmp(&x.as_os_str().to_string_lossy(), &y.as_os_str().to_string_lossy()))
+                    .then_with(|| x.cmp(&y));
+                if o != Ordering::Equal {
+                    return o;
+                }
+            }
         }
     }
-    ca.len().cmp(&cb.len())
+}
+
+/// I pezzi di un percorso per [`folder_cmp`]: (e' il volume, cioe' l'ultimo; pezzo).
+fn pieces(p: &Path) -> impl Iterator<Item = (bool, std::path::Component<'_>)> {
+    let last = p.components().count().saturating_sub(1);
+    p.components().enumerate().map(move |(k, part)| (k == last, part))
 }
 
 /// Cosa sta in una cartella: le sottocartelle, ognuna con i volumi che
@@ -574,12 +594,19 @@ pub fn origin(path: &Path) -> String {
     format!("{}://{host}", s.split("://").next().unwrap_or("").to_ascii_lowercase())
 }
 
-/// Per ordinare i volumi di una serie: prima il numero, poi il titolo.
+/// Per ordinare i volumi di una serie: prima quelli con il numero, per numero
+/// (a parita', per titolo), poi quelli senza, per titolo. Un ordine totale
+/// (vedi [`folder_cmp`]): confrontare ora i numeri ora i titoli, secondo la
+/// coppia, lo renderebbe incoerente.
 pub fn by_number(a: &Entry, b: &Entry) -> Ordering {
     match (a.number, b.number) {
-        (Some(x), Some(y)) if x != y => x.cmp(&y),
-        _ => natural_cmp(&a.title, &b.title),
+        (Some(x), Some(y)) => x.cmp(&y),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
     }
+    .then_with(|| natural_cmp(&a.title, &b.title))
+    .then_with(|| a.path.cmp(&b.path))
 }
 
 #[cfg(test)]
@@ -646,6 +673,74 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// Un ordine incoerente fa fermare `sort_by` con un panic (Rust 1.81):
+    /// cosi' NicoReader si chiudeva caricando le cartelle, e di nuovo a ogni
+    /// avvio riprendendo l'ultimo volume.
+    fn totale<T: std::fmt::Debug>(items: &[T], cmp: impl Fn(&T, &T) -> Ordering) {
+        for a in items {
+            assert_eq!(cmp(a, a), Ordering::Equal, "{a:?}");
+            for b in items {
+                assert_eq!(cmp(a, b), cmp(b, a).reverse(), "{a:?} {b:?}");
+                for c in items {
+                    if cmp(a, b).is_le() && cmp(b, c).is_le() {
+                        assert!(cmp(a, c).is_le(), "{a:?} <= {b:?} <= {c:?}, ma non {a:?} <= {c:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn gli_ordini_sono_totali() {
+        // "/f/X" e' una cartella di immagini (un volume) con altri volumi dentro
+        let paths: Vec<PathBuf> = [
+            "/f/X",
+            "/f/X/y.cbz",
+            "/f/X/Y/z.cbz",
+            "/f/Xa/q.cbz",
+            "/f/W/z.cbz",
+            "/f/X.cbz",
+            "/f/x",
+            "/f/a.cbz",
+            "/f/01.cbz",
+            "/f/1.cbz",
+            "/f/10.cbz",
+            "/f/2",
+        ]
+        .iter()
+        .map(PathBuf::from)
+        .collect();
+        totale(&paths, |a, b| folder_cmp(a, b));
+
+        let vol = |path: &str, title: &str, number: Option<u32>| Entry {
+            path: PathBuf::from(path),
+            title: title.into(),
+            series: Some("Serie".into()),
+            number,
+            authors: None,
+            groups: Vec::new(),
+        };
+        let entries = [
+            vol("/a", "Z", Some(1)),
+            vol("/b", "M", None),
+            vol("/c", "A", Some(2)),
+            vol("/d", "A", Some(2)),
+            vol("/e", "Vol 1 \u{00b7} Ch 2", None),
+            vol("/f", "Vol 1 \u{00b7} Ch 10", None),
+        ];
+        totale(&entries, by_number);
+
+        // e ordinando una libreria grande non ci si ferma
+        let mut many: Vec<PathBuf> = (0..3000)
+            .map(|i| match i % 3 {
+                0 => PathBuf::from(format!("/f/S{}", i % 40)),
+                1 => PathBuf::from(format!("/f/S{}/v{}.cbz", i % 40, i)),
+                _ => PathBuf::from(format!("/f/S{}a/v{}.cbz", i % 40, i)),
+            })
+            .collect();
+        many.sort_by(|a, b| folder_cmp(a, b));
+        assert!(many.windows(2).all(|w| folder_cmp(&w[0], &w[1]).is_le()));
+    }
     #[test]
     fn le_cartelle_in_ordine() {
         let p = |s: &str| PathBuf::from(s);

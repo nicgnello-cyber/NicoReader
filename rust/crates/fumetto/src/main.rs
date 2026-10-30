@@ -86,7 +86,10 @@ fn main() {
     let own_dir = std::env::var_os("FUMETTO_DATI").is_some();
     let progress =
         if prova && !own_dir { Progress::in_memory() } else { Progress::load(data_dir().join("progressi.json")) };
-    let volume = asked.clone().or_else(|| if prova { None } else { resume(&progress) });
+    // l'ultima volta si e' chiuso per un errore: non si riapre da solo cio'
+    // che si stava guardando, che potrebbe richiuderlo subito, a ogni avvio
+    let crashed = crash::last_crash(&data_dir()).filter(|_| !prova);
+    let volume = asked.clone().or_else(|| if prova || crashed.is_some() { None } else { resume(&progress) });
     // la prima volta la galleria e' vuota: si chiede subito cosa aprire.
     // Dopo, la galleria mostra gli ultimi letti e si sceglie da li'
     let first_time = progress.recent().is_empty();
@@ -97,10 +100,14 @@ fn main() {
         // sempre a pagina singola, anche se fosse un webtoon
         settings.webtoon = false;
     }
+    if crashed.is_some() {
+        // e la libreria riparte dall'inizio, non dalla cartella di prima
+        settings.library_folder = None;
+    }
     let script = prova.then(script::Script::new);
     let mut app =
         app::App::new(event_loop.create_proxy(), progress, settings, settings_path, cache_dir(), started, script);
-    if let Some(text) = crash::last_crash(&data_dir()).filter(|_| !prova) {
+    if let Some(text) = crashed {
         app.notify(text);
     }
     // macOS: un volume aperto dal Finder non sta fra gli argomenti, arriva
