@@ -99,41 +99,63 @@ pub(super) fn ruler(ctx: &Context) -> (f32, f32, f32) {
     (((vw - w) / 2.0).round(), w, (vh / 2.0 + 70.0 * s).round())
 }
 
+/// "Vai a pagina": il numero scritto, il righello del volume con i segni,
+/// dove si e' e dove si andra'.
 pub(super) fn goto(ctx: &Context, g: &GoTo, m: &mut dyn Measure) -> Layer {
     let s = ctx.scale;
     let (vw, vh) = ctx.view;
     let cx = vw / 2.0;
-    let base = vh / 2.0 + 10.0 * s;
     let mut l = Layer::default();
     l.rects.push(Rect::new(0.0, 0.0, vw, vh, [0.0, 0.0, 0.0, 0.9]));
+    draw_number(&mut l, ctx, g, m);
+    let y = draw_ruler(&mut l, ctx, g);
+    let (hint, color) = if g.valid() {
+        (t("Invio per andare   \u{00b7}   Esc per restare", "Enter to go   \u{00b7}   Esc to stay").to_owned(), MUTED)
+    } else if italian() {
+        (format!("Il volume ha {} pagine", g.pages), ACCENT_TEXT)
+    } else {
+        (format!("This volume has {} pages", g.pages), ACCENT_TEXT)
+    };
+    l.texts.push(
+        Text::new(hint, Face::Sans, 12.5 * s, color)
+            .boxed(500.0 * s, Align::Center)
+            .on_baseline(cx - 250.0 * s, y + 70.0 * s),
+    );
+    l
+}
 
+/// Il titolo, e il numero con il cursore e "di 212", centrati insieme.
+fn draw_number(l: &mut Layer, ctx: &Context, g: &GoTo, m: &mut dyn Measure) {
+    let s = ctx.scale;
+    let cx = ctx.view.0 / 2.0;
+    let base = ctx.view.1 / 2.0 + 10.0 * s;
     l.texts.push(
         caps(t("Vai a pagina", "Go to page"), 11.0 * s, MUTED)
             .boxed(400.0 * s, Align::Center)
             .on_baseline(cx - 200.0 * s, base - 150.0 * s),
     );
-    // numero, cursore e "di 212" centrati insieme, misurati
     let (digits, color) = if g.typed.is_empty() { (g.page().to_string(), MUTED) } else { (g.typed.clone(), INK) };
     let size = 156.0 * s;
     let number = Text::new(digits, Face::Serif, size, color);
-    let of = Text::new(
-        if italian() { format!("di {}", g.pages) } else { format!("of {}", g.pages) },
-        Face::Serif,
-        30.0 * s,
-        MUTED,
-    );
+    let of = if italian() { format!("di {}", g.pages) } else { format!("of {}", g.pages) };
+    let of = Text::new(of, Face::Serif, 30.0 * s, MUTED);
     let (wn, wo, gap) = (m.width(&number), m.width(&of), 34.0 * s);
     let x0 = (cx - (wn + gap + wo) / 2.0).round();
     l.texts.push(number.on_baseline(x0, base));
     let caret_h = (size * 0.66).round();
     l.rects.push(Rect::new((x0 + wn + 12.0 * s).round(), (base - caret_h).round(), (2.0 * s).round(), caret_h, ACCENT));
     l.texts.push(of.on_baseline(x0 + wn + gap, base));
+}
 
+/// Il righello: una tacca per pagina se c'e' posto (altrimenti ogni 2, 5,
+/// 10...), i numeri, i segni come nastrini, "qui" e la pagina scelta.
+/// Restituisce la sua linea di base.
+fn draw_ruler(l: &mut Layer, ctx: &Context, g: &GoTo) -> f32 {
+    let s = ctx.scale;
     let (x0, w, y) = ruler(ctx);
     let last = (g.pages.max(2) - 1) as f32;
     let at = |page: usize| (x0 + w * page as f32 / last).round();
     l.rects.push(Rect::new(x0, y, w, s.round(), HAIR));
-    // una tacca per pagina se c'e' posto, altrimenti ogni 2, 5, 10...
     let every =
         [1usize, 2, 5, 10, 20, 50, 100, 200, 500].into_iter().find(|&k| w / last * k as f32 >= 4.0 * s).unwrap_or(1000);
     for p in (0..g.pages).step_by(every) {
@@ -153,11 +175,9 @@ pub(super) fn goto(ctx: &Context, g: &GoTo, m: &mut dyn Measure) -> Layer {
                 .on_baseline(at(p - 1) - 30.0 * s, y + 26.0 * s),
         );
     }
-    // le pagine segnate: nastrini sotto il righello
     for &p in &g.bookmarks {
-        ribbon(&mut l, (at(p) - 3.0 * s).round(), y + 5.0 * s, (7.0 * s).round(), (13.0 * s).round(), 1.0);
+        ribbon(l, (at(p) - 3.0 * s).round(), y + 5.0 * s, (7.0 * s).round(), (13.0 * s).round(), 1.0);
     }
-    // dove si e' adesso, e dove si andra'
     let here = at(g.here);
     l.rects.push(Rect::new(here, y - 16.0 * s, s.round(), 16.0 * s, INK_F));
     l.texts.push(
@@ -169,19 +189,7 @@ pub(super) fn goto(ctx: &Context, g: &GoTo, m: &mut dyn Measure) -> Layer {
         let d = 7.0 * s;
         l.rects.push(Rect::new(x - d / 2.0, y - 24.0 * s - d / 2.0, d, d, ACCENT).radius(d));
     }
-    let (hint, color) = if g.valid() {
-        (t("Invio per andare   \u{00b7}   Esc per restare", "Enter to go   \u{00b7}   Esc to stay").to_owned(), MUTED)
-    } else if italian() {
-        (format!("Il volume ha {} pagine", g.pages), ACCENT_TEXT)
-    } else {
-        (format!("This volume has {} pages", g.pages), ACCENT_TEXT)
-    };
-    l.texts.push(
-        Text::new(hint, Face::Sans, 12.5 * s, color)
-            .boxed(500.0 * s, Align::Center)
-            .on_baseline(cx - 250.0 * s, y + 70.0 * s),
-    );
-    l
+    y
 }
 
 /// Il bordo della lente: un filo chiaro, e fuori un'ombra che la stacca

@@ -9,28 +9,15 @@ pub(super) fn welcome(ctx: &Context, selected: Option<usize>, m: &mut dyn Measur
     let (vw, vh) = ctx.view;
     let cx = vw / 2.0;
     let top = welcome_top(ctx);
-    let mut l = Layer::default();
     let wide = 900.0 * s;
-    l.texts.push(
-        Text::new("NicoReader", Face::Serif, 84.0 * s, INK)
-            .boxed(wide, Align::Center)
-            .on_baseline(cx - wide / 2.0, top + 70.0 * s),
-    );
-    l.texts.push(
-        caps(
-            t("Trascina qui un volume, o fai clic per aprirne uno", "Drop a volume here, or click to open one"),
-            10.5 * s,
-            MUTED,
-        )
-        .boxed(wide, Align::Center)
-        .on_baseline(cx - wide / 2.0, top + 112.0 * s),
-    );
+    let centered = |text: Text, base: f32| text.boxed(wide, Align::Center).on_baseline(cx - wide / 2.0, base);
+    let mut l = Layer::default();
+    l.texts.push(centered(Text::new("NicoReader", Face::Serif, 84.0 * s, INK), top + 70.0 * s));
+    let drop = t("Trascina qui un volume, o fai clic per aprirne uno", "Drop a volume here, or click to open one");
+    l.texts.push(centered(caps(drop, 10.5 * s, MUTED), top + 112.0 * s));
     // l'invito a creare la libreria, in rosso lacca: e' la cosa da fare
-    l.texts.push(
-        caps(t("+   Aggiungi una cartella alla libreria", "+   Add a folder to the library"), 11.0 * s, ACCENT_TEXT)
-            .boxed(wide, Align::Center)
-            .on_baseline(cx - wide / 2.0, welcome_cta(ctx)),
-    );
+    let add = t("+   Aggiungi una cartella alla libreria", "+   Add a folder to the library");
+    l.texts.push(centered(caps(add, 11.0 * s, ACCENT_TEXT), welcome_cta(ctx)));
     let recent = &ctx.recent[..ctx.recent.len().min(6)];
     if !recent.is_empty() {
         l.rects.push(Rect::new(
@@ -40,57 +27,55 @@ pub(super) fn welcome(ctx: &Context, selected: Option<usize>, m: &mut dyn Measur
             s.round(),
             TICK,
         ));
-        l.texts.push(
-            caps(t("Ultimi letti", "Recently read"), 10.0 * s, MUTED)
-                .boxed(wide, Align::Center)
-                .on_baseline(cx - wide / 2.0, top + 234.0 * s),
-        );
-        let x0 = cx - WELCOME_W * s / 2.0;
-        let w = WELCOME_W * s;
-        let rows_top = welcome_rows_top(ctx);
-        for (i, r) in recent.iter().enumerate() {
-            let y = rows_top + i as f32 * WELCOME_ROW * s;
-            if selected == Some(i) {
-                l.rects.push(
-                    Rect::new(x0 - 14.0 * s, y + 3.0 * s, w + 28.0 * s, (WELCOME_ROW - 6.0) * s, [1.0, 1.0, 1.0, 0.05])
-                        .radius(8.0 * s),
-                );
-            }
-            if i > 0 {
-                l.rects.push(Rect::new(x0, y.round(), w, s.round(), alpha(HAIR, 0.7)));
-            }
-            let title = Text::new(r.title.as_str(), Face::Serif, 22.0 * s, INK);
-            l.texts.push(fit(m, title, w - 130.0 * s).on_baseline(x0, y + 30.0 * s));
-            l.texts.push(
-                Text::new(r.place.as_str(), Face::Sans, 12.5 * s, MUTED)
-                    .tabular()
-                    .boxed(110.0 * s, Align::Right)
-                    .on_baseline(x0 + w - 110.0 * s, y + 29.0 * s),
+        l.texts.push(centered(caps(t("Ultimi letti", "Recently read"), 10.0 * s, MUTED), top + 234.0 * s));
+        draw_recent(&mut l, ctx, recent, selected, m);
+    }
+    l.texts.push(centered(Text::new(keys_hint(ctx), Face::Sans, 12.0 * s, fade(MUTED, 0.75)), vh - 36.0 * s));
+    l
+}
+
+/// Gli ultimi letti, uno per riga: il titolo e dove si e' arrivati; quello
+/// scelto con le frecce, illuminato.
+fn draw_recent(l: &mut Layer, ctx: &Context, recent: &[Recent], selected: Option<usize>, m: &mut dyn Measure) {
+    let s = ctx.scale;
+    let w = WELCOME_W * s;
+    let x0 = ctx.view.0 / 2.0 - w / 2.0;
+    let rows_top = welcome_rows_top(ctx);
+    for (i, r) in recent.iter().enumerate() {
+        let y = rows_top + i as f32 * WELCOME_ROW * s;
+        if selected == Some(i) {
+            l.rects.push(
+                Rect::new(x0 - 14.0 * s, y + 3.0 * s, w + 28.0 * s, (WELCOME_ROW - 6.0) * s, [1.0, 1.0, 1.0, 0.05])
+                    .radius(8.0 * s),
             );
         }
+        if i > 0 {
+            l.rects.push(Rect::new(x0, y.round(), w, s.round(), alpha(HAIR, 0.7)));
+        }
+        let title = Text::new(r.title.as_str(), Face::Serif, 22.0 * s, INK);
+        l.texts.push(fit(m, title, w - 130.0 * s).on_baseline(x0, y + 30.0 * s));
+        l.texts.push(
+            Text::new(r.place.as_str(), Face::Sans, 12.5 * s, MUTED)
+                .tabular()
+                .boxed(110.0 * s, Align::Right)
+                .on_baseline(x0 + w - 110.0 * s, y + 29.0 * s),
+        );
     }
+}
+
+/// In fondo, i tasti da sapere.
+fn keys_hint(ctx: &Context) -> String {
     let k = |b: Bind| ctx.keys.label(b);
-    let keys = if italian() {
+    let (open, folder, settings) = (k(Bind::Open), k(Bind::OpenFolder), k(Bind::Settings));
+    if italian() {
         format!(
-            "{} apri   \u{00b7}   {} cartella   \u{00b7}   {} impostazioni   \u{00b7}   tasto destro per il menu",
-            k(Bind::Open),
-            k(Bind::OpenFolder),
-            k(Bind::Settings)
+            "{open} apri   \u{00b7}   {folder} cartella   \u{00b7}   {settings} impostazioni   \u{00b7}   tasto destro per il menu"
         )
     } else {
         format!(
-            "{} open   \u{00b7}   {} folder   \u{00b7}   {} settings   \u{00b7}   right click for the menu",
-            k(Bind::Open),
-            k(Bind::OpenFolder),
-            k(Bind::Settings)
+            "{open} open   \u{00b7}   {folder} folder   \u{00b7}   {settings} settings   \u{00b7}   right click for the menu"
         )
-    };
-    l.texts.push(
-        Text::new(keys, Face::Sans, 12.0 * s, fade(MUTED, 0.75))
-            .boxed(wide, Align::Center)
-            .on_baseline(cx - wide / 2.0, vh - 36.0 * s),
-    );
-    l
+    }
 }
 
 fn welcome_top(ctx: &Context) -> f32 {

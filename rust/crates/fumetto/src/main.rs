@@ -49,7 +49,7 @@ mod script;
 mod stats;
 mod system;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use fumetto_core::{Progress, Settings};
@@ -69,17 +69,8 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let prova = args.iter().any(|a| a == "--prova");
     let asked = args.iter().find(|a| !a.starts_with("--")).map(PathBuf::from);
-    // NicoReader e' gia' aperto: il volume va a lui (vedi instance.rs). Il
-    // percorso intero: l'altra copia puo' stare in un'altra cartella
-    if !prova {
-        let proxy = event_loop.create_proxy();
-        let forwarded = asked.as_deref().map(fumetto_core::absolute);
-        let open = move |path| {
-            let _ = proxy.send_event(app::UserEvent::Forwarded(path));
-        };
-        if let instance::Start::Forwarded = instance::start(&data_dir(), forwarded.as_deref(), open) {
-            return;
-        }
+    if !prova && forwarded(&event_loop, asked.as_deref()) {
+        return;
     }
     // la prova automatica non tocca i progressi veri, ne' li usa (a meno di
     // darle una cartella tutta sua con FUMETTO_DATI)
@@ -93,17 +84,7 @@ fn main() {
     // la prima volta la galleria e' vuota: si chiede subito cosa aprire.
     // Dopo, la galleria mostra gli ultimi letti e si sceglie da li'
     let first_time = progress.recent().is_empty();
-    let settings_path = (!prova || own_dir).then(|| data_dir().join("impostazioni.json"));
-    let mut settings = settings_path.as_ref().map_or_else(Settings::default, Settings::load);
-    if prova {
-        // le misure si confrontano fra una prova e l'altra: il volume si apre
-        // sempre a pagina singola, anche se fosse un webtoon
-        settings.webtoon = false;
-    }
-    if crashed.is_some() {
-        // e la libreria riparte dall'inizio, non dalla cartella di prima
-        settings.library_folder = None;
-    }
+    let (settings, settings_path) = settings(prova, own_dir, crashed.is_some());
     let script = prova.then(script::Script::new);
     let mut app =
         app::App::new(event_loop.create_proxy(), progress, settings, settings_path, cache_dir(), started, script);
@@ -138,6 +119,35 @@ fn main() {
     if prova {
         println!("{}", app.stats.report(&app.gpu_name()));
     }
+}
+
+/// NicoReader e' gia' aperto: il volume (o niente) va a lui, e questa copia
+/// si chiude (vedi instance.rs). Il percorso intero: l'altra copia puo' stare
+/// in un'altra cartella.
+fn forwarded(event_loop: &EventLoop<app::UserEvent>, asked: Option<&Path>) -> bool {
+    let proxy = event_loop.create_proxy();
+    let open = move |path| {
+        let _ = proxy.send_event(app::UserEvent::Forwarded(path));
+    };
+    let asked = asked.map(fumetto_core::absolute);
+    matches!(instance::start(&data_dir(), asked.as_deref(), open), instance::Start::Forwarded)
+}
+
+/// Le impostazioni, e dove salvarle. La prova automatica non tocca quelle
+/// vere (a meno di darle una cartella sua, `own_dir`) e apre sempre a
+/// pagina singola, anche un webtoon: le misure si confrontano fra una prova
+/// e l'altra. Dopo una chiusura per errore la libreria riparte dall'inizio,
+/// non dalla cartella di prima.
+fn settings(prova: bool, own_dir: bool, crashed: bool) -> (Settings, Option<PathBuf>) {
+    let path = (!prova || own_dir).then(|| data_dir().join("impostazioni.json"));
+    let mut settings = path.as_ref().map_or_else(Settings::default, Settings::load);
+    if prova {
+        settings.webtoon = false;
+    }
+    if crashed {
+        settings.library_folder = None;
+    }
+    (settings, path)
 }
 
 /// Avviato senza volume: quale riprendere, tra quelli gia' letti. `None`: si
