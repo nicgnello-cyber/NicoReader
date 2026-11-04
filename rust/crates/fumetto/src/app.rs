@@ -451,10 +451,13 @@ impl App {
             })
         };
         let keymap = Keymap::new(&settings.keys);
-        // "-2": le schede ora dicono anche generi, editore e raccolte; quelle
-        // vecchie non li hanno, e si rileggono tutte una volta
-        let _ = std::fs::remove_file(covers_dir.with_file_name("comicinfo.json"));
-        let info_cache = covers_dir.with_file_name("comicinfo-2.json");
+        // "-3": le schede ora dicono anche l'anno (prima, con "-2", generi,
+        // editore e raccolte); quelle vecchie non lo hanno, e si rileggono
+        // tutte una volta
+        for old in ["comicinfo.json", "comicinfo-2.json"] {
+            let _ = std::fs::remove_file(covers_dir.with_file_name(old));
+        }
+        let info_cache = covers_dir.with_file_name("comicinfo-3.json");
         let cover_loader = {
             let proxy = proxy.clone();
             CoverLoader::new(covers_dir, move |c| {
@@ -545,8 +548,8 @@ impl App {
             script,
         };
         // la libreria come la si era lasciata: per cartelle, e in quale
-        (app.ui.shelf.folders, app.ui.shelf.folder) =
-            (app.settings.library_folders, app.settings.library_folder.clone());
+        (app.ui.shelf.folders, app.ui.shelf.folder, app.ui.shelf.sort) =
+            (app.settings.library_folders, app.settings.library_folder.clone(), app.settings.library_sort);
         app.refresh_recent();
         app.rescan();
         app.note_version();

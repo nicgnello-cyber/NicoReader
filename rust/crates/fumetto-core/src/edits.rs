@@ -117,6 +117,7 @@ mod tests {
             number: None,
             authors: None,
             groups: Vec::new(),
+            ..Entry::default()
         }
     }
 

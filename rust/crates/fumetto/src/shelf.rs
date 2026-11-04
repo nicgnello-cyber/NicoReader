@@ -17,9 +17,12 @@
 //! resto e' una [`Layer`] dell'interfaccia sopra di loro.
 
 use std::cell::RefCell;
+use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use fumetto_core::LibrarySort;
 use fumetto_core::library::{self, Entry, GroupKind, Status, by_number};
 use fumetto_core::lingua::{italian, t};
 use fumetto_core::natural_cmp;
@@ -143,6 +146,8 @@ pub enum Hit {
     Groups,
     /// Il tasto della vista per cartelle.
     Browse,
+    /// Il tasto dell'ordine.
+    Sort,
     /// Un pezzo del percorso, per risalire (indice in `Shelf::crumbs`).
     Crumb(usize),
     Return,
@@ -225,6 +230,8 @@ pub struct Shelf {
     /// Nella vista per cartelle, la cartella (o il server) che si guarda;
     /// `None`: l'inizio.
     pub folder: Option<PathBuf>,
+    /// L'ordine delle copertine.
+    pub sort: LibrarySort,
     /// Il percorso disegnato in cima, per i clic: dove sta ogni pezzo e dove
     /// porta. Lo scrive `layers`, che misura i testi.
     crumbs: RefCell<Vec<Crumb>>,
@@ -265,7 +272,7 @@ impl Shelf {
                 sort_members(d, &mut visible, *kind, name);
                 return single(visible.into_iter().map(Tile::Volume).collect());
             }
-            return single(stacks(d, &visible));
+            return single(stacks(d, &visible, self.sort));
         }
         if self.groups {
             return group_sections(d, self.filter, &needle, &found);
@@ -277,7 +284,7 @@ impl Shelf {
             if top && self.filter == Filter::All {
                 sections.extend(reading_row(d, &visible));
             }
-            sections.extend(folder_sections(d, &visible, here.as_deref()));
+            sections.extend(folder_sections(d, &visible, here.as_deref(), self.sort));
             return sections;
         }
         if self.filter != Filter::All || !needle.is_empty() {
@@ -286,8 +293,11 @@ impl Shelf {
             }
             let title =
                 if needle.is_empty() { self.filter.label().to_owned() } else { t("Trovati", "Found").to_owned() };
-            let mut sections =
-                vec![Section { title, tiles: visible.into_iter().map(Tile::Volume).collect(), one_row: false }];
+            let tiles = match self.sort {
+                LibrarySort::Name => visible.into_iter().map(Tile::Volume).collect(),
+                sort => sorted(d, visible.into_iter().map(|i| (Tile::Volume(i), Rank::of(d, &[i]))).collect(), sort),
+            };
+            let mut sections = vec![Section { title, tiles, one_row: false }];
             if let Some(server) = server_section(d, self.filter).filter(|_| !needle.is_empty()) {
                 // in libreria niente: resta solo cio' che dice il server
                 sections.retain(|s| !s.tiles.is_empty());
@@ -304,7 +314,7 @@ impl Shelf {
             } else {
                 format!("The whole library \u{00b7} {n}")
             },
-            tiles: stacks(d, &visible),
+            tiles: stacks(d, &visible, self.sort),
             one_row: false,
         });
         sections
@@ -409,6 +419,7 @@ impl Shelf {
             group: self.group.clone(),
             folders: self.folders,
             folder: self.folder.clone(),
+            sort: self.sort,
             ..Shelf::default()
         }
     }
@@ -491,6 +502,7 @@ impl Shelf {
                 Handled::Yes(None)
             }
             Some(Hit::Folders) => Handled::Yes(Some(Command::FoldersMenu(x, ui::hud_height(s)))),
+            Some(Hit::Sort) => Handled::Yes(Some(Command::SortMenu(x, ui::hud_height(s)))),
             Some(Hit::Groups) => {
                 // dai gruppi si torna alla libreria; da dentro, all'elenco dei gruppi
                 let home = self.groups && self.group.is_none() && self.series.is_none();
@@ -835,6 +847,23 @@ impl Shelf {
         rows
     }
 
+    /// Le righe del menu dell'ordine: quello scelto ha il segno.
+    pub(crate) fn sort_menu(current: LibrarySort) -> Vec<ui::Row> {
+        let mut rows = vec![ui::Row::Head(t("Ordina la libreria", "Sort the library"))];
+        rows.extend(LibrarySort::ALL.into_iter().map(|sort| ui::Row::Item {
+            label: sort_label(sort),
+            key: String::new(),
+            on: sort == current,
+            cmd: Command::Sort(sort),
+        }));
+        rows
+    }
+
+    pub fn set_sort(&mut self, sort: LibrarySort) {
+        self.sort = sort;
+        self.reset_view();
+    }
+
     /// Le copertine sono gia' disegnate: qui tutto il resto, sopra di loro.
     pub fn layers(&self, d: &ShelfData, view: (f32, f32), s: f32, m: &mut dyn Measure) -> Vec<Layer> {
         let g = Geo::new(view, s);
@@ -1076,6 +1105,7 @@ impl Shelf {
         let buttons = [
             (Hit::Groups, Icon::Shelf, geo.groups_x),
             (Hit::Browse, Icon::Tree, geo.browse_x),
+            (Hit::Sort, Icon::Sort, geo.sort_x),
             (Hit::Folders, Icon::Open, geo.folders_x),
             (Hit::Return, Icon::Close, geo.return_x),
         ];
@@ -1094,13 +1124,16 @@ impl Shelf {
             }
             if hovered {
                 let tip = match hit {
-                    Hit::Groups => t("Raccolte, liste, generi, editori", "Collections, lists, genres, publishers"),
-                    Hit::Folders => t("Cartelle della libreria", "Library folders"),
-                    Hit::Browse if self.browsing() => t("Torna alle serie", "Back to the series"),
-                    Hit::Browse => t("Per cartelle, come su disco", "By folder, as on disk"),
-                    _ => t("Torna alla lettura   \u{00b7}   Esc", "Back to reading   \u{00b7}   Esc"),
+                    Hit::Groups => {
+                        t("Raccolte, liste, generi, editori", "Collections, lists, genres, publishers").to_owned()
+                    }
+                    Hit::Folders => t("Cartelle della libreria", "Library folders").to_owned(),
+                    Hit::Browse if self.browsing() => t("Torna alle serie", "Back to the series").to_owned(),
+                    Hit::Browse => t("Per cartelle, come su disco", "By folder, as on disk").to_owned(),
+                    Hit::Sort => format!("{}: {}", t("Ordine", "Order"), sort_label(self.sort).to_lowercase()),
+                    _ => t("Torna alla lettura   {00b7}   Esc", "Back to reading   {00b7}   Esc").to_owned(),
                 };
-                ui::tooltip(&mut l, m, tip, x + 18.0 * s, h, vw, s);
+                ui::tooltip(&mut l, m, &tip, x + 18.0 * s, h, vw, s);
             }
         }
         l
@@ -1116,6 +1149,8 @@ struct BarGeo {
     folders_x: Option<f32>,
     /// La vista per cartelle.
     browse_x: Option<f32>,
+    /// L'ordine.
+    sort_x: Option<f32>,
     /// Solo se qualche volume fa parte di un gruppo.
     groups_x: Option<f32>,
     return_x: Option<f32>,
@@ -1132,6 +1167,8 @@ impl BarGeo {
         let folders_x = Some(r.round());
         r -= 36.0 * s + 4.0 * s;
         let browse_x = Some(r.round());
+        r -= 36.0 * s + 4.0 * s;
+        let sort_x = Some(r.round());
         let groups_x = d.entries[..d.library_len()].iter().any(|e| !e.groups.is_empty()).then(|| {
             r -= 36.0 * s + 4.0 * s;
             r.round()
@@ -1155,6 +1192,7 @@ impl BarGeo {
             search_w,
             folders_x,
             browse_x,
+            sort_x,
             groups_x,
             return_x,
         }
@@ -1176,6 +1214,9 @@ fn bar_hit(d: &ShelfData, shelf: &Shelf, view: (f32, f32), s: f32, x: f32) -> Op
     if inside(g.browse_x) {
         return Some(Hit::Browse);
     }
+    if inside(g.sort_x) {
+        return Some(Hit::Sort);
+    }
     if inside(g.groups_x) {
         return Some(Hit::Groups);
     }
@@ -1192,32 +1233,87 @@ fn tile_name(d: &ShelfData, t: &Tile) -> String {
     }
 }
 
-/// Le serie con piu' volumi diventano una pila, al posto del primo; tutto in
-/// ordine naturale di nome.
-fn stacks(d: &ShelfData, visible: &[usize]) -> Vec<Tile> {
-    let mut tiles: Vec<Tile> = Vec::new();
-    let mut seen: Vec<&str> = Vec::new();
+/// Le serie con piu' volumi diventano una pila, al posto del primo; tutto
+/// nell'ordine scelto.
+fn stacks(d: &ShelfData, visible: &[usize], sort: LibrarySort) -> Vec<Tile> {
+    let mut series: HashMap<&str, Vec<usize>> = HashMap::new();
     for &i in visible {
-        let Some(name) = d.entries[i].series.as_deref() else {
-            tiles.push(Tile::Volume(i));
-            continue;
-        };
-        if seen.contains(&name) {
-            continue;
+        if let Some(name) = d.entries[i].series.as_deref() {
+            series.entry(name).or_default().push(i);
         }
-        let mut members: Vec<usize> =
-            visible.iter().copied().filter(|&j| d.entries[j].series.as_deref() == Some(name)).collect();
-        if members.len() < 2 {
-            tiles.push(Tile::Volume(i));
-            continue;
-        }
-        seen.push(name);
-        members.sort_by(|&a, &b| by_number(&d.entries[a], &d.entries[b]));
-        let (cover, done) = cover_and_done(d, &members);
-        tiles.push(Tile::Series { name: name.to_owned(), cover, count: members.len(), done });
     }
-    tiles.sort_by(|a, b| natural_cmp(&tile_name(d, a), &tile_name(d, b)));
-    tiles
+    let mut tiles: Vec<(Tile, Rank)> = Vec::new();
+    for &i in visible {
+        match d.entries[i].series.as_deref().and_then(|name| Some(name).zip(series.get(name))) {
+            Some((name, members)) if members.len() >= 2 => {
+                // la pila sta al posto del primo dei suoi volumi
+                if members[0] != i {
+                    continue;
+                }
+                let mut members = members.clone();
+                members.sort_by(|&a, &b| by_number(&d.entries[a], &d.entries[b]));
+                let (cover, done) = cover_and_done(d, &members);
+                let rank = Rank::of(d, &members);
+                tiles.push((Tile::Series { name: name.to_owned(), cover, count: members.len(), done }, rank));
+            }
+            _ => tiles.push((Tile::Volume(i), Rank::of(d, &[i]))),
+        }
+    }
+    sorted(d, tiles, sort)
+}
+
+/// Cio' che conta per ordinare una cella: dei suoi volumi, il piu' recente
+/// fra gli aggiunti e fra i letti, e il primo anno.
+#[derive(Clone, Copy, Debug, Default)]
+struct Rank {
+    added: u64,
+    read: u64,
+    year: Option<u32>,
+}
+
+impl Rank {
+    fn of(d: &ShelfData, members: &[usize]) -> Rank {
+        members.iter().fold(Rank::default(), |r, &i| Rank {
+            added: r.added.max(d.entries[i].added),
+            read: r.read.max(d.read_at.get(i).copied().unwrap_or(0)),
+            year: match (r.year, d.entries[i].year) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            },
+        })
+    }
+}
+
+/// Le celle nell'ordine scelto: i piu' recenti fra gli aggiunti o i letti
+/// prima, gli anni dal piu' vecchio (chi non ne ha in fondo); a parita', e
+/// per nome, il nome. Un ordine totale: con uno incoerente `sort_by` si
+/// fermerebbe con un panic.
+fn sorted(d: &ShelfData, mut tiles: Vec<(Tile, Rank)>, sort: LibrarySort) -> Vec<Tile> {
+    tiles.sort_by(|(a, ra), (b, rb)| {
+        let first = match sort {
+            LibrarySort::Name => Ordering::Equal,
+            LibrarySort::Added => rb.added.cmp(&ra.added),
+            LibrarySort::Read => rb.read.cmp(&ra.read),
+            LibrarySort::Year => match (ra.year, rb.year) {
+                (Some(x), Some(y)) => x.cmp(&y),
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (None, None) => Ordering::Equal,
+            },
+        };
+        first.then_with(|| natural_cmp(&tile_name(d, a), &tile_name(d, b))).then_with(|| a.cover().cmp(&b.cover()))
+    });
+    tiles.into_iter().map(|(t, _)| t).collect()
+}
+
+/// Come si chiama un ordine, nel menu e nel suggerimento.
+fn sort_label(sort: LibrarySort) -> &'static str {
+    match sort {
+        LibrarySort::Name => t("Per nome", "By name"),
+        LibrarySort::Added => t("Aggiunti di recente", "Recently added"),
+        LibrarySort::Read => t("Letti di recente", "Recently read"),
+        LibrarySort::Year => t("Per anno di uscita", "By year"),
+    }
 }
 
 /// La fila dei volumi a meta', dal piu' recente.
@@ -1262,8 +1358,13 @@ fn folder_name(path: &Path) -> String {
 
 /// La vista per cartelle: in `here` prima le sottocartelle, poi i volumi; un
 /// server (non ha cartelle) le sue serie; all'inizio (`None`) le cartelle
-/// della libreria e i server.
-fn folder_sections(d: &ShelfData, visible: &[usize], here: Option<&Path>) -> Vec<Section> {
+/// della libreria e i server. Per nome l'ordine e' quello del disco; con un
+/// altro ordine cambia dentro le cartelle e dentro i volumi.
+fn folder_sections(d: &ShelfData, visible: &[usize], here: Option<&Path>, sort: LibrarySort) -> Vec<Section> {
+    let order = |tiles: Vec<(Tile, Rank)>| match sort {
+        LibrarySort::Name => tiles.into_iter().map(|(t, _)| t).collect(),
+        sort => sorted(d, tiles, sort),
+    };
     let folder_tile = |path: PathBuf, members: &[usize]| {
         let done = members.iter().filter(|&&j| d.status[j] == Status::Done).count();
         // in copertina il primo da leggere: la cartella si riconosce sempre
@@ -1286,18 +1387,24 @@ fn folder_sections(d: &ShelfData, visible: &[usize], here: Option<&Path>) -> Vec
                 (!members.is_empty()).then(|| folder_tile(source, &members))
             })
             .collect(),
-        Some(server) if remote::is_remote(server) => stacks(d, &within(server)),
+        Some(server) if remote::is_remote(server) => stacks(d, &within(server), sort),
         Some(folder) => {
             let c = library::folder_contents(d.entries, visible, folder);
             let mut out = Vec::new();
             if !c.folders.is_empty() {
                 out.push(section(
                     t("Cartelle", "Folders"),
-                    c.folders.into_iter().map(|(path, members)| folder_tile(path, &members)).collect(),
+                    order(
+                        c.folders
+                            .into_iter()
+                            .map(|(path, members)| (folder_tile(path, &members), Rank::of(d, &members)))
+                            .collect(),
+                    ),
                 ));
             }
             if !c.volumes.is_empty() {
-                out.push(section(t("Volumi", "Volumes"), c.volumes.into_iter().map(Tile::Volume).collect()));
+                let volumes = c.volumes.into_iter().map(|i| (Tile::Volume(i), Rank::of(d, &[i]))).collect();
+                out.push(section(t("Volumi", "Volumes"), order(volumes)));
             }
             return out;
         }
@@ -1434,6 +1541,7 @@ mod tests {
             number: series.map(|s| s.1),
             authors: None,
             groups: Vec::new(),
+            ..Entry::default()
         }
     }
 
@@ -1453,6 +1561,124 @@ mod tests {
         }
     }
 
+    /// Numeri a caso ripetibili (xorshift).
+    struct Caso(u64);
+
+    impl Caso {
+        fn n(&mut self, max: usize) -> usize {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            (self.0 % max as u64) as usize
+        }
+    }
+
+    /// Una libreria a caso: volumi in cartelle annidate (anche cartelle che
+    /// sono volumi e ne contengono altri), serie con e senza numero, volumi
+    /// dei server, raccolte e liste, stati, date e anni.
+    fn libreria_a_caso(caso: &mut Caso) -> (Vec<Entry>, Vec<Status>, Vec<u64>) {
+        const PEZZI: &[&str] = &["Manga", "Berserk", "Vol 1", "Vol 10", "X", "Xa", "Ça", "01", "1", "a.b"];
+        const SERIE: &[&str] = &["Berserk", "Batman", "Batman (2011)", "Saga"];
+        let mut entries = Vec::new();
+        for k in 0..20 + caso.n(120) {
+            let depth = caso.n(4);
+            let mut path = if caso.n(10) == 0 {
+                PathBuf::from(format!("http://casa:25600/opds/v1.2/books/{k}/pages/{{n}}#5:Volume {k}"))
+            } else {
+                let mut p = PathBuf::from(if caso.n(4) == 0 { "/g" } else { "/f" });
+                for _ in 0..depth {
+                    p.push(PEZZI[caso.n(PEZZI.len())]);
+                }
+                p
+            };
+            if !remote::is_remote(&path) && caso.n(5) != 0 {
+                path.push(format!("{} {k}.cbz", PEZZI[caso.n(PEZZI.len())]));
+            }
+            let series = (caso.n(3) != 0).then(|| SERIE[caso.n(SERIE.len())].to_owned());
+            let mut groups = Vec::new();
+            if caso.n(4) == 0 {
+                groups.push(library::Group::new(GroupKind::Collection, "Raccolta", None));
+            }
+            if caso.n(5) == 0 {
+                groups.push(library::Group::new(GroupKind::ReadingList, "Lista", Some(caso.n(5) as u32)));
+            }
+            entries.push(Entry {
+                title: fumetto_core::title_of(&path),
+                path,
+                number: series.as_ref().and_then(|_| (caso.n(3) != 0).then(|| caso.n(20) as u32)),
+                series,
+                groups,
+                added: caso.n(5) as u64,
+                year: (caso.n(2) == 0).then(|| 1980 + caso.n(5) as u32),
+                ..Entry::default()
+            });
+        }
+        let status = (0..entries.len())
+            .map(|_| match caso.n(3) {
+                0 => Status::New,
+                1 => Status::Done,
+                _ => Status::Reading(caso.n(10), 10),
+            })
+            .collect();
+        let read_at = (0..entries.len()).map(|_| caso.n(4) as u64).collect();
+        (entries, status, read_at)
+    }
+
+    /// Guarda la libreria come la vede chi la usa: le sezioni, le copertine,
+    /// il disegno, il mouse sopra; poi entra nelle celle (serie, cartelle,
+    /// gruppi) e torna indietro, fino a `depth` livelli.
+    fn esplora(shelf: &mut Shelf, d: &ShelfData, depth: usize) {
+        let view = (1280.0, 800.0);
+        let _ = shelf.sections(d);
+        let _ = shelf.cover_slots(d, view, 1.0);
+        let _ = shelf.layers(d, view, 1.0, &mut fumetto_render::Estimate);
+        let _ = shelf.cover_slots(d, (420.0, 300.0), 2.0);
+        for (x, y) in [(60.0, 100.0), (200.0, 300.0), (60.0, 30.0), (1250.0, 26.0)] {
+            shelf.motion(d, view, 1.0, x, y);
+        }
+        if depth == 0 {
+            return;
+        }
+        let tiles = Geo::new(view, 1.0);
+        let n = shelf.layout(d, &tiles).placed.len();
+        for k in 0..n.min(4) {
+            let tile = shelf.layout(d, &tiles).placed.into_iter().nth(k).map(|p| p.tile);
+            if let Some(tile) = tile {
+                let _ = Shelf::tile_menu(d, &tile);
+                if !matches!(tile, Tile::Volume(_)) {
+                    let _ = shelf.choose(d, tile);
+                    esplora(shelf, d, depth - 1);
+                    shelf.key(Key::Backspace, d, view, 1.0);
+                }
+            }
+        }
+        for key in [Key::Right, Key::Down, Key::End, Key::Home, Key::PageDown, Key::Escape] {
+            shelf.key(key, d, view, 1.0);
+        }
+    }
+
+    #[test]
+    fn librerie_a_caso() {
+        let mut caso = Caso(0x2545_f491_4f6c_dd1d);
+        let roots = [PathBuf::from("/f"), PathBuf::from("/g")];
+        for _ in 0..15 {
+            let (entries, status, read_at) = libreria_a_caso(&mut caso);
+            let d = ShelfData { roots: &roots, ..data(&entries, &status, &read_at) };
+            for folders in [false, true] {
+                for groups in [false, true] {
+                    for filter in Filter::ALL {
+                        for sort in LibrarySort::ALL {
+                            for search in ["", "ba", "zz"] {
+                                let mut shelf =
+                                    Shelf { folders, groups, filter, sort, search: search.into(), ..Shelf::default() };
+                                esplora(&mut shelf, &d, 3);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
     fn library() -> (Vec<Entry>, Vec<Status>, Vec<u64>) {
         let entries = vec![
             entry("Acqua Alta", None),
@@ -1473,6 +1699,7 @@ mod tests {
             number: series.map(|s| s.1),
             authors: None,
             groups: Vec::new(),
+            ..Entry::default()
         };
         let server = "http://casa:25600/opds/v1.2/books";
         let e = vec![
@@ -1567,6 +1794,29 @@ mod tests {
         );
     }
 
+    #[test]
+    fn l_ordine_della_libreria() {
+        let (mut e, st, at) = library();
+        for (entry, (added, year)) in
+            e.iter_mut().zip([(300, None), (100, Some(1991)), (200, Some(1990)), (50, Some(1985))])
+        {
+            (entry.added, entry.year) = (added, year);
+        }
+        let d = data(&e, &st, &at);
+        let nebbia = Tile::Series { name: "Nebbia sul Porto".into(), cover: 2, count: 2, done: 1 };
+        let whole = |sort| {
+            let shelf = Shelf { sort, ..Shelf::default() };
+            shelf.sections(&d).pop().unwrap().tiles
+        };
+        assert_eq!(whole(LibrarySort::Name), [Tile::Volume(0), nebbia.clone(), Tile::Volume(3)]);
+        assert_eq!(whole(LibrarySort::Read), [nebbia.clone(), Tile::Volume(3), Tile::Volume(0)], "letti: 20, 10, mai");
+        assert_eq!(whole(LibrarySort::Added), [Tile::Volume(0), nebbia.clone(), Tile::Volume(3)], "300, 200, 50");
+        assert_eq!(whole(LibrarySort::Year), [Tile::Volume(3), nebbia, Tile::Volume(0)], "1985, 1990, senza anno");
+        let menu = Shelf::sort_menu(LibrarySort::Read);
+        let on: Vec<bool> =
+            menu.iter().filter_map(|r| if let ui::Row::Item { on, .. } = r { Some(*on) } else { None }).collect();
+        assert_eq!(on, [false, false, true, false]);
+    }
     #[test]
     fn cercare_filtrare_e_aprire_una_serie() {
         let (e, st, at) = library();

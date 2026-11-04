@@ -185,6 +185,7 @@ pub(super) fn load_catalog(server: &Server) -> Option<Catalog> {
             number: e.number,
             authors: e.authors,
             groups: e.groups,
+            ..Entry::default()
         })
         .collect();
     Some(Catalog { entries, reads: Vec::new(), links: saved.links, fetched: Instant::now(), stale: None })

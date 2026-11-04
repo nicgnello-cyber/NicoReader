@@ -647,7 +647,7 @@ fn remote_entry(template: &str, count: usize, title: String, series: Option<&str
         None => (number.map(|_| name), number),
     };
     let authors = (!authors.is_empty()).then(|| authors.join(", "));
-    Entry { path, title, series, number, authors, groups: Vec::new() }
+    Entry { path, title, series, number, authors, ..Entry::default() }
 }
 
 /// Il primo numero nel titolo ("Volume 3", "Capitolo 12 - Il ritorno").

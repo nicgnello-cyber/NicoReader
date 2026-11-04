@@ -197,6 +197,9 @@ pub enum Command {
     Group(fumetto_core::library::GroupKind, String),
     Folder(PathBuf),
     FoldersMenu(f32, f32),
+    /// Il menu dell'ordine della libreria, e l'ordine scelto.
+    SortMenu(f32, f32),
+    Sort(fumetto_core::LibrarySort),
     AskServer,
 }
 
@@ -523,6 +526,21 @@ impl Ui {
             }
             Command::Folder(path) => {
                 self.shelf.enter_folder(path);
+                None
+            }
+            Command::SortMenu(x, y) => {
+                let width = 300.0 * ctx.scale;
+                self.menu = Some(Menu {
+                    x: x - width + 36.0 * ctx.scale,
+                    y: y + 6.0 * ctx.scale,
+                    selected: None,
+                    rows: Shelf::sort_menu(self.shelf.sort),
+                    width,
+                });
+                None
+            }
+            Command::Sort(sort) => {
+                self.shelf.set_sort(sort);
                 None
             }
             Command::FoldersMenu(x, y) => {

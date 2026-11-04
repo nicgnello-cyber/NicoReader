@@ -267,14 +267,31 @@ impl App {
         self.changed();
     }
 
-    /// La vista della libreria (per cartelle, e quale) si ricorda fra un
-    /// avvio e l'altro: se e' cambiata, le impostazioni vanno riscritte.
+    /// La vista della libreria (per cartelle, e quale; l'ordine) si ricorda
+    /// fra un avvio e l'altro: se e' cambiata, le impostazioni vanno riscritte.
     pub(super) fn keep_library_view(&mut self) {
         let shelf = &self.ui.shelf;
-        if (shelf.folders, &shelf.folder) != (self.settings.library_folders, &self.settings.library_folder) {
-            (self.settings.library_folders, self.settings.library_folder) = (shelf.folders, shelf.folder.clone());
+        let (s, now) = (&mut self.settings, (shelf.folders, &shelf.folder, shelf.sort));
+        if now != (s.library_folders, &s.library_folder, s.library_sort) {
+            (s.library_folders, s.library_folder, s.library_sort) = (shelf.folders, shelf.folder.clone(), shelf.sort);
             self.settings_dirty = true;
         }
+    }
+
+    /// Un errore nel codice della libreria (un panic, gia' annotato in
+    /// errori.txt): la libreria torna all'inizio, per serie e per nome, e il
+    /// programma resta aperto. Se l'errore dipendeva dalla vista, non torna.
+    pub(super) fn shelf_failed(&mut self) {
+        if let Some(dir) = self.settings_path.as_deref().and_then(Path::parent) {
+            crate::crash::survived(dir);
+        }
+        self.ui.shelf = fumetto::shelf::Shelf::default();
+        let text = t(
+            "Un errore nella libreria: riparte dall'inizio. I dettagli sono in errori.txt",
+            "An error in the library: it starts over. The details are in errori.txt",
+        );
+        self.ui.toast(text, Instant::now());
+        self.changed();
     }
 
     pub(super) fn refresh_shelf(&mut self) {

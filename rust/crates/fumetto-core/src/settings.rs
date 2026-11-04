@@ -49,6 +49,8 @@ pub struct Settings {
     /// guardata: alla riapertura si ritrova li'.
     pub library_folders: bool,
     pub library_folder: Option<PathBuf>,
+    /// Come si ordina la libreria.
+    pub library_sort: LibrarySort,
 }
 
 impl Default for Settings {
@@ -72,6 +74,7 @@ impl Default for Settings {
             last_version: String::new(),
             library_folders: false,
             library_folder: None,
+            library_sort: LibrarySort::Name,
         }
     }
 }
@@ -120,6 +123,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn l_ordine_della_libreria() {
+        let s: Settings = serde_json::from_str(r#"{"hud": false, "library_sort": "read"}"#).unwrap();
+        assert_eq!((s.hud, s.library_sort), (false, LibrarySort::Read));
+        let s: Settings = serde_json::from_str(r#"{"hud": false, "library_sort": "da una versione nuova"}"#).unwrap();
+        assert_eq!((s.hud, s.library_sort), (false, LibrarySort::Name), "un ordine sconosciuto non perde il resto");
+        let json = serde_json::to_string(&Settings { library_sort: LibrarySort::Year, ..Settings::default() }).unwrap();
+        assert!(json.contains(r#""library_sort":"year""#), "{json}");
+    }
+
+    #[test]
     fn si_ricorda_la_barra_nascosta() {
         let path = std::env::temp_dir().join(format!("fumetto-impostazioni-{}", std::process::id())).join("i.json");
         assert!(Settings::load(&path).hud, "di partenza la barra c'e'");
@@ -132,5 +145,34 @@ mod tests {
         let old = Settings::load(&path);
         assert!(!old.hud && old.webtoon && !old.upscale && old.slideshow == 5);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+}
+
+/// Come si ordina la libreria: per nome, dai piu' recenti fra gli aggiunti o
+/// fra i letti, per anno di uscita.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LibrarySort {
+    #[default]
+    Name,
+    Added,
+    Read,
+    Year,
+}
+
+impl LibrarySort {
+    pub const ALL: [LibrarySort; 4] = [LibrarySort::Name, LibrarySort::Added, LibrarySort::Read, LibrarySort::Year];
+}
+
+/// Un ordine che questa versione non conosce (scritto da una piu' nuova)
+/// vale "per nome": le altre impostazioni non si perdono.
+impl<'de> Deserialize<'de> for LibrarySort {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(match String::deserialize(d)?.as_str() {
+            "added" => LibrarySort::Added,
+            "read" => LibrarySort::Read,
+            "year" => LibrarySort::Year,
+            _ => LibrarySort::Name,
+        })
     }
 }

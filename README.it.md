@@ -100,6 +100,11 @@ in alto il percorso per risalire (anche con Backspace o Esc). Le cartelle con
 dentro serie diverse, come quelle di un autore, sono anche raccolte.
 NicoReader ricorda la vista e l'ultima cartella aperta.
 
+L'icona a righe accanto ordina la libreria: per nome, per aggiunti di recente,
+per letti di recente o per anno di uscita (dalla ComicInfo.xml o dai dati
+dell'EPUB). Due serie con lo stesso nome in cartelle diverse, come
+`Batman (2011)` e `Batman (2016)`, restano separate.
+
 L'icona degli scaffali nella barra della libreria mostra raccolte, liste di
 lettura, generi ed editori: dalla ComicInfo.xml (SeriesGroup, StoryArc con il
 suo numero, Genre, Publisher), dai dati degli EPUB e da un server Komga o

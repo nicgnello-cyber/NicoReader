@@ -35,6 +35,13 @@ pub fn install(dir: PathBuf) {
     }));
 }
 
+/// Un panic che il programma ha superato (lo si e' fermato e si e' rimesso
+/// a posto cio' che lo causava): resta nel registro, ma non e' una chiusura,
+/// e la volta dopo non c'e' niente da dire.
+pub fn survived(dir: &Path) {
+    let _ = std::fs::remove_file(dir.join(FLAG));
+}
+
 /// L'avviso da mostrare se l'ultima volta il programma si e' chiuso per un
 /// errore; il segno si toglie, cosi' l'avviso compare una volta sola.
 pub fn last_crash(dir: &Path) -> Option<String> {

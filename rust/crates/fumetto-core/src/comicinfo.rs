@@ -34,6 +34,8 @@ pub struct ComicInfo {
     /// Le storie lunghe che attraversano piu' serie (StoryArc), con il posto
     /// del volume nella storia (StoryArcNumber): le liste di lettura.
     pub story_arcs: Vec<(String, Option<u32>)>,
+    /// L'anno di uscita (Year), per ordinare la libreria.
+    pub year: Option<u32>,
 }
 
 impl ComicInfo {
@@ -89,6 +91,7 @@ impl ComicInfo {
             genres: list("Genre"),
             series_group: list("SeriesGroup"),
             story_arcs,
+            year: tag("Year").as_deref().and_then(year_of),
         };
         (info != ComicInfo::default()).then_some(info)
     }
@@ -239,6 +242,15 @@ fn unescape(s: &str) -> String {
 pub fn is_comic_info(name: &str) -> bool {
     let file = name.rsplit(['/', '\\']).next().unwrap_or(name);
     file.eq_ignore_ascii_case("ComicInfo.xml")
+}
+
+/// L'anno da una data o da un anno scritto ("1987", "1987-04-01"): le prime
+/// quattro cifre, se sono un anno plausibile.
+pub fn year_of(text: &str) -> Option<u32> {
+    let text = text.trim();
+    let year: u32 = text.get(..4)?.parse().ok()?;
+    let more = text[4..].chars().next();
+    ((1800..=3000).contains(&year) && !more.is_some_and(|c| c.is_ascii_digit())).then_some(year)
 }
 
 #[cfg(test)]
