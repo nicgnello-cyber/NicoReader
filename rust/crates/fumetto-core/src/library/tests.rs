@@ -1,3 +1,4 @@
+use super::scan::{entry, scan_with};
 use super::*;
 
 #[test]
