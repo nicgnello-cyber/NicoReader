@@ -12,6 +12,13 @@ use fumetto_core::{Fit, Saved, Target, prefetch_order};
 
 use crate::strip::{Strip, glide_step};
 
+mod info;
+mod layout;
+mod scroll;
+#[cfg(test)]
+mod tests;
+mod zoom;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
     Single,
@@ -249,51 +256,6 @@ impl Reader {
         self.settle_strip_width();
     }
 
-    fn strip_width(&self) -> u32 {
-        ((self.view.0 as f32 * self.strip_frac.unwrap_or(STRIP_FRAC)).round() as u32).max(64)
-    }
-
-    /// La larghezza naturale del nastro per queste strisce e questa finestra:
-    /// al massimo una volta e mezza la loro misura vera, e al massimo il 60%
-    /// della finestra. `None` finche' non si conoscono l'una e l'altra.
-    fn natural_strip_frac(&self) -> Option<f32> {
-        if self.view.0 <= 1 {
-            return None;
-        }
-        let mut widths: Vec<u32> =
-            (0..self.len).filter(|&i| !self.broken[i]).filter_map(|i| self.native[i].map(|n| n.0)).collect();
-        if widths.is_empty() {
-            return None;
-        }
-        widths.sort_unstable();
-        let typical = widths[widths.len() / 2] as f32;
-        Some((STRIP_GROW * typical / self.view.0 as f32).min(STRIP_FRAC).clamp(0.2, 1.0))
-    }
-
-    /// Nel nastro, la larghezza non ancora scelta diventa quella naturale
-    /// appena la si puo' calcolare, e da li' resta: una colonna che cambiasse
-    /// man mano che arrivano le pagine le farebbe rifare tutte.
-    fn settle_strip_width(&mut self) {
-        if self.mode == Mode::Strip
-            && self.strip_frac.is_none()
-            && let Some(f) = self.natural_strip_frac()
-        {
-            let old = self.strip_width();
-            self.strip_frac = Some(f);
-            self.rescale_strip(old);
-        }
-    }
-
-    /// La larghezza del nastro e' cambiata: gli scostamenti in pixel si
-    /// riscalano, e si resta nello stesso punto della pagina.
-    fn rescale_strip(&mut self, old_width: u32) {
-        let new = self.strip_width();
-        if old_width > 0 && new != old_width {
-            self.strip.offset *= new as f32 / old_width as f32;
-            self.glide *= new as f32 / old_width as f32;
-        }
-    }
-
     pub fn target(&self) -> Target {
         let (w, h) = self.view;
         let fit = match self.mode {
@@ -358,25 +320,6 @@ impl Reader {
         }
     }
 
-    /// Pronta da disegnare: preparata e di misura nota, o illeggibile (nera).
-    fn showable(&self, pages: &impl Pages, i: usize) -> bool {
-        self.broken[i] || (pages.has(i) && self.native[i].is_some())
-    }
-
-    /// La posizione nel nastro com'e' adesso, anche se ancora una frazione.
-    fn strip_now(&self) -> Strip {
-        match self.anchor_frac {
-            Some(f) => Strip { anchor: self.strip.anchor, offset: f * self.strip_height(self.strip.anchor) },
-            None => self.strip,
-        }
-    }
-
-    /// Da frazione a pixel, con l'altezza migliore che si conosce.
-    fn settle_anchor(&mut self) {
-        self.strip = self.strip_now();
-        self.anchor_frac = None;
-    }
-
     fn go_to(&mut self, page: usize) {
         self.page = page;
         self.strip = Strip::at(page);
@@ -432,21 +375,6 @@ impl Reader {
         }
     }
 
-    /// Altezza a schermo di una pagina nel nastro; se non la si conosce ancora,
-    /// quella media delle pagine gia' viste (i webtoon sono quasi tutti uguali).
-    fn strip_height(&self, i: usize) -> f32 {
-        let w = self.strip_width() as f32;
-        match self.native.get(i).copied().flatten() {
-            Some((nw, nh)) => nh as f32 * w / nw as f32,
-            None if self.ratios.1 == 0 => w * 1.5,
-            None => w * (self.ratios.0 / self.ratios.1 as f64) as f32,
-        }
-    }
-
-    fn strip_visible(&self) -> Vec<(usize, f32)> {
-        self.strip_now().visible(|i| self.strip_height(i), self.len, self.view.1 as f32)
-    }
-
     /// Si e' alla fine del volume: avanti non c'e' piu' niente (l'ultima
     /// pagina a schermo; nel nastro, il fondo dell'ultima sul bordo basso).
     pub fn at_end(&self) -> bool {
@@ -488,6 +416,74 @@ impl Reader {
     /// pagina (per misurare quanto ci mette ad arrivare sullo schermo).
     pub fn act(&mut self, action: Action, now: Instant) -> bool {
         let before = (self.page, self.mode);
+        match action {
+            Action::Next | Action::Prev | Action::First | Action::Last | Action::GoTo(_) => self.navigate(action),
+            // nelle pagine la rotella gira pagina
+            Action::Scroll(dy) if self.mode != Mode::Strip => {
+                return self.act(if dy > 0.0 { Action::Next } else { Action::Prev }, now);
+            }
+            Action::Scroll(dy) => self.glide += dy,
+            Action::ToggleStrip => self.toggle_strip(),
+            Action::ToggleDouble => self.toggle_double(),
+            Action::ToggleCover => {
+                self.cover_alone = !self.cover_alone;
+                self.page = self.group_of(self.page).0;
+            }
+            Action::ToggleManga => self.manga = !self.manga,
+            Action::ToggleLinear => self.linear = !self.linear,
+            Action::StripWider(k) => self.widen_strip(k),
+            Action::Zoom { factor, x, y } => self.zoom_at(factor, x, y),
+            Action::ZoomReset => self.zoom_to(Zoom::Page),
+            Action::ZoomIn | Action::ZoomOut => {
+                let k: f32 = if action == Action::ZoomIn { 1.25 } else { 1.0 / 1.25 };
+                match self.mode {
+                    Mode::Single => self.zoom_at(k, self.view.0 as f32 / 2.0, self.view.1 as f32 / 2.0),
+                    Mode::Strip => self.widen_strip(k.sqrt()),
+                    Mode::Double => {}
+                }
+            }
+            Action::ZoomTo(z) => self.zoom_to(z),
+            Action::Pan(dx, dy) => {
+                if let Some((_, _, w, h)) = self.single_rect(self.page) {
+                    self.center.0 -= dx / w;
+                    self.center.1 -= dy / h;
+                }
+            }
+            Action::Rotate(clockwise) => self.rotate(if clockwise { 90 } else { 270 }),
+            Action::ToggleTrim => self.trim = !self.trim,
+            Action::ToggleBookmark => self.toggle_bookmark(),
+            // della finestra e dei volumi: le fa l'app
+            Action::ToggleFullscreen
+            | Action::Open
+            | Action::OpenFolder
+            | Action::Close
+            | Action::AskPage
+            | Action::ToggleHud
+            | Action::ToggleLibrary
+            | Action::AddLibraryFolder
+            | Action::Quit
+            | Action::ToggleThumbs
+            | Action::ToggleSlideshow
+            | Action::ToggleUpscale
+            | Action::ToggleWebtoon
+            | Action::SavePage
+            | Action::CopyPage
+            | Action::ToggleLens
+            | Action::ToggleSettings => {}
+        }
+        self.clamp_center();
+        let turned = self.mode != Mode::Strip && (self.page, self.mode) != before && before.1 == self.mode;
+        if turned {
+            // in fretta se il giro arriva meno di un quarto di secondo dopo il precedente
+            self.hurry = self.last_turn.is_some_and(|t| now - t < Duration::from_millis(250));
+            self.last_turn = Some(now);
+        }
+        turned
+    }
+
+    /// Avanti, indietro, all'inizio, alla fine, a una pagina. Nel nastro
+    /// avanti e indietro scorrono di quasi una finestra.
+    fn navigate(&mut self, action: Action) {
         let last = self.len.saturating_sub(1);
         match action {
             Action::Next | Action::Prev if self.mode == Mode::Strip => {
@@ -520,99 +516,44 @@ impl Reader {
                 self.go_to(self.group_of(p).0);
                 self.jumped = true;
             }
-            Action::Scroll(dy) => match self.mode {
-                Mode::Strip => self.glide += dy,
-                _ => return self.act(if dy > 0.0 { Action::Next } else { Action::Prev }, now),
-            },
-            Action::ToggleStrip => {
-                self.glide = 0.0;
-                self.zoom = 1.0;
-                self.mode = match self.mode {
-                    Mode::Strip => {
-                        self.page = self.strip.anchor;
-                        Mode::Single
-                    }
-                    _ => {
-                        self.go_to(self.page);
-                        Mode::Strip
-                    }
-                };
-                self.settle_strip_width();
-            }
-            Action::ToggleDouble => {
-                self.zoom = 1.0;
-                self.mode = if self.mode == Mode::Double { Mode::Single } else { Mode::Double };
-                if self.mode == Mode::Double {
-                    self.page = self.group_of(self.here()).0;
-                } else {
-                    self.page = self.here();
-                }
-            }
-            Action::ToggleCover => {
-                self.cover_alone = !self.cover_alone;
-                self.page = self.group_of(self.page).0;
-            }
-            Action::ToggleManga => self.manga = !self.manga,
-            Action::ToggleLinear => self.linear = !self.linear,
-            Action::StripWider(k) => {
-                let old = self.strip_width();
-                self.strip_frac = Some((self.strip_frac.unwrap_or(STRIP_FRAC) * k).clamp(0.2, 1.0));
-                self.rescale_strip(old);
-            }
-            Action::Zoom { factor, x, y } => self.zoom_at(factor, x, y),
-            Action::ZoomReset => return self.act(Action::ZoomTo(Zoom::Page), now),
-            Action::ZoomIn | Action::ZoomOut => {
-                let k: f32 = if action == Action::ZoomIn { 1.25 } else { 1.0 / 1.25 };
-                match self.mode {
-                    Mode::Single => self.zoom_at(k, self.view.0 as f32 / 2.0, self.view.1 as f32 / 2.0),
-                    Mode::Strip => return self.act(Action::StripWider(k.sqrt()), now),
-                    Mode::Double => {}
-                }
-            }
-            Action::ZoomTo(z) => self.zoom_to(z),
-            Action::Pan(dx, dy) => {
-                if let Some((_, _, w, h)) = self.single_rect(self.page) {
-                    self.center.0 -= dx / w;
-                    self.center.1 -= dy / h;
-                }
-            }
-            Action::Rotate(clockwise) => self.rotate(if clockwise { 90 } else { 270 }),
-            Action::ToggleTrim => self.trim = !self.trim,
-            Action::ToggleBookmark => {
-                let here = self.here();
-                match self.bookmarks.binary_search(&here) {
-                    Ok(at) => {
-                        self.bookmarks.remove(at);
-                    }
-                    Err(at) => self.bookmarks.insert(at, here),
-                }
-            }
-            Action::ToggleFullscreen
-            | Action::Open
-            | Action::OpenFolder
-            | Action::Close
-            | Action::AskPage
-            | Action::ToggleHud
-            | Action::ToggleLibrary
-            | Action::AddLibraryFolder
-            | Action::Quit
-            | Action::ToggleThumbs
-            | Action::ToggleSlideshow
-            | Action::ToggleUpscale
-            | Action::ToggleWebtoon
-            | Action::SavePage
-            | Action::CopyPage
-            | Action::ToggleLens
-            | Action::ToggleSettings => {}
+            _ => {}
         }
-        self.clamp_center();
-        let turned = self.mode != Mode::Strip && (self.page, self.mode) != before && before.1 == self.mode;
-        if turned {
-            // in fretta se il giro arriva meno di un quarto di secondo dopo il precedente
-            self.hurry = self.last_turn.is_some_and(|t| now - t < Duration::from_millis(250));
-            self.last_turn = Some(now);
+    }
+
+    /// Dal nastro alle pagine (dalla pagina in cima) e viceversa.
+    fn toggle_strip(&mut self) {
+        self.glide = 0.0;
+        self.zoom = 1.0;
+        self.mode = match self.mode {
+            Mode::Strip => {
+                self.page = self.strip.anchor;
+                Mode::Single
+            }
+            _ => {
+                self.go_to(self.page);
+                Mode::Strip
+            }
+        };
+        self.settle_strip_width();
+    }
+
+    /// Dalla pagina singola alla doppia (dall'inizio della coppia) e viceversa.
+    fn toggle_double(&mut self) {
+        self.zoom = 1.0;
+        let here = self.here();
+        self.mode = if self.mode == Mode::Double { Mode::Single } else { Mode::Double };
+        self.page = if self.mode == Mode::Double { self.group_of(here).0 } else { here };
+    }
+
+    /// Segna la pagina, o toglie il segno; le pagine segnate restano in ordine.
+    fn toggle_bookmark(&mut self) {
+        let here = self.here();
+        match self.bookmarks.binary_search(&here) {
+            Ok(at) => {
+                self.bookmarks.remove(at);
+            }
+            Err(at) => self.bookmarks.insert(at, here),
         }
-        turned
     }
 
     /// Gira le pagine di `degrees` in senso orario. Le misure note restano
@@ -628,354 +569,4 @@ impl Reader {
     pub fn typical_ratio(&self) -> f32 {
         if self.ratios.1 == 0 { 1.5 } else { (self.ratios.0 / self.ratios.1 as f64) as f32 }
     }
-
-    /// Il rettangolo della pagina singola, con lo zoom: (x, y, larghezza, altezza).
-    fn single_rect(&self, page: usize) -> Option<(f32, f32, f32, f32)> {
-        let (nw, nh) = self.native.get(page).copied().flatten()?;
-        let (vw, vh) = (self.view.0 as f32, self.view.1 as f32);
-        let (w0, h0) = Fit::Contain { width: self.view.0, height: self.view.1 }.size(nw, nh);
-        let (w, h) = (w0 as f32 * self.zoom, h0 as f32 * self.zoom);
-        // lungo un asse: centrata se ci sta, altrimenti mai oltre i bordi
-        let axis = |view: f32, size: f32, c: f32| {
-            if size <= view { ((view - size) / 2.0).round() } else { (view / 2.0 - c * size).clamp(view - size, 0.0) }
-        };
-        Some((axis(vw, w, self.center.0), axis(vh, h, self.center.1), w, h))
-    }
-
-    fn zoom_at(&mut self, factor: f32, px: f32, py: f32) {
-        if self.mode != Mode::Single {
-            return;
-        }
-        let Some((x, y, w, h)) = self.single_rect(self.page) else { return };
-        // il punto della pagina sotto il puntatore resta sotto il puntatore
-        let (u, v) = ((px - x) / w, (py - y) / h);
-        let zoom = (self.zoom * factor).clamp(1.0, MAX_ZOOM);
-        let k = zoom / self.zoom;
-        let (w2, h2) = (w * k, h * k);
-        self.zoom = zoom;
-        self.center = ((self.view.0 as f32 / 2.0 - px) / w2 + u, (self.view.1 as f32 / 2.0 - py) / h2 + v);
-    }
-
-    fn zoom_to(&mut self, z: Zoom) {
-        let native = self.native.get(self.here()).copied().flatten();
-        match self.mode {
-            Mode::Single => {
-                let Some((nw, nh)) = native else { return };
-                let (w0, _) = Fit::Contain { width: self.view.0, height: self.view.1 }.size(nw, nh);
-                self.zoom = match z {
-                    Zoom::Page => 1.0,
-                    Zoom::Width => self.view.0 as f32 / w0 as f32,
-                    Zoom::Actual => nw as f32 / w0 as f32,
-                }
-                .clamp(1.0, MAX_ZOOM);
-                // si parte dall'alto: e' li' che si comincia a leggere
-                self.center = (0.5, 0.0);
-            }
-            Mode::Strip => {
-                let old = self.strip_width();
-                let natural = self.natural_strip_frac().unwrap_or(STRIP_FRAC);
-                self.strip_frac = Some(
-                    match (z, native) {
-                        (Zoom::Page, _) | (Zoom::Actual, None) => natural,
-                        (Zoom::Width, _) => 1.0,
-                        (Zoom::Actual, Some((nw, _))) => nw as f32 / self.view.0 as f32,
-                    }
-                    .clamp(0.2, 1.0),
-                );
-                self.rescale_strip(old);
-            }
-            Mode::Double => {}
-        }
-    }
-
-    /// Quanto e' ingrandita la pagina rispetto ai suoi pixel, in percento
-    /// (100: un pixel della pagina per un pixel dello schermo). `None` dove
-    /// lo zoom non si regola (la doppia pagina).
-    pub fn zoom_percent(&self) -> Option<u32> {
-        let (nw, _) = self.native.get(self.here()).copied().flatten()?;
-        let shown = match self.mode {
-            Mode::Single => self.single_rect(self.page)?.2,
-            Mode::Strip => self.strip_width() as f32,
-            Mode::Double => return None,
-        };
-        Some((shown / nw as f32 * 100.0).round() as u32)
-    }
-
-    /// Riporta il centro dove la pagina lo lascia davvero, dopo i bordi.
-    fn clamp_center(&mut self) {
-        if self.zoom <= 1.0 {
-            self.zoom = 1.0;
-            self.center = (0.5, 0.5);
-            return;
-        }
-        if let Some((x, y, w, h)) = self.single_rect(self.page) {
-            self.center = ((self.view.0 as f32 / 2.0 - x) / w, (self.view.1 as f32 / 2.0 - y) / h);
-        }
-    }
-
-    /// Scorrimento morbido del nastro; `true` se c'e' ancora movimento.
-    pub fn advance_glide(&mut self, dt: f32) -> bool {
-        if self.mode != Mode::Strip || !self.gliding() {
-            self.glide = 0.0;
-            return false;
-        }
-        let step = glide_step(self.glide, dt);
-        self.glide -= step;
-        self.settle_anchor(); // si scorre: da qui in poi conta la posizione in pixel
-        let before = self.strip;
-        let heights: Vec<f32> = (0..self.len).map(|i| self.strip_height(i)).collect();
-        self.strip.scroll(step, |i| heights[i], self.len, self.view.1 as f32);
-        if self.strip == before && step.abs() >= 1.0 {
-            self.glide = 0.0; // contro il bordo del volume
-        }
-        true
-    }
-
-    /// Le pagine volute sono tutte pronte (e se ne conosce la misura)?
-    pub fn ready(&self, pages: &impl Pages) -> bool {
-        let wanted = self.wanted();
-        !wanted.is_empty() && wanted.iter().all(|&i| self.showable(pages, i))
-    }
-
-    /// Cosa va a schermo, e dove.
-    pub fn layout(&self, pages: &impl Pages) -> Vec<Item> {
-        match self.mode {
-            Mode::Strip => {
-                let sw = self.strip_width() as f32;
-                let x = ((self.view.0 as f32 - sw) / 2.0).round();
-                self.strip_visible()
-                    .into_iter()
-                    .map(|(i, y)| Item { page: i, x, y: y.round(), w: sw, h: self.strip_height(i).round() })
-                    .collect()
-            }
-            _ => {
-                // le pagine nuove non sono pronte: restano quelle di prima, non
-                // un lampo nero (niente animazioni, ma nemmeno buchi)
-                let ok = |s: usize| {
-                    let (s, n) = self.group_of(s);
-                    (s..s + n).all(|i| self.showable(pages, i))
-                };
-                let start = Some(self.page).filter(|&p| ok(p)).or(self.last_drawn.filter(|&p| ok(p)));
-                start.map_or(Vec::new(), |s| self.paged_items(s))
-            }
-        }
-    }
-
-    fn paged_items(&self, start: usize) -> Vec<Item> {
-        if self.mode == Mode::Single {
-            return self.single_rect(start).map(|(x, y, w, h)| Item { page: start, x, y, w, h }).into_iter().collect();
-        }
-        let (s, n) = self.group_of(start);
-        let mut order: Vec<usize> = (s..s + n).collect();
-        if self.manga {
-            order.reverse(); // da destra a sinistra: la prima pagina sta a destra
-        }
-        let fit = Fit::Spread { width: self.view.0, height: self.view.1 };
-        let sizes: Vec<(u32, u32)> =
-            order.iter().filter_map(|&i| self.native[i].map(|(w, h)| fit.size(w, h))).collect();
-        let total: u32 = sizes.iter().map(|s| s.0).sum();
-        let mut x = self.view.0.saturating_sub(total) / 2;
-        order
-            .into_iter()
-            .zip(sizes)
-            .map(|(i, (w, h))| {
-                let item = Item {
-                    page: i,
-                    x: x as f32,
-                    y: (self.view.1.saturating_sub(h) / 2) as f32,
-                    w: w as f32,
-                    h: h as f32,
-                };
-                x += w;
-                item
-            })
-            .collect()
-    }
-
-    /// Dopo aver disegnato: se le pagine volute erano pronte, diventano quelle
-    /// che restano a schermo in attesa delle prossime.
-    pub fn drawn(&mut self, pages: &impl Pages) {
-        if self.mode != Mode::Strip && self.ready(pages) {
-            self.last_drawn = Some(self.page);
-        }
-    }
-
-    /// Cosa preparare, dal piu' urgente, e per quale misura.
-    pub fn prefetch(&mut self, pages: &impl Pages) -> (Target, Vec<usize>) {
-        let target = self.target();
-        let wanted = self.wanted();
-        let (first, last) = (*wanted.iter().min().unwrap_or(&self.page), *wanted.iter().max().unwrap_or(&self.page));
-        // chi sfoglia in fretta (tasto tenuto premuto: 30 pagine al secondo)
-        // consuma 4 pagine di anticipo in 130 ms, quanto serve a prepararne
-        // una tavola 4K: l'anticipo cresce con il ritmo
-        let ahead = if self.hurry { 12 } else { 4 };
-        let (ahead, behind) = match self.mode {
-            Mode::Single => (ahead, 2),
-            Mode::Double => (ahead * 2, 4),
-            Mode::Strip => (ahead + 2, 3),
-        };
-        // dopo un salto (avvio, Inizio/Fine, nuovo volume) si prepara solo
-        // quello che si vede: all'avvio, a batteria, dividere il processore con
-        // le pagine successive la faceva arrivare in 600 ms invece di 160. Le
-        // altre si chiedono appena arriva: ogni arrivo richiama questa funzione.
-        if self.jumped && wanted.iter().all(|&i| pages.has(i) || self.broken[i]) {
-            self.jumped = false;
-        }
-        let mut order: Vec<usize> = prefetch_order(first, last, self.len, self.forward, ahead, behind)
-            .into_iter()
-            .filter(|&i| !self.broken[i] && pages.prepared_for(i) != Some(target))
-            .collect();
-        if self.jumped {
-            order.retain(|i| wanted.contains(i));
-        }
-        (target, order)
-    }
-
-    /// Il titolo della finestra, l'unica cosa scritta: volume, pagina, modi.
-    pub fn title(&self, name: &str) -> String {
-        let mut title = format!("{name} \u{2014} {} / {}", self.folio(), self.len);
-        let mut extra = self.modes();
-        if self.mode == Mode::Single {
-            extra.remove(0); // la pagina singola e' il modo di sempre: non si scrive
-        }
-        if self.broken_here() {
-            extra.push(t("pagina illeggibile", "unreadable page"));
-        }
-        for what in extra {
-            title += " \u{00b7} ";
-            title += what;
-        }
-        title
-    }
-
-    pub fn pages(&self) -> usize {
-        self.len
-    }
-
-    /// Le pagine a schermo, per chi legge: "24" o "24–25".
-    pub fn folio(&self) -> String {
-        let (s, n) = self.group_of(self.here());
-        if n == 2 { format!("{}\u{2013}{}", s + 1, s + 2) } else { format!("{}", self.here() + 1) }
-    }
-
-    /// Come si sta leggendo: prima il modo, poi cio' che vi si aggiunge.
-    pub fn modes(&self) -> Vec<&'static str> {
-        let mut v = vec![match self.mode {
-            Mode::Single => t("pagina singola", "single page"),
-            Mode::Double => t("doppia pagina", "two pages"),
-            Mode::Strip => t("nastro", "strip"),
-        }];
-        for (on, what) in [
-            (self.mode == Mode::Double && self.cover_alone, t("copertina sola", "cover alone")),
-            (self.manga, "manga"),
-            (self.zoom > 1.0, "zoom"),
-            (self.trim && self.mode != Mode::Strip, t("rifilata", "trimmed")),
-            (self.rotation != 0, t("girata", "rotated")),
-            (!self.linear, "gamma"),
-        ] {
-            if on {
-                v.push(what);
-            }
-        }
-        v
-    }
-
-    /// Fra le pagine a schermo ce n'e' una che non si riesce a leggere.
-    pub fn broken_here(&self) -> bool {
-        self.wanted().iter().any(|&i| self.broken[i])
-    }
-
-    pub fn cover_alone(&self) -> bool {
-        self.cover_alone
-    }
-
-    pub fn bookmarks(&self) -> &[usize] {
-        &self.bookmarks
-    }
-
-    /// La pagina a schermo e' segnata (nella doppia pagina, una delle due;
-    /// nel nastro, quella in cima).
-    pub fn bookmarked(&self) -> bool {
-        let here = match self.mode {
-            Mode::Strip => vec![self.strip.anchor],
-            _ => self.wanted(),
-        };
-        here.iter().any(|p| self.bookmarks.binary_search(p).is_ok())
-    }
-
-    /// Le pagine di cui si vede almeno un pezzo.
-    pub fn on_screen(&self) -> Vec<usize> {
-        self.wanted()
-    }
-
-    /// La misura vera di una pagina (rifilata e girata), se la si conosce.
-    pub fn native(&self, i: usize) -> Option<(u32, u32)> {
-        self.native.get(i).copied().flatten()
-    }
-
-    /// Lo stato da ricordare per la prossima volta.
-    pub fn snapshot(&self) -> Saved {
-        let strip = self.strip_now();
-        let anchor_h = self.strip_height(strip.anchor).max(1.0);
-        Saved {
-            page: self.here(),
-            pages: self.len,
-            mode: match self.mode {
-                Mode::Single => "pagina",
-                Mode::Double => "doppia",
-                Mode::Strip => "nastro",
-            }
-            .into(),
-            manga: self.manga,
-            cover_alone: self.cover_alone,
-            strip_width: self.strip_frac.unwrap_or(0.0),
-            strip_offset: (strip.offset / anchor_h).clamp(0.0, 1.0),
-            read_at: 0,
-            rotation: self.rotation,
-            bookmarks: self.bookmarks.clone(),
-        }
-    }
-
-    /// Riprende da dove si era rimasti. Se il volume nel frattempo ha perso
-    /// pagine, si resta dentro i limiti.
-    pub fn restore(&mut self, saved: &Saved) {
-        if self.len == 0 {
-            return;
-        }
-        self.page = saved.page.min(self.len - 1);
-        self.mode = match saved.mode.as_str() {
-            "doppia" => Mode::Double,
-            "nastro" => Mode::Strip,
-            _ => Mode::Single,
-        };
-        self.manga = saved.manga;
-        self.cover_alone = saved.cover_alone;
-        if saved.strip_width > 0.0 {
-            self.strip_frac = Some(saved.strip_width.clamp(0.2, 1.0));
-        }
-        self.rotation = saved.rotation % 360 / 90 * 90;
-        self.bookmarks = saved.bookmarks.iter().copied().filter(|&p| p < self.len).collect();
-        self.bookmarks.sort_unstable();
-        self.bookmarks.dedup();
-        self.go_to(self.group_of(self.page).0);
-        // l'altezza vera della pagina arrivera' dopo: fino ad allora la
-        // posizione resta una frazione della pagina (vedi `anchor_frac`)
-        self.anchor_frac = Some(saved.strip_offset.clamp(0.0, 1.0));
-        self.jumped = true;
-    }
-
-    /// Per la prova automatica, quando qualcosa si incastra.
-    pub fn describe(&self, pages: &impl Pages) -> String {
-        format!(
-            "modo {:?}, pagina {}, nastro {:?}, scorrimento da fare {:.1} px, pronta {}",
-            self.mode,
-            self.page + 1,
-            self.strip_now(),
-            self.glide,
-            self.ready(pages)
-        )
-    }
 }
-
-#[cfg(test)]
-mod tests;

@@ -351,3 +351,16 @@ fn il_rifilo_non_tocca_il_nastro() {
     r.act(Action::ToggleStrip, now());
     assert!(!r.target().trim, "nel nastro il bianco fra le vignette fa parte del disegno");
 }
+
+#[test]
+fn dal_nastro_alla_doppia_pagina_si_resta_dove_si_era() {
+    let mut r = reader(40);
+    r.act(Action::ToggleStrip, now());
+    r.act(Action::Scroll(20_000.0), now());
+    while r.advance_glide(0.05) {}
+    let here = r.here();
+    assert!(here > 5, "il nastro e' sceso: {here}");
+    r.act(Action::ToggleDouble, now());
+    assert_eq!(r.mode, Mode::Double);
+    assert_eq!(r.group_of(r.here()), r.group_of(here), "la coppia della pagina che si leggeva");
+}
