@@ -1,90 +1,9 @@
-//! Cosa fanno azioni, comandi e regolazioni; da quali tasti e clic
+//! Cosa fanno le azioni; da quali tasti e clic
 //! vengono.
 
 use super::*;
 
 impl App {
-    /// Applica una scelta fatta nelle impostazioni.
-    fn apply_pref(&mut self, p: Pref, event_loop: &ActiveEventLoop) {
-        let now = Instant::now();
-        let s = &mut self.settings;
-        match p {
-            Pref::Brightness(v) => s.brightness = v,
-            Pref::Contrast(v) => s.contrast = v,
-            Pref::Gamma(v) => s.gamma = v,
-            Pref::ResetImage => (s.brightness, s.contrast, s.gamma) = (0, 0, 0),
-            Pref::LensZoom(v) => s.lens_zoom = v,
-            Pref::LensSize(v) => s.lens_size = v,
-            Pref::Slideshow(v) => {
-                s.slideshow = v;
-                if self.slideshow.is_some() {
-                    self.slideshow = Some(now + Duration::from_secs(v as u64));
-                }
-            }
-            Pref::Webtoon(on) => {
-                s.webtoon = on;
-                self.save_settings();
-            }
-            Pref::CheckUpdates(on) => {
-                s.check_updates = on;
-                self.save_settings();
-                self.check_update();
-            }
-            // queste passano per le loro azioni: fanno anche il resto
-            // (rifare le pagine, spostarle sotto la barra, scaricare l'AI)
-            Pref::Trim(on) => match &self.reader {
-                Some(r) if r.trim != on => self.act(Action::ToggleTrim, event_loop),
-                Some(_) => {}
-                None => {
-                    s.trim = on;
-                    self.save_settings();
-                }
-            },
-            Pref::Hud(on) if on != s.hud => self.act(Action::ToggleHud, event_loop),
-            Pref::Hud(_) => {}
-            Pref::Upscale(on) if on != s.upscale => self.toggle_upscale(),
-            Pref::Upscale(_) => {}
-            Pref::Bind(bind, combo) => {
-                let taken = keys::assign(&mut s.keys, bind, &combo);
-                self.keymap = Keymap::new(&self.settings.keys);
-                self.save_settings();
-                let text = match taken {
-                    Some(from) if fumetto_core::lingua::italian() => {
-                        format!(
-                            "{} ora fa \u{ab}{}\u{bb}, non più \u{ab}{}\u{bb}",
-                            combo.shown(),
-                            bind.label(),
-                            from.label()
-                        )
-                    }
-                    Some(from) => format!(
-                        "{} now does \u{201c}{}\u{201d}, no longer \u{201c}{}\u{201d}",
-                        combo.shown(),
-                        bind.label(),
-                        from.label()
-                    ),
-                    None => format!("{}: {}", bind.label(), combo.shown()),
-                };
-                self.ui.toast(text, now);
-            }
-            Pref::Unbind(bind) => {
-                keys::clear(&mut s.keys, bind);
-                self.keymap = Keymap::new(&self.settings.keys);
-                self.save_settings();
-                self.ui.toast(format!("{}: {}", bind.label(), t("nessun tasto", "no key")), now);
-            }
-            Pref::ResetKeys => {
-                s.keys.clear();
-                self.keymap = Keymap::new(&self.settings.keys);
-                self.save_settings();
-                self.ui.toast(t("Tutti i tasti di serie", "All default keys"), now);
-            }
-        }
-        // le regolazioni trascinate cambiano a ogni movimento: si scrivono dopo
-        self.settings_dirty = true;
-        self.request_redraw();
-    }
-
     pub(super) fn update_title(&mut self) {
         let Some(w) = &self.window else { return };
         let title = match (&self.book, &self.reader) {
@@ -104,29 +23,30 @@ impl App {
         {
             self.thumbs_open = false;
         }
+        if action == Action::Quit {
+            return event_loop.exit();
+        }
+        if self.app_action(action) || self.end_of_volume(action) {
+            return;
+        }
+        self.reader_action(action);
+    }
+
+    /// Le azioni della finestra, dei volumi e degli strumenti: `false` se
+    /// l'azione e' del lettore.
+    fn app_action(&mut self, action: Action) -> bool {
         match action {
-            Action::Quit => return event_loop.exit(),
-            Action::ToggleThumbs => return self.toggle_thumbs(),
+            Action::ToggleThumbs => self.toggle_thumbs(),
             Action::ToggleSettings => {
                 self.ui.toggle_prefs();
-                return self.request_redraw();
+                self.request_redraw();
             }
-            Action::ToggleLens => return self.toggle_lens(),
-            Action::ToggleSlideshow => return self.toggle_slideshow(),
-            Action::ToggleUpscale => return self.toggle_upscale(),
-            Action::ToggleWebtoon => {
-                self.settings.webtoon = !self.settings.webtoon;
-                self.save_settings();
-                let note = if self.settings.webtoon {
-                    t("I webtoon si leggeranno a nastro", "Webtoons will open as a strip")
-                } else {
-                    t("Webtoon: nessun riconoscimento", "Webtoons: no detection")
-                };
-                self.ui.toast(note, Instant::now());
-                return self.request_redraw();
-            }
-            Action::SavePage => return self.ask_save(),
-            Action::CopyPage => return self.copy_page(),
+            Action::ToggleLens => self.toggle_lens(),
+            Action::ToggleSlideshow => self.toggle_slideshow(),
+            Action::ToggleUpscale => self.toggle_upscale(),
+            Action::ToggleWebtoon => self.toggle_webtoon(),
+            Action::SavePage => self.ask_save(),
+            Action::CopyPage => self.copy_page(),
             Action::ToggleFullscreen => {
                 if let Some(w) = &self.window {
                     w.set_fullscreen(match w.fullscreen() {
@@ -134,52 +54,27 @@ impl App {
                         None => Some(Fullscreen::Borderless(None)),
                     });
                 }
-                return;
             }
-            Action::Open | Action::OpenFolder => return self.ask(action == Action::OpenFolder),
-            Action::Close => return self.close_book(),
-            Action::ToggleHud => {
-                self.settings.hud = !self.settings.hud;
-                if let Some(path) = &self.settings_path
-                    && let Err(e) = self.settings.save(path)
-                {
-                    eprintln!("impostazioni non salvate: {e}");
-                }
-                self.fit_view();
-                let note = if self.settings.hud {
-                    t("Barra in alto", "Top bar")
-                } else {
-                    t("Barra nascosta: H per riaverla", "Bar hidden: H brings it back")
-                };
-                self.ui.toast(note, Instant::now());
-                return self.changed();
-            }
-            Action::ToggleLibrary => {
-                // senza un volume aperto la libreria e' gia' li' (se ci sono cartelle)
-                if self.book.is_some() {
-                    self.library_open = !self.library_open;
-                }
-                if self.shelf_shown() {
-                    self.refresh_shelf();
-                    self.rescan();
-                } else if self.book.is_none() {
-                    self.ask_library_folder();
-                }
-                self.ui.reset();
-                return self.changed();
-            }
-            Action::AddLibraryFolder => return self.ask_library_folder(),
+            Action::Open | Action::OpenFolder => self.ask(action == Action::OpenFolder),
+            Action::Close => self.close_book(),
+            Action::ToggleHud => self.toggle_hud(),
+            Action::ToggleLibrary => self.toggle_library(),
+            Action::AddLibraryFolder => self.ask_library_folder(),
             Action::AskPage => {
                 if let Some(r) = &self.reader {
                     self.ui.ask_page(r.here(), r.pages(), r.bookmarks());
                 }
-                return self.request_redraw();
+                self.request_redraw();
             }
-            _ => {}
+            _ => return false,
         }
-        if self.end_of_volume(action) {
-            return;
-        }
+        true
+    }
+
+    /// Un'azione del lettore: girare pagina, cambiare modo, lo zoom. Cio'
+    /// che cambia il modo lo dice una riga: a schermo intero il titolo della
+    /// finestra non si vede.
+    fn reader_action(&mut self, action: Action) {
         let Some(reader) = &mut self.reader else { return };
         let now = Instant::now();
         if reader.act(action, now) {
@@ -187,16 +82,10 @@ impl App {
         }
         if action == Action::ToggleTrim {
             self.settings.trim = reader.trim;
+            self.save_settings();
         }
-        // il verso corretto a mano vale a ogni apertura: si cambia anche li'
-        if action == Action::ToggleManga
-            && let Some(book) = &self.book
-            && let Some(mut edit) = self.edits.get(&book.path).filter(|e| e.right_to_left.is_some()).cloned()
-        {
-            edit.right_to_left = Some(reader.manga);
-            if let Err(e) = self.edits.set(&book.path, edit) {
-                eprintln!("correzioni non salvate: {e}");
-            }
+        if action == Action::ToggleManga {
+            self.remember_direction();
         }
         // chi gira pagina a mano ha tutto il tempo della presentazione per la nuova
         if self.slideshow.is_some()
@@ -207,117 +96,63 @@ impl App {
         {
             self.slideshow = Some(now + Duration::from_secs(self.settings.slideshow.max(1) as u64));
         }
-        let reader = self.reader.as_ref().expect("appena usato");
-        // cio' che cambia il modo lo dice una riga: a schermo intero il
-        // titolo della finestra non si vede
-        if let Some(note) = note(action, reader) {
+        if let Some(note) = self.reader.as_ref().and_then(|r| note(action, r)) {
             self.ui.toast(note, now);
-        }
-        if action == Action::ToggleTrim {
-            self.save_settings();
         }
         self.changed();
     }
 
-    /// Esegue cio' che l'interfaccia ha deciso.
-    pub(super) fn run(&mut self, cmd: Command, event_loop: &ActiveEventLoop) {
-        let now = Instant::now();
-        match cmd {
-            Command::Act(a) => self.act(a, event_loop),
-            Command::Open(path) => self.open(&path),
-            Command::MarkRead(path, read) => {
-                // per segnarlo letto serve sapere quante pagine ha
-                let pages = self
-                    .progress
-                    .get(&path)
-                    .map(|s| s.pages)
-                    .filter(|&n| n > 0)
-                    .or_else(|| Book::open(&path).ok().map(|b| b.len()));
-                match pages {
-                    Some(n) => {
-                        self.progress.mark(&path, read, n);
-                        remote::sync::report_mark(&path, read);
-                        // il volume aperto: da qui il lettore non lo riscrive, finche' non ci si muove
-                        let same = |a: &Path| fumetto_core::absolute(a) == fumetto_core::absolute(&path);
-                        if let (Some(book), Some(reader)) = (&self.book, &self.reader)
-                            && same(&book.path)
-                        {
-                            self.marked = Some((book.path.clone(), reader.snapshot()));
-                        }
-                        self.refresh_shelf();
-                        self.refresh_recent();
-                        self.ui.toast(
-                            if read {
-                                t("Segnato come letto", "Marked as read")
-                            } else {
-                                t("Di nuovo da leggere", "Unread again")
-                            },
-                            now,
-                        );
-                    }
-                    None => self.notify(
-                        t(
-                            "Questo volume non si apre: non so quante pagine abbia.",
-                            "This volume doesn't open: its page count is unknown.",
-                        )
-                        .to_owned(),
-                    ),
-                }
-            }
-            Command::Reveal(path) => {
-                if let Err(e) = system::reveal(&path) {
-                    eprintln!("mostra nella cartella: {e}");
-                }
-            }
-            Command::Trash(path) => {
-                if let Some(window) = &self.window
-                    && !self.dialog
-                {
-                    dialog::confirm_trash(window, path, self.proxy.clone());
-                    self.dialog = true;
-                }
-            }
-            Command::RemoveFolder(root) => {
-                self.settings.library.retain(|r| *r != root);
-                self.save_settings();
-                self.rescan();
-                self.ui.toast(t("Cartella tolta dalla libreria", "Folder removed from the library"), now);
-                self.changed();
-            }
-            Command::Pref(p) => self.apply_pref(p, event_loop),
-            Command::Page(p) => {
-                self.thumbs_open = false;
-                self.act(Action::GoTo(p), event_loop);
-            }
-            // quelli interni li ha gia' fatti l'interfaccia
-            Command::AddServer(server) => self.check_server(server),
-            Command::OpenWithPassword(path, password) => self.open_with_password(&path, &password),
-            Command::RemoveServer(url) => {
-                // la sua password esce anche dal portachiavi
-                for s in self.settings.servers.iter().filter(|s| s.url == url && !s.user.is_empty()) {
-                    fumetto_core::keychain::delete(&s.url, &s.user);
-                }
-                self.settings.servers.retain(|s| s.url != url);
-                remote::set_servers(&self.settings.servers);
-                self.save_settings();
-                self.rescan();
-                self.ui.toast(t("Server tolto dalla libreria", "Server removed from the library"), now);
-                self.changed();
-            }
-            Command::Download(path) => self.download(path),
-            Command::ForgetDownload(path) => self.forget_download(&path),
-            Command::EditVolume(path) => self.edit_volume(path),
-            Command::SaveVolume(path, edit) => self.save_volume(&path, edit),
-            Command::ResetVolume(path) => self.save_volume(&path, fumetto_core::edits::VolumeEdit::default()),
-            Command::Series(_)
-            | Command::Group(..)
-            | Command::Folder(_)
-            | Command::SortMenu(..)
-            | Command::Sort(_)
-            | Command::FoldersMenu(..)
-            | Command::AskServer => {}
+    /// Il verso corretto a mano vale a ogni apertura: cambiandolo, cambia
+    /// anche nella correzione.
+    fn remember_direction(&mut self) {
+        let (Some(book), Some(reader)) = (&self.book, &self.reader) else { return };
+        let Some(mut edit) = self.edits.get(&book.path).filter(|e| e.right_to_left.is_some()).cloned() else { return };
+        edit.right_to_left = Some(reader.manga);
+        if let Err(e) = self.edits.set(&book.path, edit) {
+            eprintln!("correzioni non salvate: {e}");
         }
+    }
+
+    fn toggle_webtoon(&mut self) {
+        self.settings.webtoon = !self.settings.webtoon;
+        self.save_settings();
+        let note = if self.settings.webtoon {
+            t("I webtoon si leggeranno a nastro", "Webtoons will open as a strip")
+        } else {
+            t("Webtoon: nessun riconoscimento", "Webtoons: no detection")
+        };
+        self.ui.toast(note, Instant::now());
         self.request_redraw();
+    }
+
+    /// La barra in alto: le pagine si spostano sotto di lei, o tornano su.
+    fn toggle_hud(&mut self) {
+        self.settings.hud = !self.settings.hud;
+        self.save_settings();
+        self.fit_view();
+        let note = if self.settings.hud {
+            t("Barra in alto", "Top bar")
+        } else {
+            t("Barra nascosta: H per riaverla", "Bar hidden: H brings it back")
+        };
+        self.ui.toast(note, Instant::now());
+        self.changed();
+    }
+
+    /// La libreria, o di nuovo il volume. Senza un volume aperto la libreria
+    /// e' gia' li' (se ci sono cartelle; se no, si chiede quale aggiungere).
+    fn toggle_library(&mut self) {
+        if self.book.is_some() {
+            self.library_open = !self.library_open;
+        }
+        if self.shelf_shown() {
+            self.refresh_shelf();
+            self.rescan();
+        } else if self.book.is_none() {
+            self.ask_library_folder();
+        }
+        self.ui.reset();
+        self.changed();
     }
 
     /// Il comando di un tasto premuto, dalla mappa dei tasti, e la sua azione adesso.
