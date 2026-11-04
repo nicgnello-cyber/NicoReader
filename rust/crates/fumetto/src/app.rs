@@ -102,6 +102,7 @@ struct NextOffer {
 // dopo le macro, che cosi' le vedono; le funzioni che servono a piu' d'uno si
 // importano qui, e da qui (use super::*) le prendono tutti
 mod actions;
+mod arrivals;
 mod draw;
 mod events;
 mod search;
