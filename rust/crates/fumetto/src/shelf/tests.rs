@@ -417,3 +417,36 @@ fn con_le_frecce_e_invio_si_apre_un_volume() {
     assert_eq!(shelf.key(Key::Enter, &d, view, 1.0), Handled::Yes(None), "la serie si apre, non si legge");
     assert_eq!(shelf.series.as_deref(), Some("Nebbia sul Porto"));
 }
+
+/// Quanto costa disporre una libreria grande (cargo test --release -- --ignored misura).
+#[test]
+#[ignore]
+fn misura_la_disposizione() {
+    let mut caso = Caso(7);
+    let mut entries = Vec::new();
+    for i in 0..5000 {
+        let series = format!("Serie {}", caso.n(700));
+        let mut e = entry(&format!("{series} v{i}"), Some((series.as_str(), caso.n(60) as u32)));
+        e.path = PathBuf::from(format!("/fumetti/{}/{series}/{i}.cbz", caso.n(30)));
+        e.added = caso.n(1_000_000) as u64;
+        entries.push(e);
+    }
+    let status: Vec<Status> =
+        (0..entries.len()).map(|i| if i % 7 == 0 { Status::Reading(1, 10) } else { Status::New }).collect();
+    let read_at: Vec<u64> = (0..entries.len() as u64).collect();
+    let roots = [PathBuf::from("/fumetti")];
+    let d = ShelfData { roots: &roots, ..data(&entries, &status, &read_at) };
+    for (name, shelf) in [
+        ("serie", Shelf::default()),
+        ("aggiunti", Shelf { sort: LibrarySort::Added, ..Shelf::default() }),
+        ("cartelle", Shelf { folders: true, ..Shelf::default() }),
+        ("cerca", Shelf { search: "serie 1".into(), ..Shelf::default() }),
+    ] {
+        let t = Instant::now();
+        let n = 20;
+        for _ in 0..n {
+            std::hint::black_box(shelf.cover_slots(&d, (1920.0, 1080.0), 1.0));
+        }
+        println!("{name}: {:.2} ms per disposizione", t.elapsed().as_secs_f64() * 1000.0 / n as f64);
+    }
+}

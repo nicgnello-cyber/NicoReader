@@ -95,18 +95,23 @@ pub fn root_of<'a>(path: &Path, roots: &'a [PathBuf]) -> Option<&'a Path> {
 /// "X/y.cbz") ha un posto solo: "X" fra i volumi, cio' che contiene fra le
 /// cartelle.
 pub fn folder_cmp(a: &Path, b: &Path) -> Ordering {
-    let (mut ka, mut kb) = (pieces(a), pieces(b));
+    let (mut ka, mut kb) = (a.components().peekable(), b.components().peekable());
     loop {
         match (ka.next(), kb.next()) {
             (None, None) => return Ordering::Equal,
             (None, Some(_)) => return Ordering::Less,
             (Some(_), None) => return Ordering::Greater,
-            (Some((va, x)), Some((vb, y))) => {
-                // false (una cartella) prima di true (un volume)
-                let o = va
-                    .cmp(&vb)
-                    .then_with(|| natural_cmp(&x.as_os_str().to_string_lossy(), &y.as_os_str().to_string_lossy()))
-                    .then_with(|| x.cmp(&y));
+            (Some(x), Some(y)) => {
+                // false (una cartella) prima di true (un volume: l'ultimo pezzo);
+                // i pezzi uguali (le cartelle in comune) si saltano subito
+                let (va, vb) = (ka.peek().is_none(), kb.peek().is_none());
+                let o = va.cmp(&vb).then_with(|| {
+                    if x == y {
+                        return Ordering::Equal;
+                    }
+                    natural_cmp(&x.as_os_str().to_string_lossy(), &y.as_os_str().to_string_lossy())
+                        .then_with(|| x.cmp(&y))
+                });
                 if o != Ordering::Equal {
                     return o;
                 }
@@ -115,15 +120,13 @@ pub fn folder_cmp(a: &Path, b: &Path) -> Ordering {
     }
 }
 
-/// I pezzi di un percorso per [`folder_cmp`]: (e' il volume, cioe' l'ultimo; pezzo).
-pub(super) fn pieces(p: &Path) -> impl Iterator<Item = (bool, std::path::Component<'_>)> {
-    let last = p.components().count().saturating_sub(1);
-    p.components().enumerate().map(move |(k, part)| (k == last, part))
-}
-
 /// Cosa sta in una cartella: le sottocartelle, ognuna con i volumi che
-/// contiene a ogni profondita', e i volumi che ci stanno direttamente; tutto
-/// nell'ordine di [`folder_cmp`]. Indici in `entries`, scelti fra `among`.
+/// contiene a ogni profondita', e i volumi che ci stanno direttamente.
+/// Cartelle e volumi nell'ordine di [`folder_cmp`]; dei volumi di una
+/// sottocartella il primo e' quello che in quell'ordine viene prima (la
+/// copertina), gli altri come capita: ordinarli tutti, in una libreria
+/// grande, costava piu' di tutto il resto. Indici in `entries`, scelti fra
+/// `among`.
 #[derive(Debug, Default, PartialEq)]
 pub struct FolderContents {
     pub folders: Vec<(PathBuf, Vec<usize>)>,
@@ -132,27 +135,36 @@ pub struct FolderContents {
 
 pub fn folder_contents(entries: &[Entry], among: &[usize], folder: &Path) -> FolderContents {
     let mut out = FolderContents::default();
+    let mut slot: HashMap<&std::ffi::OsStr, usize> = HashMap::new();
     for &i in among {
         let Ok(rest) = entries[i].path.strip_prefix(folder) else { continue };
-        let mut parts = rest.components();
+        let mut parts = rest.iter();
         let Some(first) = parts.next() else { continue };
         if parts.next().is_none() {
             out.volumes.push(i);
             continue;
         }
-        let sub = folder.join(first);
-        match out.folders.iter_mut().find(|(p, _)| *p == sub) {
-            Some((_, members)) => members.push(i),
-            None => out.folders.push((sub, vec![i])),
-        }
+        let k = *slot.entry(first).or_insert_with(|| {
+            out.folders.push((folder.join(first), Vec::new()));
+            out.folders.len() - 1
+        });
+        out.folders[k].1.push(i);
     }
-    let by_path = |a: &usize, b: &usize| folder_cmp(&entries[*a].path, &entries[*b].path);
     out.folders.sort_by(|a, b| folder_cmp(&a.0, &b.0));
     for (_, members) in &mut out.folders {
-        members.sort_by(by_path);
+        first_in_folder_order(entries, members);
     }
-    out.volumes.sort_by(by_path);
+    out.volumes.sort_by(|a, b| folder_cmp(&entries[*a].path, &entries[*b].path));
     out
+}
+
+/// Porta in testa il volume che nell'ordine di [`folder_cmp`] viene prima;
+/// gli altri restano dove sono.
+pub fn first_in_folder_order(entries: &[Entry], members: &mut [usize]) {
+    let first = members.iter().enumerate().min_by(|(_, a), (_, b)| folder_cmp(&entries[**a].path, &entries[**b].path));
+    if let Some((k, _)) = first {
+        members.swap(0, k);
+    }
 }
 
 /// Da dove viene un volume: "" dal disco, schema e host dal server.

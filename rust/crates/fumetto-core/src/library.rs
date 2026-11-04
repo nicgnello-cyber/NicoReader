@@ -34,7 +34,9 @@ mod series;
 #[cfg(test)]
 mod tests;
 
-pub use order::{FolderContents, Order, by_number, folder_cmp, folder_contents, neighbour, origin, root_of};
+pub use order::{
+    FolderContents, Order, by_number, first_in_folder_order, folder_cmp, folder_contents, neighbour, origin, root_of,
+};
 use scan::is_volume_file;
 pub use scan::{scan, scan_cached};
 pub use series::parse_series;

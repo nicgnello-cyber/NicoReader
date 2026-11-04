@@ -246,7 +246,7 @@ pub(super) fn folder_sections(
             .into_iter()
             .filter_map(|source| {
                 let mut members = within(&source);
-                members.sort_by(|&a, &b| library::folder_cmp(&d.entries[a].path, &d.entries[b].path));
+                library::first_in_folder_order(d.entries, &mut members);
                 (!members.is_empty()).then(|| folder_tile(source, &members))
             })
             .collect(),
