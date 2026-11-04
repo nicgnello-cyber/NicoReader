@@ -836,9 +836,24 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      delle altezze; ordinare non copia i nomi. Due difetti trovati: il
      suggerimento "Torna alla lettura" scriveva {00b7}, e dal nastro D
      portava alla pagina da cui si era entrati nel nastro (con una prova).
-  5. Il peso dell'eseguibile: da 15,3 a 20,7 MB con AVIF, JPEG XL e appunti
-     (vedi 5, Tecnici).
-  6. Distribuzione (capitolo 5).
+  4t. [x] Eseguibile piu' leggero (4 novembre), senza togliere niente: su
+     Linux da 24,5 a 18,4 MB (-25%). Misurato per pezzi (nm sui simboli):
+     - fast_image_resize pesava 2,9 MB perche' Resizer::resize sceglie il
+       tipo di pixel mentre gira, e si porta dietro il codice di tutti i
+       tipi per ogni processore; resize_typed solo dei quattro che si
+       usano (U8x4, U16x4, U16): -1,8 MB;
+     - le pagine con trasparenza si moltiplicano e dividono per l'alfa da
+       noi, a 16 bit (resize.rs, transparent): la strada della libreria
+       portava una tabella da 512 KB e una seconda copia dei filtri. Una
+       prova la confronta con quella della libreria: -0,7 MB;
+     - lto = "fat" invece di "thin": -1,7 MB;
+     - opt-level "s" per cio' che non sta sulla strada delle pagine
+       (finestra, caratteri e testo, preparazione della scheda video e
+       shader, finestre di sistema, appunti, JSON, XML): -1,8 MB.
+     Non e' piu' lento: decodifica e rimpicciolimento su pagine A4 a 300
+     dpi (JPEG a colori e grigi, PNG, WebP), tre giri, uguali o un po'
+     piu' veloci di prima. Gli scatti della sonda restano identici.
+  5. Distribuzione (capitolo 5).
 
   Da decidere tu, quando vuoi:
     - La "sensazione" dello scorrimento: la funzione glide_step in
@@ -1075,9 +1090,9 @@ Il capitolo 7 ne tiene la memoria e i numeri.
         nostro codice. Il probe usava Vulkan; ora usa DX12 come l'app:
         0 errori su 30. Chi forza WGPU_BACKEND=vulkan sulla Intel lo
         sappia: puo' succedere anche all'app, alla chiusura.
-    [ ] Il peso: +5,4 MB per AVIF (rav1d), JPEG XL (jxl-oxide) e appunti.
-        Da misurare pezzo per pezzo; rav1d a soli 8 bit ne toglierebbe
-        una parte, ma gli AVIF a 10 bit non si leggerebbero.
+    [x] Il peso: misurato pezzo per pezzo e ridotto di un quarto senza
+        togliere niente (vedi 4t). rav1d a soli 8 bit toglierebbe ancora
+        qualcosa, ma gli AVIF a 10 bit non si leggerebbero.
     [ ] La conversione YUV -> RGB degli AVIF e' un ciclo semplice per
         pixel, in virgola mobile: se gli AVIF diventano comuni, misurare
         quanto pesa dei 150 ms e farla a righe o con SIMD.
