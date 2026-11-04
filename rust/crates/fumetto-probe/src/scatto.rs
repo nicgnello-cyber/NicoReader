@@ -257,6 +257,24 @@ pub fn run(
             ui.key(Key::PageDown, ctx);
         }
     })?;
+    // le altre sezioni: interruttori, passi, la lente, un tasto da cambiare
+    let prefs = |tab| Some(fumetto::prefs::Prefs::open(tab));
+    shot("impostazioni-lettura", true, &DEFAULTS, None, &|_| {}, &|ui, ctx| {
+        ui.prefs = prefs(fumetto::prefs::Tab::Reading);
+        ui.motion(ctx.view.0 - 60.0 * ctx.scale, 300.0 * ctx.scale, ctx, now);
+        ui.key(Key::Down, ctx);
+    })?;
+    shot("impostazioni-lente", true, &DEFAULTS, None, &|_| {}, &|ui, ctx| {
+        ui.prefs = prefs(fumetto::prefs::Tab::Lens);
+        ui.motion(ctx.view.0 - 200.0 * ctx.scale, 190.0 * ctx.scale, ctx, now);
+    })?;
+    shot("impostazioni-nuovo-tasto", true, &DEFAULTS, None, &|_| {}, &|ui, ctx| {
+        ui.prefs = prefs(fumetto::prefs::Tab::Keys);
+        for _ in 0..4 {
+            ui.key(Key::Down, ctx);
+        }
+        ui.key(Key::Enter, ctx);
+    })?;
     // la lente su un terzo della pagina, a 2,5x
     shot("lente", true, &DEFAULTS, Some((0.47, 0.42)), &|_| {}, &|_, _| {})?;
     miniature(&book, &renderer, &mut overlay, out, size, scale, start)?;

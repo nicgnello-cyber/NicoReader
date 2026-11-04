@@ -16,6 +16,11 @@ use crate::ui::{
     ACCENT, Command, HAIR, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, TICK, alpha, caps, draw_icon, fit, rgb,
 };
 
+mod draw;
+mod rows;
+#[cfg(test)]
+mod tests;
+
 /// Una scelta fatta nelle impostazioni.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Pref {
@@ -185,6 +190,11 @@ impl Geo {
         (self.x + self.pad, self.w - 2.0 * self.pad, (top + 48.0 * self.s).round())
     }
 
+    /// Il bordo destro del contenuto.
+    fn right(&self) -> f32 {
+        self.x + self.w - self.pad
+    }
+
     fn tab_x(&self, i: usize) -> (f32, f32) {
         let tw = (self.w - 2.0 * self.pad) / Tab::ALL.len() as f32;
         (self.x + self.pad + i as f32 * tw, tw)
@@ -228,100 +238,6 @@ impl Prefs {
     /// Il foglio copre questo punto (i clic li' sono suoi).
     pub fn covers(view: (f32, f32), s: f32, x: f32) -> bool {
         x >= Geo::new(view, s).x
-    }
-
-    fn rows(&self, settings: &Settings, keys: &Keymap) -> Vec<Row> {
-        match self.tab {
-            Tab::Image => vec![
-                Row::Slider { label: t("Luminosità", "Brightness"), which: Slider::Brightness },
-                Row::Slider { label: t("Contrasto", "Contrast"), which: Slider::Contrast },
-                Row::Slider { label: "Gamma", which: Slider::Gamma },
-                Row::Button { label: t("Ripristina", "Reset"), pref: Pref::ResetImage },
-                Row::Note(t(
-                    "Valgono per tutte le pagine e si vedono subito. Si applicano dopo il \
-                             rimpicciolimento in luce lineare, che resta com'è.",
-                    "They apply to every page, live, after the linear-light resampling, which stays as it is.",
-                )),
-            ],
-            Tab::Reading => {
-                let secs = settings.slideshow.max(1);
-                vec![
-                    Row::Toggle {
-                        label: t("Riconosci i webtoon", "Detect webtoons"),
-                        on: settings.webtoon,
-                        pref: Pref::Webtoon(!settings.webtoon),
-                    },
-                    Row::Note(t(
-                        "Un volume mai aperto con le pagine a strisce si apre a nastro.",
-                        "A never-opened volume made of strips opens as a strip.",
-                    )),
-                    Row::Toggle {
-                        label: t("Rifila i margini", "Trim margins"),
-                        on: settings.trim,
-                        pref: Pref::Trim(!settings.trim),
-                    },
-                    Row::Toggle {
-                        label: t("Migliora le scansioni (AI)", "Enhance scans (AI)"),
-                        on: settings.upscale,
-                        pref: Pref::Upscale(!settings.upscale),
-                    },
-                    Row::Note(t(
-                        "Real-ESRGAN, sulla scheda video, rifà le pagine mostrate più grandi dei loro \
-                                 pixel.",
-                        "Real-ESRGAN, on the graphics card, redoes pages shown larger than their pixels.",
-                    )),
-                    Row::Toggle {
-                        label: t("Barra in alto", "Top bar"),
-                        on: settings.hud,
-                        pref: Pref::Hud(!settings.hud),
-                    },
-                    Row::Stepper {
-                        label: t("Presentazione, una pagina ogni", "Slideshow, a page every"),
-                        value: format!("{secs} s"),
-                        less: Pref::Slideshow(secs.saturating_sub(1).max(1)),
-                        more: Pref::Slideshow((secs + 1).min(120)),
-                    },
-                    Row::Toggle {
-                        label: t("Avvisa delle versioni nuove", "Tell me about new versions"),
-                        on: settings.check_updates,
-                        pref: Pref::CheckUpdates(!settings.check_updates),
-                    },
-                    Row::Note(t(
-                        "A ogni avvio chiede a GitHub qual è l'ultima versione. Non manda nient'altro.",
-                        "At each launch it asks GitHub which version is the latest. Nothing else is sent.",
-                    )),
-                ]
-            }
-            Tab::Lens => vec![
-                Row::Slider { label: t("Ingrandimento", "Magnification"), which: Slider::LensZoom },
-                Row::Slider { label: t("Grandezza", "Size"), which: Slider::LensSize },
-                Row::Note(t(
-                    "La lente mostra i pixel veri della pagina. Con la lente accesa la rotella \
-                             cambia l'ingrandimento.",
-                    "The magnifier shows the page's real pixels. While it is on, the wheel changes the magnification.",
-                )),
-            ],
-            Tab::Keys => {
-                let mut rows = vec![Row::Note(t(
-                    "Fai clic su un comando e premi il tasto nuovo: Esc lascia \
-                                                 com'era, Backspace toglie il tasto.",
-                    "Click a command and press the new key: Esc keeps it, Backspace removes it.",
-                ))];
-                let mut group = "";
-                for b in Bind::ALL {
-                    if b.group() != group {
-                        group = b.group();
-                        rows.push(Row::Head(group));
-                    }
-                    rows.push(Row::Key { bind: b, keys: keys.keys(b).iter().map(Combo::shown).collect() });
-                }
-                rows.push(Row::Button {
-                    label: t("Tutti i tasti di serie", "All default keys"),
-                    pref: Pref::ResetKeys,
-                });
-                rows
-            }
-        }
     }
 
     /// La cima di ogni riga, in pixel della finestra (gia' scorse).
@@ -526,168 +442,4 @@ impl Prefs {
         };
         self.scroll = (self.scroll + delta).clamp(0.0, self.max_scroll(rows, g));
     }
-
-    pub fn layers(
-        &self, settings: &Settings, keys: &Keymap, view: (f32, f32), s: f32, m: &mut dyn Measure,
-    ) -> Vec<Layer> {
-        let g = Geo::new(view, s);
-        let rows = self.rows(settings, keys);
-        let tops = self.tops(&rows, &g);
-        let (x0, w, pad) = (g.x, g.w, g.pad);
-        let right = x0 + w - pad;
-        let mut back = Layer::default();
-        // l'ombra verso le pagine, un filo, il fondo
-        back.rects.push(Rect::new(x0 - 30.0 * s, 0.0, 60.0 * s, view.1, [0.0, 0.0, 0.0, 0.6]).blur(24.0 * s));
-        back.rects.push(Rect::new(x0, 0.0, w, view.1, alpha(rgb(0x11, 0x10, 0x0E), 0.985)));
-        back.rects.push(Rect::new(x0, 0.0, s.round(), view.1, alpha(HAIR, 0.9)));
-
-        let mut l = Layer::default();
-        for (i, (row, &top)) in rows.iter().zip(&tops).enumerate() {
-            let h = row.height() * s;
-            if top + h < HEADER * s || top > view.1 {
-                continue;
-            }
-            let hovered = self.hover == Some(Hit::Row(i));
-            if (self.selected == Some(i) || hovered) && row.selectable() {
-                l.rects.push(
-                    Rect::new(x0 + 14.0 * s, top + 2.0 * s, w - 28.0 * s, h - 4.0 * s, [1.0, 1.0, 1.0, 0.055])
-                        .radius(8.0 * s),
-                );
-            }
-            let label = |text: &str, base: f32| {
-                Text::new(text, Face::Sans, 14.0 * s, INK).weight(450).on_baseline(x0 + pad, top + base * s)
-            };
-            let value = |text: String, base: f32, color: [u8; 4]| {
-                Text::new(text, Face::Sans, 13.0 * s, color)
-                    .tabular()
-                    .boxed(140.0 * s, Align::Right)
-                    .on_baseline(right - 140.0 * s, top + base * s)
-            };
-            match row {
-                Row::Head(text) => l.texts.push(caps(text, 10.5 * s, MUTED).on_baseline(x0 + pad, top + 32.0 * s)),
-                Row::Note(text) => {
-                    let note = Text::new(*text, Face::Sans, 12.0 * s, MUTED).boxed(w - 2.0 * pad, Align::Left);
-                    l.texts.push(note.on_baseline(x0 + pad, top + 20.0 * s));
-                }
-                Row::Slider { label: name, which } => {
-                    let v = which.value(settings);
-                    l.texts.push(label(name, 26.0));
-                    let changed =
-                        v != which.range().3 && matches!(which, Slider::Brightness | Slider::Contrast | Slider::Gamma);
-                    l.texts.push(value(which.shown(v), 26.0, if changed { INK } else { MUTED }));
-                    let (tx, tw, ty) = g.track(top);
-                    let (lo, hi, _, start) = which.range();
-                    let at = |v: f32| (tx + (v - lo) / (hi - lo) * tw).round();
-                    l.rects.push(Rect::new(tx, ty, tw, s.round().max(1.0), TICK));
-                    // il tratto fra il punto di partenza (lo zero) e il valore
-                    let (a, b) = (at(start).min(at(v)), at(start).max(at(v)));
-                    l.rects.push(Rect::new(a, ty - s.round(), (b - a).max(1.0), (3.0 * s).round(), ACCENT));
-                    if start > lo {
-                        // lo zero delle regolazioni che vanno nei due sensi: una tacca
-                        l.rects.push(Rect::new(at(start), ty - 5.0 * s, s.round(), 11.0 * s, TICK));
-                    }
-                    let d = (14.0 * s).round();
-                    let knob = if self.drag == Some(*which) || hovered { INK_F } else { rgb(0xD6, 0xD0, 0xC5) };
-                    l.rects.push(Rect::new(at(v) - d / 2.0, ty - d / 2.0, d, d, knob).radius(d / 2.0));
-                }
-                Row::Toggle { label: name, on, .. } => {
-                    l.texts.push(label(name, 28.0));
-                    let (sw, sh) = ((34.0 * s).round(), (18.0 * s).round());
-                    let (sx, sy) = (right - sw, (top + (h - sh) / 2.0).round());
-                    l.rects.push(
-                        Rect::new(sx, sy, sw, sh, if *on { ACCENT } else { rgb(0x3A, 0x37, 0x32) }).radius(sh / 2.0),
-                    );
-                    let d = sh - 4.0 * s;
-                    let kx = if *on { sx + sw - 2.0 * s - d } else { sx + 2.0 * s };
-                    l.rects.push(Rect::new(kx, sy + 2.0 * s, d, d, INK_F).radius(d / 2.0));
-                }
-                Row::Stepper { label: name, value: v, .. } => {
-                    let room = w - 2.0 * pad - 130.0 * s;
-                    l.texts.push(
-                        fit(m, Text::new(*name, Face::Sans, 14.0 * s, INK).weight(450), room)
-                            .on_baseline(x0 + pad, top + 28.0 * s),
-                    );
-                    for (hit, icon, cx) in
-                        [(Hit::Less(i), Icon::Minus, right - 93.0 * s), (Hit::More(i), Icon::Plus, right - 14.0 * s)]
-                    {
-                        let color = if self.hover == Some(hit) { INK_F } else { MUTED_F };
-                        draw_icon(&mut l, icon, cx.round(), (top + h / 2.0).round(), s * 0.8, color);
-                    }
-                    l.texts.push(
-                        Text::new(v.as_str(), Face::Sans, 13.0 * s, INK)
-                            .tabular()
-                            .boxed(52.0 * s, Align::Center)
-                            .on_baseline(right - 80.0 * s, top + 28.0 * s),
-                    );
-                }
-                Row::Button { label: name, .. } => {
-                    l.texts.push(
-                        caps(
-                            name,
-                            11.0 * s,
-                            if hovered || self.selected == Some(i) { INK } else { crate::ui::ACCENT_TEXT },
-                        )
-                        .on_baseline(x0 + pad, top + 28.0 * s),
-                    );
-                }
-                Row::Key { bind, keys } => {
-                    let name = Text::new(bind.label(), Face::Sans, 13.5 * s, INK).weight(450);
-                    l.texts.push(fit(m, name, w - 2.0 * pad - 150.0 * s).on_baseline(x0 + pad, top + 24.0 * s));
-                    if self.capture == Some(*bind) {
-                        l.texts.push(value(
-                            t("premi un tasto\u{2026}", "press a key\u{2026}").to_owned(),
-                            24.0,
-                            crate::ui::ACCENT_TEXT,
-                        ));
-                    } else {
-                        // i tasti come piccole targhe, da destra
-                        let mut kx = right;
-                        for k in keys.iter().take(2).rev() {
-                            let text = Text::new(k.as_str(), Face::Sans, 12.0 * s, INK).weight(500);
-                            let kw = (m.width(&text) + 16.0 * s).round();
-                            kx -= kw;
-                            let ky = (top + 8.0 * s).round();
-                            l.rects
-                                .push(Rect::new(kx, ky, kw, (22.0 * s).round(), [1.0, 1.0, 1.0, 0.07]).radius(5.0 * s));
-                            l.texts.push(text.boxed(kw, Align::Center).on_baseline(kx, ky + 15.5 * s));
-                            kx -= 6.0 * s;
-                        }
-                        if keys.is_empty() {
-                            l.texts.push(value("\u{2014}".to_owned(), 24.0, MUTED));
-                        }
-                    }
-                }
-            }
-        }
-
-        // in alto, sopra le righe che scorrono: il titolo e le sezioni
-        let mut head = Layer::default();
-        head.rects.push(Rect::new(x0 + s, 0.0, w - s, HEADER * s, alpha(rgb(0x11, 0x10, 0x0E), 1.0)));
-        head.rects.push(Rect::new(x0 + pad, (HEADER * s - 10.0 * s).round(), w - 2.0 * pad, s.round(), HAIR));
-        head.texts
-            .push(Text::new(t("Impostazioni", "Settings"), Face::Serif, 30.0 * s, INK).on_baseline(x0 + pad, 54.0 * s));
-        let close = self.hover == Some(Hit::Close);
-        draw_icon(
-            &mut head,
-            Icon::Close,
-            (right - 12.0 * s).round(),
-            (44.0 * s).round(),
-            s,
-            if close { INK_F } else { MUTED_F },
-        );
-        for (i, tab) in Tab::ALL.iter().enumerate() {
-            let (tx, tw) = g.tab_x(i);
-            let on = *tab == self.tab;
-            let color = if on || self.hover == Some(Hit::Tab(*tab)) { INK } else { MUTED };
-            head.texts.push(caps(tab.label(), 10.5 * s, color).boxed(tw, Align::Center).on_baseline(tx, 96.0 * s));
-            if on {
-                let d = 4.0 * s;
-                head.rects.push(Rect::new(tx + tw / 2.0 - d / 2.0, 104.0 * s, d, d, ACCENT).radius(d));
-            }
-        }
-        vec![back, l, head]
-    }
 }
-
-#[cfg(test)]
-mod tests;
