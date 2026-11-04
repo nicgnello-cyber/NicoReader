@@ -102,6 +102,8 @@ struct NextOffer {
 // dopo le macro, che cosi' le vedono; le funzioni che servono a piu' d'uno si
 // importano qui, e da qui (use super::*) le prendono tutti
 mod actions;
+mod arrivals;
+mod commands;
 mod draw;
 mod events;
 mod search;
@@ -413,8 +415,38 @@ pub struct App {
     script: Option<Script>,
 }
 
+/// Come un thread di lavoro consegna all'app cio' che ha finito: come
+/// l'evento `wrap`.
+fn deliver<T: 'static>(
+    proxy: &EventLoopProxy<UserEvent>, wrap: fn(T) -> UserEvent,
+) -> impl Fn(T) + Send + Sync + use<T> {
+    let proxy = proxy.clone();
+    move |x| {
+        let _ = proxy.send_event(wrap(x));
+    }
+}
+
+/// I file accanto ai progressi: le correzioni ai dati dei volumi, i punti
+/// di lettura visti sui server, i volumi scaricati. La prova automatica,
+/// senza cartella sua (`data`), tiene le correzioni in memoria.
+fn open_data(data: Option<&Path>, covers_dir: &Path) -> fumetto_core::edits::Edits {
+    let Some(data) = data else { return fumetto_core::edits::Edits::in_memory() };
+    remote::sync::set_file(data.join("server-letture.json"));
+    remote::offline::set_folders(data.to_owned(), covers_dir.parent().unwrap_or(covers_dir).to_owned());
+    fumetto_core::edits::Edits::load(data.join("correzioni.json"))
+}
+
+/// Dove stanno le schede lette dai volumi. "-3": ora dicono anche l'anno
+/// (prima, con "-2", generi, editore e raccolte); quelle vecchie non lo
+/// hanno, e si rileggono tutte una volta.
+fn info_cache_file(covers_dir: &Path) -> PathBuf {
+    for old in ["comicinfo.json", "comicinfo-2.json"] {
+        let _ = std::fs::remove_file(covers_dir.with_file_name(old));
+    }
+    covers_dir.with_file_name("comicinfo-3.json")
+}
+
 impl App {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         proxy: EventLoopProxy<UserEvent>, progress: Progress, settings: Settings, settings_path: Option<PathBuf>,
         covers_dir: PathBuf, started: Instant, script: Option<Script>,
@@ -423,58 +455,21 @@ impl App {
         remote::set_servers(&settings.servers);
         // i punti di lettura visti sui server e i volumi scaricati: accanto ai
         // progressi (la prova automatica, senza cartella sua, non ne ha)
-        let jumplist = JumpList::new(settings_path.as_deref().and_then(Path::parent));
-        let edits = match settings_path.as_deref().and_then(Path::parent) {
-            Some(data) => fumetto_core::edits::Edits::load(data.join("correzioni.json")),
-            None => fumetto_core::edits::Edits::in_memory(),
-        };
-        if let Some(data) = settings_path.as_deref().and_then(Path::parent) {
-            remote::sync::set_file(data.join("server-letture.json"));
-            remote::offline::set_folders(data.to_owned(), covers_dir.parent().unwrap_or(&covers_dir).to_owned());
-        }
-        let thumb_loader = {
-            let proxy = proxy.clone();
-            Loader::new(2, move |loaded| {
-                let _ = proxy.send_event(UserEvent::Thumb(loaded));
-            })
-        };
-        let upscaler = {
-            let proxy = proxy.clone();
-            Upscaler::new(esrgan_engine(), move |u| {
-                let _ = proxy.send_event(UserEvent::Upscaled(u));
-            })
-        };
-        let lens_loader = {
-            let proxy = proxy.clone();
-            Loader::new(2, move |loaded| {
-                let _ = proxy.send_event(UserEvent::LensPage(loaded));
-            })
-        };
+        let data = settings_path.as_deref().and_then(Path::parent);
+        let jumplist = JumpList::new(data);
+        let edits = open_data(data, &covers_dir);
+        let info_cache = info_cache_file(&covers_dir);
         let keymap = Keymap::new(&settings.keys);
-        // "-3": le schede ora dicono anche l'anno (prima, con "-2", generi,
-        // editore e raccolte); quelle vecchie non lo hanno, e si rileggono
-        // tutte una volta
-        for old in ["comicinfo.json", "comicinfo-2.json"] {
-            let _ = std::fs::remove_file(covers_dir.with_file_name(old));
-        }
-        let info_cache = covers_dir.with_file_name("comicinfo-3.json");
-        let cover_loader = {
-            let proxy = proxy.clone();
-            CoverLoader::new(covers_dir, move |c| {
-                let _ = proxy.send_event(UserEvent::Cover(c));
-            })
-        };
-        let deliver = {
-            let proxy = proxy.clone();
-            move |loaded| {
-                let _ = proxy.send_event(UserEvent::Loaded(loaded));
-            }
-        };
+        let thumb_loader = Loader::new(2, deliver(&proxy, UserEvent::Thumb));
+        let lens_loader = Loader::new(2, deliver(&proxy, UserEvent::LensPage));
+        let upscaler = Upscaler::new(esrgan_engine(), deliver(&proxy, UserEvent::Upscaled));
+        let cover_loader = CoverLoader::new(covers_dir, deliver(&proxy, UserEvent::Cover));
         // ponytail: variabile solo per le prove, la scelta vera arriva dalle misure
         let threads =
             std::env::var("FUMETTO_THREADS").ok().and_then(|t| t.parse().ok()).unwrap_or_else(Loader::default_threads);
+        let loader = Loader::new(threads, deliver(&proxy, UserEvent::Loaded));
         let mut app = App {
-            loader: Loader::new(threads, deliver),
+            loader,
             book: None,
             reader: None,
             generation: 0,

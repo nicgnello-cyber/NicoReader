@@ -2,6 +2,7 @@
 //! thread di lavoro.
 
 use super::*;
+use winit::event::KeyEvent;
 
 impl ApplicationHandler<UserEvent> for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
@@ -70,158 +71,27 @@ impl ApplicationHandler<UserEvent> for App {
                 Ok(start) => self.gpu_arrived(start),
                 Err(e) => eprintln!("scheda video: {e}; si continua copiando dal processore"),
             },
-            UserEvent::Chosen(path, to_library) => {
-                self.dialog = false;
-                match (path, to_library) {
-                    (Some(path), true) => {
-                        if !self.settings.library.contains(&path) {
-                            self.settings.library.push(path);
-                            self.save_settings();
-                        }
-                        self.rescan();
-                        self.changed();
-                    }
-                    (Some(path), false) => self.open(&path),
-                    (None, _) => {}
-                }
-            }
+            UserEvent::Chosen(path, to_library) => self.chosen(path, to_library),
             UserEvent::DialogClosed => self.dialog = false,
-            UserEvent::Confirmed(path) => {
-                self.dialog = false;
-                match system::trash(&path) {
-                    Ok(()) => {
-                        self.ui.toast(t("Spostato nel cestino", "Moved to the trash"), Instant::now());
-                        self.rescan();
-                    }
-                    Err(e) => self.notify(format!(
-                        "{}\n\n{e}",
-                        t("Impossibile spostarlo nel cestino.", "Can't move it to the trash.")
-                    )),
-                }
-            }
+            UserEvent::Confirmed(path) => self.trash_confirmed(&path),
             UserEvent::Scanned(scan) => self.scanned(*scan),
             UserEvent::ServerChecked(server, found) => self.server_checked(server, found),
             UserEvent::Opened(path, book, quiet) => self.opened(&path, *book, quiet),
             UserEvent::Downloaded(path, result) => self.downloaded(&path, result),
-            UserEvent::Cover(c) => match (&self.gfx, c.page) {
-                (Some(gfx), Ok(page)) => {
-                    if let Ok(image) = gfx.renderer.upload(&page) {
-                        self.covers.insert(c.path, (image, c.size));
-                        self.request_redraw();
-                    }
-                }
-                // senza scheda video non si tengono: si richiedono quando c'e'
-                (None, Ok(_)) => self.cover_wanted.clear(),
-                (_, Err(e)) => {
-                    eprintln!("copertina di {}: {e}", c.path.display());
-                    self.covers_failed.insert(c.path);
-                    self.request_redraw();
-                }
-            },
-            UserEvent::Thumb(loaded) => {
-                if loaded.generation != self.thumb_generation {
-                    return;
-                }
-                match (&self.gfx, loaded.page) {
-                    (Some(gfx), Ok(page)) => {
-                        if let Ok(image) = gfx.renderer.upload(&page) {
-                            self.thumb_images.insert(loaded.index, (image, loaded.target));
-                            self.request_redraw();
-                        }
-                    }
-                    // senza scheda video non si tengono: si richiedono quando c'e'
-                    (None, Ok(_)) => self.thumb_wanted = (None, Vec::new()),
-                    (_, Err(e)) => eprintln!("miniatura {}: {e}", loaded.index + 1),
-                }
-            }
-            UserEvent::LensPage(loaded) => {
-                if loaded.generation != self.lens_generation {
-                    return;
-                }
-                match (&self.gfx, loaded.page) {
-                    (Some(gfx), Ok(page)) => match gfx.renderer.upload(&page) {
-                        Ok(image) => {
-                            self.lens_images.insert(loaded.index, (image, loaded.target));
-                            // ai loro pixel pesano: se ne tengono poche, le piu' vicine
-                            let here = self.reader.as_ref().map_or(0, |r| r.here());
-                            while self.lens_images.len() > 4 {
-                                let far = *self.lens_images.keys().max_by_key(|i| i.abs_diff(here)).expect("non vuota");
-                                self.lens_images.remove(&far);
-                            }
-                            self.request_redraw();
-                        }
-                        Err(e) => eprintln!("lente, pagina {}: {e}", loaded.index + 1),
-                    },
-                    (None, Ok(_)) => self.lens_wanted = (None, Vec::new()),
-                    (_, Err(e)) => eprintln!("lente, pagina {}: {e}", loaded.index + 1),
-                }
-            }
-            UserEvent::Upscaled(u) => {
-                if let Some(e) = u.error {
-                    // nessuna scheda video adatta: lo si dice, e si spegne
-                    if self.settings.upscale {
-                        self.toggle_upscale();
-                    }
-                    let head =
-                        t("Il miglioramento con l'AI non si può usare qui.", "AI enhancement can't be used here.");
-                    return self.notify(format!("{head}\n\n{e}"));
-                }
-                let current = self.reader.as_ref().map(|r| r.target());
-                if u.generation != self.generation || !self.settings.upscale {
-                    return;
-                }
-                match (u.page, &self.gfx) {
-                    (Some(page), Some(gfx)) if current == Some(u.target) => {
-                        if let Ok(image) = gfx.renderer.upload(&page) {
-                            self.shown.insert(u.index, Shown { image, target: u.target, upscaled: true, stale: false });
-                            self.request_redraw();
-                        }
-                    }
-                    (None, _) => {
-                        self.upscale_failed.insert((u.index, u.target));
-                    }
-                    _ => {}
-                }
-                self.request_upscale();
-            }
+            UserEvent::Cover(c) => self.cover_arrived(c),
+            UserEvent::Thumb(loaded) => self.thumb_arrived(loaded),
+            UserEvent::LensPage(loaded) => self.lens_page_arrived(loaded),
+            UserEvent::Upscaled(u) => self.upscaled(u),
             UserEvent::Update(release) => self.update_arrived(release),
             UserEvent::OpenUpdate(url) => self.open_release_page(&url),
             UserEvent::InstallUpdate(release) => self.install_update(release),
             UserEvent::UpdateDownloaded(plan, release, file) => {
                 self.update_downloaded(event_loop, *plan, release, file)
             }
-            UserEvent::SaveTo(path) => {
-                self.dialog = false;
-                if let (Some(path), Some((book, index))) = (path, self.to_save.take()) {
-                    let proxy = self.proxy.clone();
-                    std::thread::Builder::new()
-                        .name("salva-pagina".into())
-                        .spawn(move || {
-                            let done = save_page(&book, index, &path).map(|_| t("Pagina salvata", "Page saved"));
-                            let _ = proxy.send_event(UserEvent::Done(done));
-                        })
-                        .expect("thread del salvataggio");
-                }
-            }
+            UserEvent::SaveTo(path) => self.save_to(path),
             UserEvent::Searched(query, found, failed) => self.searched(query, found, failed),
-            UserEvent::Forwarded(path) => {
-                // la finestra davanti, anche se era ridotta a icona
-                if let Some(w) = &self.window {
-                    w.set_minimized(false);
-                    w.focus_window();
-                }
-                if let Some(path) = path {
-                    self.open(&path);
-                }
-                self.request_redraw();
-            }
-            UserEvent::Done(result) => match result {
-                Ok(text) => {
-                    self.ui.toast(text, Instant::now());
-                    self.request_redraw();
-                }
-                Err(e) => self.notify(e),
-            },
+            UserEvent::Forwarded(path) => self.forwarded(path),
+            UserEvent::Done(result) => self.done(result),
         }
     }
 
@@ -299,15 +169,7 @@ impl App {
     fn handle_window_event(&mut self, event_loop: &ActiveEventLoop, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(size) => {
-                if let Some(gfx) = &mut self.gfx {
-                    gfx.config.width = size.width.max(1);
-                    gfx.config.height = size.height.max(1);
-                    gfx.surface.configure(&gfx.gpu.device, &gfx.config);
-                }
-                self.fit_view();
-                self.changed();
-            }
+            WindowEvent::Resized(size) => self.resized(size.width, size.height),
             WindowEvent::RedrawRequested => self.redraw(),
             #[cfg(windows)]
             WindowEvent::ScaleFactorChanged { .. } => {
@@ -317,98 +179,9 @@ impl App {
             }
             WindowEvent::ModifiersChanged(m) => self.modifiers = m.state(),
             WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
-                // le impostazioni aspettano un tasto nuovo: questo e' per loro
-                if self.ui.capturing().is_some() {
-                    let Some(combo) = combo_of(&event, self.modifiers) else { return }; // un modificatore da solo
-                    let plain = !combo.ctrl && !combo.alt && !combo.shift;
-                    let cmd = match combo.key.as_str() {
-                        "Escape" if plain => self.ui.captured(None, false),
-                        "Backspace" | "Delete" if plain => self.ui.captured(None, true),
-                        _ => self.ui.captured(Some(combo), false),
-                    };
-                    self.request_redraw();
-                    if let Some(cmd) = cmd {
-                        self.run(cmd, event_loop);
-                    }
-                    return;
-                }
-                // prima l'interfaccia: con un menu aperto o nella galleria
-                // vuota le frecce e Invio sono sue
-                let command =
-                    if cfg!(target_os = "macos") { self.modifiers.super_key() } else { self.modifiers.control_key() };
-                // il modulo del server: Ctrl+V incolla, e Ctrl+Alt (AltGr su
-                // Windows, per la @ della tastiera italiana) scrive
-                if self.ui.server_open() && command && !self.modifiers.alt_key() {
-                    if event.key_without_modifiers() == Key::Character("v".into()) {
-                        let text = arboard::Clipboard::new().and_then(|mut c| c.get_text());
-                        if let Ok(text) = text {
-                            self.ui.paste(&text);
-                            self.request_redraw();
-                        }
-                    }
-                    return;
-                }
-                let command = command && !self.ui.server_open();
-                if !command && (self.ui.modal() || self.reader.is_none() || self.shelf_shown() || self.thumbs_shown()) {
-                    let ctx = input_context!(self);
-                    let handled = ui_key(&event.logical_key).map_or(Handled::No, |k| self.ui.key(k, &ctx));
-                    match handled {
-                        Handled::Yes(cmd) => {
-                            self.request_redraw();
-                            if let Some(cmd) = cmd {
-                                self.run(cmd, event_loop);
-                            }
-                            return;
-                        }
-                        // con un menu aperto, nella libreria o fra le miniature, nessun
-                        // altro tasto arriva al lettore
-                        Handled::No if self.ui.modal() || self.shelf_shown() || self.thumbs_shown() => return,
-                        Handled::No => {}
-                    }
-                }
-                if event.logical_key == Key::Named(NamedKey::ContextMenu) {
-                    let (w, h) = self.view_size();
-                    let ctx = input_context!(self);
-                    self.ui.open_menu(w as f32 / 2.0, h as f32 / 3.0, &ctx);
-                    return self.request_redraw();
-                }
-                if let Some(a) = self.key(&event) {
-                    self.act(a, event_loop);
-                }
+                self.key_pressed(&event, event_loop)
             }
-            WindowEvent::MouseWheel { delta, .. } => {
-                let (lines, pixels) = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => (y, -y * self.view_size().1 as f32 * 0.15),
-                    MouseScrollDelta::PixelDelta(p) => (p.y as f32 / 120.0, -p.y as f32),
-                };
-                let ctx = input_context!(self);
-                if self.ui.wheel(pixels, &ctx) {
-                    return self.request_redraw();
-                }
-                if self.ui.modal() {
-                    // "vai a pagina": la rotella sfoglia il numero; nel menu, le voci
-                    self.ui.key(if lines > 0.0 { ui::Key::Up } else { ui::Key::Down }, &ctx);
-                    return self.request_redraw();
-                }
-                if self.lens_circle().is_some() && !self.modifiers.control_key() {
-                    let zoom = (self.settings.lens_zoom * 1.12f32.powf(lines)).clamp(1.5, 6.0);
-                    self.settings.lens_zoom = (zoom * 4.0).round() / 4.0;
-                    self.settings_dirty = true;
-                    let text = format!("{} {}\u{00d7}", t("Lente", "Magnifier"), self.settings.lens_zoom);
-                    let text = if fumetto_core::lingua::italian() { text.replace('.', ",") } else { text };
-                    self.ui.toast(text, Instant::now());
-                    return self.request_redraw();
-                }
-                let zoomed = self.reader.as_ref().is_some_and(|r| r.zoomed());
-                let action = if self.modifiers.control_key() {
-                    Action::Zoom { factor: 1.2f32.powf(lines), x: self.cursor.0, y: self.cursor.1 - self.top() as f32 }
-                } else if zoomed {
-                    Action::Pan(0.0, -pixels)
-                } else {
-                    Action::Scroll(pixels)
-                };
-                self.act(action, event_loop);
-            }
+            WindowEvent::MouseWheel { delta, .. } => self.wheel(delta, event_loop),
             WindowEvent::CursorMoved { position, .. } => {
                 self.pointer_moved(position.x as f32, position.y as f32, event_loop)
             }
@@ -428,6 +201,131 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    fn resized(&mut self, width: u32, height: u32) {
+        if let Some(gfx) = &mut self.gfx {
+            gfx.config.width = width.max(1);
+            gfx.config.height = height.max(1);
+            gfx.surface.configure(&gfx.gpu.device, &gfx.config);
+        }
+        self.fit_view();
+        self.changed();
+    }
+
+    /// Un tasto premuto: alle impostazioni che ne aspettano uno nuovo, al
+    /// modulo (Ctrl+V incolla), all'interfaccia, al menu (il tasto del menu),
+    /// poi al lettore.
+    fn key_pressed(&mut self, event: &KeyEvent, event_loop: &ActiveEventLoop) {
+        if self.ui.capturing().is_some() {
+            return self.capture_key(event, event_loop);
+        }
+        let command = if cfg!(target_os = "macos") { self.modifiers.super_key() } else { self.modifiers.control_key() };
+        // il modulo del server: Ctrl+V incolla, e Ctrl+Alt (AltGr su
+        // Windows, per la @ della tastiera italiana) scrive
+        if self.ui.server_open() && command && !self.modifiers.alt_key() {
+            if event.key_without_modifiers() == Key::Character("v".into())
+                && let Ok(text) = arboard::Clipboard::new().and_then(|mut c| c.get_text())
+            {
+                self.ui.paste(&text);
+                self.request_redraw();
+            }
+            return;
+        }
+        let command = command && !self.ui.server_open();
+        if !command && self.ui_key_first(event, event_loop) {
+            return;
+        }
+        if event.logical_key == Key::Named(NamedKey::ContextMenu) {
+            let (w, h) = self.view_size();
+            let ctx = input_context!(self);
+            self.ui.open_menu(w as f32 / 2.0, h as f32 / 3.0, &ctx);
+            return self.request_redraw();
+        }
+        if let Some(a) = self.key(event) {
+            self.act(a, event_loop);
+        }
+    }
+
+    /// Le impostazioni aspettano un tasto nuovo: questo e' per loro (Esc
+    /// lascia com'era, Canc lo toglie). Un modificatore da solo non conta.
+    fn capture_key(&mut self, event: &KeyEvent, event_loop: &ActiveEventLoop) {
+        let Some(combo) = combo_of(event, self.modifiers) else { return };
+        let plain = !combo.ctrl && !combo.alt && !combo.shift;
+        let cmd = match combo.key.as_str() {
+            "Escape" if plain => self.ui.captured(None, false),
+            "Backspace" | "Delete" if plain => self.ui.captured(None, true),
+            _ => self.ui.captured(Some(combo), false),
+        };
+        self.request_redraw();
+        if let Some(cmd) = cmd {
+            self.run(cmd, event_loop);
+        }
+    }
+
+    /// Prima l'interfaccia: con un menu aperto, nella galleria vuota, nella
+    /// libreria e fra le miniature le frecce e Invio sono sue. `true` se il
+    /// tasto non va oltre.
+    fn ui_key_first(&mut self, event: &KeyEvent, event_loop: &ActiveEventLoop) -> bool {
+        let covering = self.ui.modal() || self.shelf_shown() || self.thumbs_shown();
+        if !covering && self.reader.is_some() {
+            return false;
+        }
+        let ctx = input_context!(self);
+        match ui_key(&event.logical_key).map_or(Handled::No, |k| self.ui.key(k, &ctx)) {
+            Handled::Yes(cmd) => {
+                self.request_redraw();
+                if let Some(cmd) = cmd {
+                    self.run(cmd, event_loop);
+                }
+                true
+            }
+            // con un menu aperto, nella libreria o fra le miniature, nessun
+            // altro tasto arriva al lettore
+            Handled::No => covering,
+        }
+    }
+
+    /// La rotella: all'interfaccia (libreria, miniature, impostazioni), alla
+    /// finestra aperta, alla lente; poi zoom (con Ctrl), spostamento della
+    /// pagina ingrandita, o pagine.
+    fn wheel(&mut self, delta: MouseScrollDelta, event_loop: &ActiveEventLoop) {
+        let (lines, pixels) = match delta {
+            MouseScrollDelta::LineDelta(_, y) => (y, -y * self.view_size().1 as f32 * 0.15),
+            MouseScrollDelta::PixelDelta(p) => (p.y as f32 / 120.0, -p.y as f32),
+        };
+        let ctx = input_context!(self);
+        if self.ui.wheel(pixels, &ctx) {
+            return self.request_redraw();
+        }
+        if self.ui.modal() {
+            // "vai a pagina": la rotella sfoglia il numero; nel menu, le voci
+            self.ui.key(if lines > 0.0 { ui::Key::Up } else { ui::Key::Down }, &ctx);
+            return self.request_redraw();
+        }
+        if self.lens_circle().is_some() && !self.modifiers.control_key() {
+            return self.lens_wheel(lines);
+        }
+        let zoomed = self.reader.as_ref().is_some_and(|r| r.zoomed());
+        let action = if self.modifiers.control_key() {
+            Action::Zoom { factor: 1.2f32.powf(lines), x: self.cursor.0, y: self.cursor.1 - self.top() as f32 }
+        } else if zoomed {
+            Action::Pan(0.0, -pixels)
+        } else {
+            Action::Scroll(pixels)
+        };
+        self.act(action, event_loop);
+    }
+
+    /// Con la lente, la rotella ne cambia l'ingrandimento (a quarti, da 1,5 a 6).
+    fn lens_wheel(&mut self, lines: f32) {
+        let zoom = (self.settings.lens_zoom * 1.12f32.powf(lines)).clamp(1.5, 6.0);
+        self.settings.lens_zoom = (zoom * 4.0).round() / 4.0;
+        self.settings_dirty = true;
+        let text = format!("{} {}\u{00d7}", t("Lente", "Magnifier"), self.settings.lens_zoom);
+        let text = if fumetto_core::lingua::italian() { text.replace('.', ",") } else { text };
+        self.ui.toast(text, Instant::now());
+        self.request_redraw();
     }
 
     /// Il puntatore (mouse, o un dito) si e' mosso.

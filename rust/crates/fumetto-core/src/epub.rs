@@ -16,7 +16,7 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 
-use quick_xml::events::Event;
+use quick_xml::events::{BytesStart, Event};
 use quick_xml::{NsReader, XmlVersion};
 
 use crate::book::is_image;
@@ -178,7 +178,7 @@ fn rootfile(container: &str) -> Option<String> {
 }
 
 /// Il valore di un attributo, per nome locale (senza prefisso).
-fn attr(e: &quick_xml::events::BytesStart, name: &[u8]) -> Option<String> {
+fn attr(e: &BytesStart, name: &[u8]) -> Option<String> {
     e.attributes()
         .flatten()
         .find(|a| a.key.local_name().as_ref() == name)
@@ -198,49 +198,15 @@ struct Package {
 /// Il pacchetto (.opf): manifest, spine e i metadati che servono.
 fn parse_package(opf: &str) -> Option<Package> {
     let mut r = NsReader::from_str(opf);
-    let mut p = Package::default();
-    let mut info = ComicInfo::default();
-    let (mut creators, mut subjects) = (Vec::new(), Vec::new());
-    // EPUB 3: <meta property="belongs-to-collection" id="c1">Serie</meta>,
-    // con <meta refines="#c1" property="group-position">3</meta>
-    let mut collections: Vec<(Option<String>, String)> = Vec::new();
-    let mut refines: HashMap<String, Vec<(String, String)>> = HashMap::new();
-    // l'elemento aperto di cui serve il testo
+    let mut o = Opf::default();
+    // l'elemento aperto di cui serve il testo: nome, proprieta', id
     let mut open: Option<(Vec<u8>, Option<String>, Option<String>)> = None;
     let mut text = String::new();
     loop {
         match r.read_event().ok()? {
-            Event::Start(e) | Event::Empty(e) if e.local_name().as_ref() == b"item" => {
-                if let (Some(id), Some(href)) = (attr(&e, b"id"), attr(&e, b"href")) {
-                    let media = attr(&e, b"media-type").unwrap_or_default().to_ascii_lowercase();
-                    p.manifest.insert(id, (href, media));
-                }
-            }
-            Event::Start(e) | Event::Empty(e) if e.local_name().as_ref() == b"itemref" => {
-                if attr(&e, b"linear").as_deref() != Some("no")
-                    && let Some(id) = attr(&e, b"idref")
-                {
-                    p.spine.push(id);
-                }
-            }
-            Event::Start(e) | Event::Empty(e) if e.local_name().as_ref() == b"spine" => {
-                if let Some(dir) = attr(&e, b"page-progression-direction") {
-                    info.right_to_left = match dir.as_str() {
-                        "rtl" => Some(true),
-                        "ltr" => Some(false),
-                        _ => None,
-                    };
-                }
-            }
+            Event::Start(e) | Event::Empty(e) if is_structure(&e) => o.structure(&e),
             // Calibre (EPUB 2): <meta name="calibre:series" content="..."/>
-            Event::Empty(e) if e.local_name().as_ref() == b"meta" && attr(&e, b"name").is_some() => {
-                let value = attr(&e, b"content").unwrap_or_default();
-                match attr(&e, b"name").as_deref() {
-                    Some("calibre:series") => info.series = Some(value),
-                    Some("calibre:series_index") => info.number = Some(trim_index(&value)),
-                    _ => {}
-                }
-            }
+            Event::Empty(e) if e.local_name().as_ref() == b"meta" => o.calibre(&e),
             Event::Start(e) => {
                 let name = e.local_name().as_ref().to_vec();
                 let wanted =
@@ -250,75 +216,136 @@ fn parse_package(opf: &str) -> Option<Package> {
             }
             Event::Text(t) => text.push_str(&t.xml10_content().ok()?),
             Event::GeneralRef(g) => {
-                if let Ok(Some(c)) = g.resolve_char_ref() {
-                    text.push(c);
-                } else if let Ok(name) = g.decode() {
-                    text.push_str(match name.as_ref() {
-                        "amp" => "&",
-                        "lt" => "<",
-                        "gt" => ">",
-                        "quot" => "\"",
-                        "apos" => "'",
-                        _ => "",
-                    });
-                }
+                let _ = crate::xml::push_reference(&mut text, &g);
             }
             Event::End(_) => {
                 let value = text.trim().to_owned();
                 text.clear();
-                let Some((name, property, id)) = open.take() else { continue };
-                if value.is_empty() {
-                    continue;
-                }
-                match (name.as_slice(), property.as_deref()) {
-                    (b"title", _) if info.title.is_none() => info.title = Some(value),
-                    (b"creator", _) => creators.push(value),
-                    (b"subject", _) => subjects.push(value),
-                    (b"publisher", _) => info.publisher = Some(value),
-                    (b"date", _) if info.year.is_none() => info.year = crate::comicinfo::year_of(&value),
-                    (b"meta", Some("belongs-to-collection")) => collections.push((id, value)),
-                    (b"meta", Some(prop)) => {
-                        if let Some(target) = id.as_deref().and_then(|i| i.strip_prefix('#')) {
-                            refines.entry(target.to_owned()).or_default().push((prop.to_owned(), value));
-                        }
-                    }
-                    _ => {}
+                if let Some((name, property, id)) = open.take().filter(|_| !value.is_empty()) {
+                    o.ended(&name, property.as_deref(), id, value);
                 }
             }
             Event::Eof => break,
             _ => {}
         }
     }
-    // la collezione di tipo "series" e' la serie, le altre raccolte
-    for (id, name) in collections {
-        let props = id.as_deref().and_then(|i| refines.get(i)).cloned().unwrap_or_default();
-        let prop = |k: &str| props.iter().find(|(p, _)| p == k).map(|(_, v)| v.clone());
-        if prop("collection-type").as_deref() == Some("series")
-            || (info.series.is_none() && prop("group-position").is_some())
-        {
-            if info.series.is_none() {
-                info.series = Some(name);
-                info.number = prop("group-position").map(|n| trim_index(&n)).or(info.number.take());
+    Some(o.finish())
+}
+
+/// Gli elementi che danno la struttura: voci, ordine di lettura, verso.
+fn is_structure(e: &BytesStart) -> bool {
+    matches!(e.local_name().as_ref(), b"item" | b"itemref" | b"spine")
+}
+
+/// Cio' che si raccoglie leggendo il pacchetto, prima di metterlo insieme.
+#[derive(Default)]
+struct Opf {
+    p: Package,
+    info: ComicInfo,
+    creators: Vec<String>,
+    subjects: Vec<String>,
+    /// EPUB 3: <meta property="belongs-to-collection" id="c1">Serie</meta>,
+    /// con <meta refines="#c1" property="group-position">3</meta>
+    collections: Vec<(Option<String>, String)>,
+    refines: HashMap<String, Vec<(String, String)>>,
+}
+
+impl Opf {
+    /// Le voci del manifest, quelle dello spine (non quelle fuori lettura)
+    /// e il verso.
+    fn structure(&mut self, e: &BytesStart) {
+        match e.local_name().as_ref() {
+            b"item" => {
+                if let (Some(id), Some(href)) = (attr(e, b"id"), attr(e, b"href")) {
+                    let media = attr(e, b"media-type").unwrap_or_default().to_ascii_lowercase();
+                    self.p.manifest.insert(id, (href, media));
+                }
             }
-        } else if !info.series_group.contains(&name) {
-            info.series_group.push(name);
+            b"itemref" => {
+                if attr(e, b"linear").as_deref() != Some("no")
+                    && let Some(id) = attr(e, b"idref")
+                {
+                    self.p.spine.push(id);
+                }
+            }
+            b"spine" => {
+                if let Some(dir) = attr(e, b"page-progression-direction") {
+                    self.info.right_to_left = match dir.as_str() {
+                        "rtl" => Some(true),
+                        "ltr" => Some(false),
+                        _ => None,
+                    };
+                }
+            }
+            _ => {}
         }
     }
-    let mut authors: Vec<String> = Vec::new();
-    for c in creators {
-        if !authors.iter().any(|a| a.eq_ignore_ascii_case(&c)) {
-            authors.push(c);
+
+    /// La serie e il numero come li scrive Calibre.
+    fn calibre(&mut self, e: &BytesStart) {
+        let value = attr(e, b"content").unwrap_or_default();
+        match attr(e, b"name").as_deref() {
+            Some("calibre:series") => self.info.series = Some(value),
+            Some("calibre:series_index") => self.info.number = Some(trim_index(&value)),
+            _ => {}
         }
     }
-    info.authors = (!authors.is_empty()).then(|| authors.join(", "));
-    for s in subjects.iter().flat_map(|s| s.split([',', ';'])) {
-        let s = s.trim();
-        if !s.is_empty() && !info.genres.iter().any(|g| g.eq_ignore_ascii_case(s)) {
-            info.genres.push(s.to_owned());
+
+    /// Un metadato finito, con il suo testo (non vuoto).
+    fn ended(&mut self, name: &[u8], property: Option<&str>, id: Option<String>, value: String) {
+        let info = &mut self.info;
+        match (name, property) {
+            (b"title", _) if info.title.is_none() => info.title = Some(value),
+            (b"creator", _) => self.creators.push(value),
+            (b"subject", _) => self.subjects.push(value),
+            (b"publisher", _) => info.publisher = Some(value),
+            (b"date", _) if info.year.is_none() => info.year = crate::comicinfo::year_of(&value),
+            (b"meta", Some("belongs-to-collection")) => self.collections.push((id, value)),
+            (b"meta", Some(prop)) => {
+                if let Some(target) = id.as_deref().and_then(|i| i.strip_prefix('#')) {
+                    self.refines.entry(target.to_owned()).or_default().push((prop.to_owned(), value));
+                }
+            }
+            _ => {}
         }
     }
-    p.info = (info != ComicInfo::default()).then_some(info);
-    Some(p)
+
+    /// Il pacchetto: le collezioni diventano serie o raccolte, gli autori
+    /// una riga sola (senza doppi), gli argomenti i generi.
+    fn finish(mut self) -> Package {
+        let info = &mut self.info;
+        // la collezione di tipo "series" e' la serie, le altre raccolte
+        for (id, name) in std::mem::take(&mut self.collections) {
+            let props = id.as_deref().and_then(|i| self.refines.get(i)).cloned().unwrap_or_default();
+            let prop = |k: &str| props.iter().find(|(p, _)| p == k).map(|(_, v)| v.clone());
+            if prop("collection-type").as_deref() == Some("series")
+                || (info.series.is_none() && prop("group-position").is_some())
+            {
+                if info.series.is_none() {
+                    info.series = Some(name);
+                    info.number = prop("group-position").map(|n| trim_index(&n)).or(info.number.take());
+                }
+            } else if !info.series_group.contains(&name) {
+                info.series_group.push(name);
+            }
+        }
+        let mut authors: Vec<String> = Vec::new();
+        for c in self.creators {
+            if !authors.iter().any(|a| a.eq_ignore_ascii_case(&c)) {
+                authors.push(c);
+            }
+        }
+        info.authors = (!authors.is_empty()).then(|| authors.join(", "));
+        for s in self.subjects.iter().flat_map(|s| s.split([',', ';'])) {
+            let s = s.trim();
+            if !s.is_empty() && !info.genres.iter().any(|g| g.eq_ignore_ascii_case(s)) {
+                info.genres.push(s.to_owned());
+            }
+        }
+        let info = std::mem::take(&mut self.info);
+        self.p.info = (info != ComicInfo::default()).then_some(info);
+        self.p
+    }
 }
 
 /// "3.0" -> "3", "2.5" resta: Calibre scrive gli indici con la virgola mobile.
@@ -350,197 +377,4 @@ fn images_in(doc: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
-    use super::*;
-
-    /// Un EPUB in memoria: i file dati (nome, contenuto), senza compressione.
-    pub(crate) fn epub(files: &[(&str, &[u8])]) -> Vec<u8> {
-        let mut out = std::io::Cursor::new(Vec::new());
-        let mut zip = zip::ZipWriter::new(&mut out);
-        let stored = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-        zip.start_file("mimetype", stored).unwrap();
-        std::io::Write::write_all(&mut zip, b"application/epub+zip").unwrap();
-        zip.start_file("META-INF/container.xml", stored).unwrap();
-        std::io::Write::write_all(
-            &mut zip,
-            br#"<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-              <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
-            </container>"#,
-        )
-        .unwrap();
-        for (name, bytes) in files {
-            zip.start_file(*name, stored).unwrap();
-            std::io::Write::write_all(&mut zip, bytes).unwrap();
-        }
-        zip.finish().unwrap();
-        out.into_inner()
-    }
-
-    /// Un manga in EPUB 3 a layout fisso, come lo fa Kindle Comic Converter:
-    /// le immagini in ordine diverso dal nome, da destra a sinistra, la serie
-    /// come collezione, la stessa immagine ripetuta, un'immagine fuori spine.
-    pub(crate) fn manga() -> Vec<u8> {
-        let page = |img: &str| {
-            format!(
-                r#"<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><body>
-                <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">
-                <image width="10" height="10" xlink:href="{img}"/></svg></body></html>"#
-            )
-        };
-        let opf = r##"<?xml version="1.0" encoding="UTF-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id">
-  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-    <dc:title>Nebbia sul Porto &amp; altre storie</dc:title>
-    <dc:creator id="a1">Mario Rossi</dc:creator>
-    <dc:creator>Anna Bianchi</dc:creator>
-    <dc:publisher>Edizioni Prova</dc:publisher>
-    <dc:subject>Giallo, Avventura</dc:subject>
-    <meta property="belongs-to-collection" id="c1">Nebbia sul Porto</meta>
-    <meta refines="#c1" property="collection-type">series</meta>
-    <meta refines="#c1" property="group-position">3</meta>
-    <meta property="belongs-to-collection" id="c2">Gialli italiani</meta>
-  </metadata>
-  <manifest>
-    <item id="p1" href="Text/p%201.xhtml" media-type="application/xhtml+xml"/>
-    <item id="p2" href="Text/p2.xhtml" media-type="application/xhtml+xml"/>
-    <item id="p3" href="Text/p3.xhtml" media-type="application/xhtml+xml"/>
-    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
-    <item id="i1" href="Images/zz.png" media-type="image/png"/>
-    <item id="i2" href="Images/aa.png" media-type="image/png"/>
-    <item id="i3" href="Images/fuori.png" media-type="image/png"/>
-  </manifest>
-  <spine page-progression-direction="rtl">
-    <itemref idref="p1"/><itemref idref="p2"/><itemref idref="p3"/>
-    <itemref idref="nav" linear="no"/>
-  </spine>
-</package>"##;
-        epub(&[
-            ("OEBPS/content.opf", opf.as_bytes()),
-            ("OEBPS/Text/p 1.xhtml", page("../Images/zz.png").as_bytes()),
-            ("OEBPS/Text/p2.xhtml", page("../Images/aa.png").as_bytes()),
-            ("OEBPS/Text/p3.xhtml", page("../Images/aa.png").as_bytes()),
-            ("OEBPS/nav.xhtml", b"<html><body><nav>indice</nav></body></html>"),
-            ("OEBPS/Images/zz.png", &png()),
-            ("OEBPS/Images/aa.png", &png()),
-            ("OEBPS/Images/fuori.png", &png()),
-        ])
-    }
-
-    /// Un PNG 1x1, abbastanza per essere una pagina.
-    pub(crate) fn png() -> Vec<u8> {
-        let mut out = Vec::new();
-        let img = image::RgbaImage::from_pixel(2, 3, image::Rgba([200, 30, 30, 255]));
-        img.write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png).unwrap();
-        out
-    }
-
-    fn open(bytes: Vec<u8>) -> zip::ZipArchive<std::io::Cursor<Vec<u8>>> {
-        zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap()
-    }
-
-    #[test]
-    fn le_pagine_nell_ordine_del_libro() {
-        let mut zip = open(manga());
-        assert!(is_epub(&zip));
-        let e = read(&mut zip).unwrap().unwrap();
-        assert_eq!(e.pages, ["OEBPS/Images/zz.png", "OEBPS/Images/aa.png"], "spine, %20, .., niente doppioni");
-        let info = e.info.unwrap();
-        assert_eq!(info.title.as_deref(), Some("Nebbia sul Porto & altre storie"));
-        assert_eq!((info.series.as_deref(), info.number.as_deref()), (Some("Nebbia sul Porto"), Some("3")));
-        assert_eq!(info.authors.as_deref(), Some("Mario Rossi, Anna Bianchi"));
-        assert_eq!(info.right_to_left, Some(true));
-        assert_eq!(info.publisher.as_deref(), Some("Edizioni Prova"));
-        assert_eq!(info.genres, ["Giallo", "Avventura"]);
-        assert_eq!(info.series_group, ["Gialli italiani"]);
-    }
-
-    #[test]
-    fn le_immagini_nello_spine_e_calibre() {
-        let opf = r#"<package xmlns="http://www.idpf.org/2007/opf" version="2.0">
-  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
-    <dc:title>Orbita Bassa</dc:title>
-    <meta name="calibre:series" content="Orbita Bassa"/>
-    <meta name="calibre:series_index" content="2.0"/>
-  </metadata>
-  <manifest>
-    <item id="a" href="b.jpg" media-type="image/jpeg"/>
-    <item id="b" href="a.jpg" media-type="image/jpeg"/>
-  </manifest>
-  <spine><itemref idref="a"/><itemref idref="b"/></spine>
-</package>"#;
-        let mut zip =
-            open(epub(&[("OEBPS/content.opf", opf.as_bytes()), ("OEBPS/b.jpg", b"jpg"), ("OEBPS/a.jpg", b"jpg")]));
-        let e = read(&mut zip).unwrap().unwrap();
-        assert_eq!(e.pages, ["OEBPS/b.jpg", "OEBPS/a.jpg"]);
-        let info = e.info.unwrap();
-        assert_eq!((info.series.as_deref(), info.number.as_deref()), (Some("Orbita Bassa"), Some("2")));
-        assert_eq!(info.right_to_left, None);
-    }
-
-    #[test]
-    fn un_romanzo_non_e_un_fumetto() {
-        let opf = r#"<package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata/>
-  <manifest>
-    <item id="c" href="cover.xhtml" media-type="application/xhtml+xml"/>
-    <item id="t1" href="c1.xhtml" media-type="application/xhtml+xml"/>
-    <item id="t2" href="c2.xhtml" media-type="application/xhtml+xml"/>
-    <item id="img" href="cover.jpg" media-type="image/jpeg"/>
-  </manifest>
-  <spine><itemref idref="c"/><itemref idref="t1"/><itemref idref="t2"/></spine></package>"#;
-        let mut zip = open(epub(&[
-            ("OEBPS/content.opf", opf.as_bytes()),
-            ("OEBPS/cover.xhtml", br#"<html><body><img src="cover.jpg"/></body></html>"#),
-            ("OEBPS/c1.xhtml", b"<html><body><p>C'era una volta</p></body></html>"),
-            ("OEBPS/c2.xhtml", b"<html><body><p>Fine</p></body></html>"),
-            ("OEBPS/cover.jpg", b"jpg"),
-        ]));
-        assert_eq!(read(&mut zip), Err(TextOnly));
-    }
-
-    /// Come volume: pagine nell'ordine del libro, la scheda per la libreria, e
-    /// il romanzo che non si apre.
-    #[test]
-    fn un_epub_come_volume() {
-        let dir = std::env::temp_dir().join(format!("fumetto-epub-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("Nebbia sul Porto 03.epub");
-        std::fs::write(&path, manga()).unwrap();
-        let book = crate::Book::open(&path).unwrap();
-        assert_eq!(book.names, ["OEBPS/Images/zz.png", "OEBPS/Images/aa.png"]);
-        assert_eq!(book.read(0).unwrap(), png());
-        assert_eq!(book.info.as_ref().and_then(|i| i.right_to_left), Some(true), "da destra a sinistra");
-        let entries = crate::library::scan(std::slice::from_ref(&dir));
-        assert_eq!(entries.len(), 1, "l'EPUB e' un volume della libreria");
-        assert_eq!(entries[0].series.as_deref(), Some("Nebbia sul Porto"));
-        assert_eq!(entries[0].number, Some(3));
-        use crate::library::{Group, GroupKind};
-        assert_eq!(
-            entries[0].groups,
-            [
-                Group::new(GroupKind::Collection, "Gialli italiani", None),
-                Group::new(GroupKind::Genre, "Giallo", None),
-                Group::new(GroupKind::Genre, "Avventura", None),
-                Group::new(GroupKind::Publisher, "Edizioni Prova", None),
-            ],
-            "raccolte, generi ed editore dalla scheda"
-        );
-        let text = dir.join("romanzo.epub");
-        let opf = br#"<package xmlns="http://www.idpf.org/2007/opf"><manifest>
-            <item id="t" href="t.xhtml" media-type="application/xhtml+xml"/></manifest>
-            <spine><itemref idref="t"/></spine></package>"#;
-        std::fs::write(&text, epub(&[("OEBPS/content.opf", opf), ("OEBPS/t.xhtml", b"<html><p>testo</p></html>")]))
-            .unwrap();
-        assert!(matches!(crate::Book::open(&text), Err(crate::Error::TextEpub)));
-        assert!(!looks_like_comic(&text));
-        assert_eq!(crate::library::scan(std::slice::from_ref(&dir)).len(), 1, "il romanzo non entra in libreria");
-        let _ = std::fs::remove_dir_all(dir);
-    }
-
-    #[test]
-    fn indirizzi() {
-        assert_eq!(resolve("OEBPS/Text/", "../Images/a%20b.png#x"), "OEBPS/Images/a b.png");
-        assert_eq!(resolve("", "./img/p.jpg"), "img/p.jpg");
-        assert_eq!(resolve("OEBPS/", "/img/p.jpg"), "img/p.jpg");
-        assert_eq!(percent_decode("%E2%80%94%zz"), "\u{2014}%zz");
-    }
-}
+pub(crate) mod tests;

@@ -818,6 +818,24 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      serie ("Batman (2011)", "Batman (2016)"; "Saga (DC)" se anche i nomi
      coincidono). Le sottocartelle di una serie (Dylan Dog/001-100) e i
      volumi sciolti restano insieme.
+  4s. [x] Codice riordinato (4 novembre), senza cambiare cio' che si vede.
+     I file grandi divisi per tema: shelf (sezioni, input, menu,
+     disegno), ui (stile, menu, input, galleria), reader (nastro, zoom,
+     disposizione, stato), prefs (righe, disegno), remote (ricerca,
+     catalogo, richieste, feed), library (scansione, serie, ordine), le
+     azioni dell'app (app/commands.rs, app/arrivals.rs). Le prove dei file
+     grandi stanno in tests.rs accanto al modulo. Le funzioni piu' lunghe
+     (barra, eventi, act, layers, moduli, parse_package, la sonda) spezzate
+     in passi con un nome: la piu' lunga passa da 261 righe a un centinaio.
+     Prova che non cambia niente: fumetto-probe scatto e libreria fanno 78
+     scatti (viste, filtri, ordini, menu, suggerimenti, impostazioni,
+     moduli, lettura); quelli di prima e di dopo sono identici pixel per
+     pixel. Piu' veloce: la vista per cartelle con 5000 volumi da 17,5 a 2
+     ms per disposizione (folder_contents lineare, folder_cmp senza
+     confronti inutili); il nastro non rifa' a ogni fotogramma il vettore
+     delle altezze; ordinare non copia i nomi. Due difetti trovati: il
+     suggerimento "Torna alla lettura" scriveva {00b7}, e dal nastro D
+     portava alla pagina da cui si era entrati nel nastro (con una prova).
   5. Il peso dell'eseguibile: da 15,3 a 20,7 MB con AVIF, JPEG XL e appunti
      (vedi 5, Tecnici).
   6. Distribuzione (capitolo 5).

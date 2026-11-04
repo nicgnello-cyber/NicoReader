@@ -222,10 +222,28 @@ impl ServerForm {
         let mut l = Layer::default();
         l.rects.push(Rect::new(0.0, 0.0, vw, vh, [0.0, 0.0, 0.0, 0.96]));
         let top = ys[0] - 178.0 * s;
+        let (kind, title, help) = self.heading();
+        l.texts.push(caps(kind, 11.0 * s, MUTED).on_baseline(x0, top));
+        l.texts.push(fit(m, Text::new(title, Face::Serif, 40.0 * s, INK), w).on_baseline(x0, top + 46.0 * s));
+        for (k, line) in help.into_iter().enumerate() {
+            let text = Text::new(line, Face::Sans, 13.0 * s, MUTED);
+            l.texts.push(fit(m, text, w).on_baseline(x0, top + (78.0 + 20.0 * k as f32) * s));
+        }
+        for ((i, &y), label) in ys[..self.count()].iter().enumerate().zip(self.labels()) {
+            self.draw_field(&mut l, (x0, w, y), label, i, s, m);
+        }
         if let Some(v) = &self.volume {
-            l.texts.push(caps(t("Dati del volume", "Volume details"), 11.0 * s, MUTED).on_baseline(x0, top));
-            let name = Text::new(v.name.as_str(), Face::Serif, 40.0 * s, INK);
-            l.texts.push(fit(m, name, w).on_baseline(x0, top + 46.0 * s));
+            self.draw_direction(&mut l, (x0, w, ys[DIRECTION]), v.right_to_left, s);
+        }
+        let (line, color) = self.status();
+        let below = ys[self.rows() - 1] + 50.0 * s;
+        l.texts.push(fit(m, Text::new(line, Face::Sans, 12.5 * s, color), w).on_baseline(x0, below));
+        l
+    }
+
+    /// In testa: che modulo e', il suo titolo, due righe di aiuto.
+    fn heading(&self) -> (&'static str, &str, [&'static str; 2]) {
+        if let Some(v) = &self.volume {
             let help = [
                 t(
                     "Si correggono per NicoReader: il file resta com'\u{e8}.",
@@ -236,14 +254,9 @@ impl ServerForm {
                     "No series makes it a standalone volume; an empty title goes back to the file's.",
                 ),
             ];
-            for (k, line) in help.into_iter().enumerate() {
-                let text = Text::new(line, Face::Sans, 13.0 * s, MUTED);
-                l.texts.push(fit(m, text, w).on_baseline(x0, top + (78.0 + 20.0 * k as f32) * s));
-            }
-        } else if let Some((_, title)) = &self.pdf {
-            l.texts.push(caps(t("PDF protetto", "Protected PDF"), 11.0 * s, MUTED).on_baseline(x0, top));
-            let name = Text::new(title.as_str(), Face::Serif, 40.0 * s, INK);
-            l.texts.push(fit(m, name, w).on_baseline(x0, top + 46.0 * s));
+            return (t("Dati del volume", "Volume details"), &v.name, help);
+        }
+        if let Some((_, title)) = &self.pdf {
             let help = [
                 t("Per aprirlo serve la sua password.", "It needs its password to open."),
                 t(
@@ -251,118 +264,107 @@ impl ServerForm {
                     "Windows and macOS keep it in the keychain; on Linux it is asked at each launch.",
                 ),
             ];
-            for (k, line) in help.into_iter().enumerate() {
-                let text = Text::new(line, Face::Sans, 13.0 * s, MUTED);
-                l.texts.push(fit(m, text, w).on_baseline(x0, top + (78.0 + 20.0 * k as f32) * s));
-            }
-        } else {
-            l.texts.push(caps(t("Aggiungi un server", "Add a server"), 11.0 * s, MUTED).on_baseline(x0, top));
-            l.texts.push(Text::new("Komga, Kavita", Face::Serif, 40.0 * s, INK).on_baseline(x0, top + 46.0 * s));
+            return (t("PDF protetto", "Protected PDF"), title, help);
         }
-        let help = if self.pdf.is_some() || self.volume.is_some() {
-            &[][..]
-        } else {
-            &[
-                t(
-                    "Komga: l'indirizzo del server (http://casa:25600), con nome e password.",
-                    "Komga: the server address (http://home:25600), with user name and password.",
-                ),
-                t(
-                    "Kavita: il link OPDS che c'\u{e8} nelle impostazioni dell'utente; nome e password non servono.",
-                    "Kavita: the OPDS link from the user settings; no user name or password needed.",
-                ),
-            ][..]
-        };
-        for (k, &line) in help.iter().enumerate() {
-            let text = Text::new(line, Face::Sans, 13.0 * s, MUTED);
-            l.texts.push(fit(m, text, w).on_baseline(x0, top + (78.0 + 20.0 * k as f32) * s));
-        }
-        let labels = if self.pdf.is_some() {
-            [t("Password", "Password"); 1].to_vec()
+        let help = [
+            t(
+                "Komga: l'indirizzo del server (http://casa:25600), con nome e password.",
+                "Komga: the server address (http://home:25600), with user name and password.",
+            ),
+            t(
+                "Kavita: il link OPDS che c'\u{e8} nelle impostazioni dell'utente; nome e password non servono.",
+                "Kavita: the OPDS link from the user settings; no user name or password needed.",
+            ),
+        ];
+        (t("Aggiungi un server", "Add a server"), "Komga, Kavita", help)
+    }
+
+    /// I nomi dei campi.
+    fn labels(&self) -> Vec<&'static str> {
+        if self.pdf.is_some() {
+            vec![t("Password", "Password")]
         } else if self.volume.is_some() {
             vec![t("Titolo", "Title"), t("Serie", "Series"), t("Numero", "Number")]
         } else {
             vec![t("Indirizzo", "Address"), t("Nome", "User name"), t("Password", "Password")]
+        }
+    }
+
+    /// Un campo, con la linea di base in `y`: il nome, il testo (a pallini
+    /// per una password; se e' lungo, la fine), la riga sotto, e il cursore
+    /// se e' il campo scelto.
+    fn draw_field(
+        &self, l: &mut Layer, (x0, w, y): (f32, f32, f32), label: &str, i: usize, s: f32, m: &mut dyn Measure,
+    ) {
+        let focused = i == self.focus && !self.busy;
+        l.texts.push(caps(label, 9.5 * s, if focused { INK } else { MUTED }).on_baseline(x0, y - 30.0 * s));
+        let field = &self.fields[i];
+        let shown = if self.masked(i) { "\u{2022}".repeat(field.chars().count()) } else { field.clone() };
+        let text = Text::new(tail(m, &shown, 17.0 * s, w - 12.0 * s), Face::Sans, 17.0 * s, INK);
+        let tw = m.width(&text);
+        l.texts.push(text.on_baseline(x0, y));
+        underline(l, (x0, w, y), focused, s);
+        if focused {
+            let h = (20.0 * s).round();
+            l.rects.push(Rect::new(
+                (x0 + tw + 2.0 * s).round(),
+                (y - h + 4.0 * s).round(),
+                s.round().max(1.0),
+                h,
+                ACCENT,
+            ));
+        }
+    }
+
+    /// La riga del verso di lettura: si cambia con le frecce.
+    fn draw_direction(&self, l: &mut Layer, (x0, w, y): (f32, f32, f32), right_to_left: Option<bool>, s: f32) {
+        let focused = self.focus == DIRECTION && !self.busy;
+        let label = caps(t("Verso di lettura", "Reading direction"), 9.5 * s, if focused { INK } else { MUTED });
+        l.texts.push(label.on_baseline(x0, y - 30.0 * s));
+        let value = match right_to_left {
+            None => t("Come dice il file", "As the file says"),
+            Some(false) => t("Da sinistra a destra", "Left to right"),
+            Some(true) => t("Da destra a sinistra (manga)", "Right to left (manga)"),
         };
-        for (i, &y) in ys[..self.count()].iter().enumerate() {
-            let focused = i == self.focus && !self.busy;
-            l.texts.push(caps(labels[i], 9.5 * s, if focused { INK } else { MUTED }).on_baseline(x0, y - 30.0 * s));
-            let shown =
-                if self.masked(i) { "\u{2022}".repeat(self.fields[i].chars().count()) } else { self.fields[i].clone() };
-            let shown = tail(m, &shown, 17.0 * s, w - 12.0 * s);
-            let text = Text::new(shown, Face::Sans, 17.0 * s, INK);
-            let tw = m.width(&text);
-            l.texts.push(text.on_baseline(x0, y));
-            l.rects.push(Rect::new(
-                x0,
-                (y + 9.0 * s).round(),
-                w,
-                if focused { (2.0 * s).round() } else { s.round() },
-                if focused { ACCENT } else { HAIR },
-            ));
-            if focused {
-                let h = (20.0 * s).round();
-                l.rects.push(Rect::new(
-                    (x0 + tw + 2.0 * s).round(),
-                    (y - h + 4.0 * s).round(),
-                    s.round().max(1.0),
-                    h,
-                    ACCENT,
-                ));
-            }
-        }
-        if let Some(v) = &self.volume {
-            let y = ys[DIRECTION];
-            let focused = self.focus == DIRECTION && !self.busy;
-            let label = caps(t("Verso di lettura", "Reading direction"), 9.5 * s, if focused { INK } else { MUTED });
-            l.texts.push(label.on_baseline(x0, y - 30.0 * s));
-            let value = match v.right_to_left {
-                None => t("Come dice il file", "As the file says"),
-                Some(false) => t("Da sinistra a destra", "Left to right"),
-                Some(true) => t("Da destra a sinistra (manga)", "Right to left (manga)"),
-            };
-            let shown = format!("\u{2039}   {value}   \u{203a}");
-            l.texts.push(Text::new(shown, Face::Sans, 17.0 * s, INK).on_baseline(x0, y));
-            l.rects.push(Rect::new(
-                x0,
-                (y + 9.0 * s).round(),
-                w,
-                if focused { (2.0 * s).round() } else { s.round() },
-                if focused { ACCENT } else { HAIR },
-            ));
-        }
-        let below = ys[self.rows() - 1] + 50.0 * s;
+        let shown = format!("\u{2039}   {value}   \u{203a}");
+        l.texts.push(Text::new(shown, Face::Sans, 17.0 * s, INK).on_baseline(x0, y));
+        underline(l, (x0, w, y), focused, s);
+    }
+
+    /// La riga in fondo: cosa si sta facendo, l'errore, o i tasti.
+    fn status(&self) -> (String, [u8; 4]) {
         let (line, color) = match (&self.error, self.busy) {
-            (_, true) if self.pdf.is_some() => (t("Apertura\u{2026}", "Opening\u{2026}").to_owned(), MUTED),
-            (_, true) if self.volume.is_some() => (t("Salvataggio\u{2026}", "Saving\u{2026}").to_owned(), MUTED),
-            (_, true) => (t("Collegamento in corso\u{2026}", "Connecting\u{2026}").to_owned(), MUTED),
-            (Some(e), _) => (e.clone(), ACCENT_TEXT),
+            (_, true) if self.pdf.is_some() => (t("Apertura\u{2026}", "Opening\u{2026}"), MUTED),
+            (_, true) if self.volume.is_some() => (t("Salvataggio\u{2026}", "Saving\u{2026}"), MUTED),
+            (_, true) => (t("Collegamento in corso\u{2026}", "Connecting\u{2026}"), MUTED),
+            (Some(e), _) => return (e.clone(), ACCENT_TEXT),
             (None, _) if self.volume.is_some() => (
                 t(
                     "Tab per il campo dopo   \u{00b7}   \u{2190} \u{2192} per il verso   \u{00b7}   Invio per salvare   \u{00b7}   Esc per lasciar stare",
                     "Tab for the next field   \u{00b7}   \u{2190} \u{2192} for the direction   \u{00b7}   Enter to save   \u{00b7}   Esc to cancel",
-                )
-                .to_owned(),
+                ),
                 MUTED,
             ),
             (None, _) if self.pdf.is_some() => (
-                t("Invio per aprire   \u{00b7}   Esc per lasciar stare", "Enter to open   \u{00b7}   Esc to cancel")
-                    .to_owned(),
+                t("Invio per aprire   \u{00b7}   Esc per lasciar stare", "Enter to open   \u{00b7}   Esc to cancel"),
                 MUTED,
             ),
             (None, _) => (
                 t(
                     "Tab per il campo dopo   \u{00b7}   Invio per aggiungere   \u{00b7}   Esc per lasciar stare",
                     "Tab for the next field   \u{00b7}   Enter to add   \u{00b7}   Esc to cancel",
-                )
-                .to_owned(),
+                ),
                 MUTED,
             ),
         };
-        let text = Text::new(line, Face::Sans, 12.5 * s, color);
-        l.texts.push(fit(m, text, w).on_baseline(x0, below));
-        l
+        (line.to_owned(), color)
     }
+}
+
+/// La riga sotto un campo: piu' spessa e rossa se e' quello scelto.
+fn underline(l: &mut Layer, (x0, w, y): (f32, f32, f32), focused: bool, s: f32) {
+    let (thick, color) = if focused { ((2.0 * s).round(), ACCENT) } else { (s.round(), HAIR) };
+    l.rects.push(Rect::new(x0, (y + 9.0 * s).round(), w, thick, color));
 }
 
 /// Dove sta il modulo: (sinistra, larghezza, linea di base di ogni riga).

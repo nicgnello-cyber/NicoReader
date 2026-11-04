@@ -110,15 +110,7 @@ impl App {
         // dalla consegna del precedente dava 0,05 ms invece di 16,6, e lo
         // scorrimento andava trecento volte piu' piano del voluto
         let now = Instant::now();
-        // il centro della lente e' il puntatore: la freccia coprirebbe il
-        // dettaglio. Dove la lente non si vede (un menu, la libreria) torna
-        let hide = self.lens_circle().is_some();
-        if hide != self.cursor_hidden
-            && let Some(w) = &self.window
-        {
-            w.set_cursor_visible(!hide);
-            self.cursor_hidden = hide;
-        }
+        self.sync_cursor();
         if self.shelf_shown() {
             return self.draw_shelf(now);
         }
@@ -128,23 +120,7 @@ impl App {
         let top = self.top() as f32;
         let dt = self.last_tick.map_or(self.stats.refresh_ms / 1000.0, |t| (now - t).as_secs_f32()).min(0.05);
         self.last_tick = Some(now);
-        let Some(reader) = &mut self.reader else {
-            // nessun volume: la galleria vuota
-            let ctx = context(
-                self.window.as_deref(),
-                &self.book,
-                None,
-                &self.recent,
-                &[],
-                self.settings.hud,
-                None,
-                None,
-                look!(self),
-            );
-            let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut Estimate));
-            self.present(&[], &[], &scene);
-            return;
-        };
+        let Some(reader) = &mut self.reader else { return self.draw_gallery(now) };
         let gliding = reader.advance_glide(dt);
         let prepared = Prepared { shown: &self.shown, cpu: &self.cpu_pages };
         let mut items = reader.layout(&prepared);
@@ -169,7 +145,48 @@ impl App {
         if let Some(reader) = &mut self.reader {
             reader.drawn(&Prepared { shown: &self.shown, cpu: &self.cpu_pages });
         }
+        self.note_frame(presented, ready, gliding);
+        if gliding {
+            self.keep_gliding(presented);
+        } else {
+            self.last_tick = None; // il prossimo scorrimento riparte da un fotogramma pieno
+        }
+        self.last_present = gliding.then_some(presented);
+    }
 
+    /// Il centro della lente e' il puntatore: la freccia coprirebbe il
+    /// dettaglio. Dove la lente non si vede (un menu, la libreria) torna.
+    fn sync_cursor(&mut self) {
+        let hide = self.lens_circle().is_some();
+        if hide != self.cursor_hidden
+            && let Some(w) = &self.window
+        {
+            w.set_cursor_visible(!hide);
+            self.cursor_hidden = hide;
+        }
+    }
+
+    /// Nessun volume: la galleria vuota.
+    fn draw_gallery(&mut self, now: Instant) {
+        let ctx = context(
+            self.window.as_deref(),
+            &self.book,
+            None,
+            &self.recent,
+            &[],
+            self.settings.hud,
+            None,
+            None,
+            look!(self),
+        );
+        let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut Estimate));
+        self.present(&[], &[], &scene);
+    }
+
+    /// Le misure per la prova automatica: quando arriva la prima pagina,
+    /// quanto ci mette un giro di pagina (e se ha perso un fotogramma), il
+    /// ritmo dei fotogrammi mentre si scorre.
+    fn note_frame(&mut self, presented: Instant, ready: bool, gliding: bool) {
         if ready && self.stats.first_page_ms.is_none() {
             self.stats.first_page_ms = Some((presented - self.stats.started).as_secs_f32() * 1000.0);
         }
@@ -182,25 +199,24 @@ impl App {
                 turn.missed = true;
             }
         }
-        if gliding {
-            if let Some(t) = self.last_present {
-                self.stats.frames.push((presented - t).as_secs_f32() * 1000.0);
-            }
-            // lungo il nastro le pagine a schermo cambiano: la lettura anticipata segue
-            self.prefetch();
-            self.update_title();
-            self.remember();
-            match (&self.gfx, &self.window) {
-                // la scheda video aspetta il vblank da sola
-                (Some(_), Some(w)) => w.request_redraw(),
-                // dal processore nessuno aspetta: si riprova al prossimo vblank
-                // invece di girare a vuoto consumando un core
-                _ => self.retry_at = Some(presented + Duration::from_secs_f32(self.stats.refresh_ms / 1000.0)),
-            }
-        } else {
-            self.last_tick = None; // il prossimo scorrimento riparte da un fotogramma pieno
+        if gliding && let Some(t) = self.last_present {
+            self.stats.frames.push((presented - t).as_secs_f32() * 1000.0);
         }
-        self.last_present = gliding.then_some(presented);
+    }
+
+    /// Il nastro scorre ancora: le pagine a schermo cambiano (la lettura
+    /// anticipata le segue), e si chiede il fotogramma dopo.
+    fn keep_gliding(&mut self, presented: Instant) {
+        self.prefetch();
+        self.update_title();
+        self.remember();
+        match (&self.gfx, &self.window) {
+            // la scheda video aspetta il vblank da sola
+            (Some(_), Some(w)) => w.request_redraw(),
+            // dal processore nessuno aspetta: si riprova al prossimo vblank
+            // invece di girare a vuoto consumando un core
+            _ => self.retry_at = Some(presented + Duration::from_secs_f32(self.stats.refresh_ms / 1000.0)),
+        }
     }
 
     /// La libreria: le copertine alla misura delle celle, e sopra il resto.
@@ -331,6 +347,49 @@ impl App {
         let adjust = if covers.iter().any(|c| matches!(c.0, Extra::Cover(_))) { Adjust::NONE } else { self.adjust() };
         let target = self.reader.as_ref().map(|r| r.target());
         let size = self.view_size();
+        let frame = self.acquire_frame()?;
+        let gfx = self.gfx.as_mut()?;
+        let placements: Vec<Placement> = items
+            .iter()
+            .filter_map(|it| {
+                self.shown.get(&it.page).map(|s| Placement { image: &s.image, x: it.x, y: it.y, w: it.w, h: it.h })
+            })
+            .chain(covers.iter().filter_map(|(what, x, y, w, h)| {
+                let image = match what {
+                    Extra::Cover(p) => &self.covers.get(p)?.0,
+                    Extra::Thumb(i) => &self.thumb_images.get(i)?.0,
+                };
+                Some(Placement { image, x: *x, y: *y, w: *w, h: *h })
+            }))
+            .collect();
+        let lens_placements = lens
+            .as_ref()
+            .map_or(Vec::new(), |(_, under)| lens_placements(under, &self.lens_images, &self.shown, target));
+        let view = frame.texture.create_view(&Default::default());
+        let mut encoder = gfx.gpu.device.create_command_encoder(&Default::default());
+        gfx.renderer.draw(&mut encoder, &view, gfx.config.format, size, &placements, Pass { adjust, ..Pass::PLAIN });
+        if let Some((circle, _)) = lens {
+            gfx.renderer.draw(
+                &mut encoder,
+                &view,
+                gfx.config.format,
+                size,
+                &lens_placements,
+                Pass { clear: false, adjust, clip: Some(circle) },
+            );
+        }
+        if let Err(e) = gfx.overlay.draw(&mut encoder, &view, size, scene) {
+            eprintln!("interfaccia: {e}");
+        }
+        gfx.gpu.queue.submit([encoder.finish()]);
+        gfx.window.pre_present_notify();
+        gfx.gpu.queue.present(frame);
+        Some(Instant::now())
+    }
+
+    /// Il fotogramma su cui disegnare, se la finestra lo da'. Se no, si
+    /// riprova: un fotogramma saltato non deve fermare uno scorrimento a meta'.
+    fn acquire_frame(&mut self) -> Option<wgpu::SurfaceTexture> {
         let gfx = self.gfx.as_mut()?;
         let acquire = Instant::now();
         let frame = match gfx.surface.get_current_texture() {
@@ -355,54 +414,7 @@ impl App {
             }
         };
         self.stats.acquire.push(acquire.elapsed().as_secs_f32() * 1000.0);
-        let placements: Vec<Placement> = items
-            .iter()
-            .filter_map(|it| {
-                self.shown.get(&it.page).map(|s| Placement { image: &s.image, x: it.x, y: it.y, w: it.w, h: it.h })
-            })
-            .chain(covers.iter().filter_map(|(what, x, y, w, h)| {
-                let image = match what {
-                    Extra::Cover(p) => &self.covers.get(p)?.0,
-                    Extra::Thumb(i) => &self.thumb_images.get(i)?.0,
-                };
-                Some(Placement { image, x: *x, y: *y, w: *w, h: *h })
-            }))
-            .collect();
-        // nella lente, le pagine ai loro pixel se sono gia' arrivate (e girate
-        // e rifilate come quelle a schermo), se no quelle a schermo, ingrandite
-        let same = |t: &Target| target.is_some_and(|c| (c.trim, c.rotation) == (t.trim, t.rotation));
-        let lens_placements: Vec<Placement> = lens.as_ref().map_or(Vec::new(), |(_, under)| {
-            under
-                .iter()
-                .filter_map(|it| {
-                    let image = match self.lens_images.get(&it.page) {
-                        Some((image, t)) if same(t) => image,
-                        _ => &self.shown.get(&it.page)?.image,
-                    };
-                    Some(Placement { image, x: it.x, y: it.y, w: it.w, h: it.h })
-                })
-                .collect()
-        });
-        let view = frame.texture.create_view(&Default::default());
-        let mut encoder = gfx.gpu.device.create_command_encoder(&Default::default());
-        gfx.renderer.draw(&mut encoder, &view, gfx.config.format, size, &placements, Pass { adjust, ..Pass::PLAIN });
-        if let Some((circle, _)) = lens {
-            gfx.renderer.draw(
-                &mut encoder,
-                &view,
-                gfx.config.format,
-                size,
-                &lens_placements,
-                Pass { clear: false, adjust, clip: Some(circle) },
-            );
-        }
-        if let Err(e) = gfx.overlay.draw(&mut encoder, &view, size, scene) {
-            eprintln!("interfaccia: {e}");
-        }
-        gfx.gpu.queue.submit([encoder.finish()]);
-        gfx.window.pre_present_notify();
-        gfx.gpu.queue.present(frame);
-        Some(Instant::now())
+        Some(frame)
     }
 
     /// Disegna copiando dal processore, finche' la scheda video non c'e'.
@@ -578,4 +590,23 @@ fn measure<'a>(gfx: &'a mut Option<Gfx>, estimate: &'a mut Estimate) -> &'a mut 
         Some(g) => &mut g.overlay,
         None => estimate,
     }
+}
+
+/// Nella lente, le pagine ai loro pixel se sono gia' arrivate (e girate e
+/// rifilate come quelle a schermo), se no quelle a schermo, ingrandite.
+fn lens_placements<'a>(
+    under: &[Item], lens_images: &'a HashMap<usize, (GpuImage, Target)>, shown: &'a HashMap<usize, Shown>,
+    target: Option<Target>,
+) -> Vec<Placement<'a>> {
+    let same = |t: &Target| target.is_some_and(|c| (c.trim, c.rotation) == (t.trim, t.rotation));
+    under
+        .iter()
+        .filter_map(|it| {
+            let image = match lens_images.get(&it.page) {
+                Some((image, t)) if same(t) => image,
+                _ => &shown.get(&it.page)?.image,
+            };
+            Some(Placement { image, x: it.x, y: it.y, w: it.w, h: it.h })
+        })
+        .collect()
 }
