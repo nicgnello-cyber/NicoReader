@@ -65,10 +65,7 @@ pub(super) fn parse_feed(xml: &[u8], base: &str) -> Option<Feed> {
             }
             Event::Text(t) => buf.push_str(&t.xml10_content().ok()?),
             Event::CData(t) => buf.push_str(&t.xml10_content().ok()?),
-            Event::GeneralRef(g) => match g.resolve_char_ref() {
-                Ok(Some(c)) => buf.push(c),
-                _ => buf.push_str(entity(&g.decode().ok()?)),
-            },
+            Event::GeneralRef(g) => crate::xml::push_reference(&mut buf, &g)?,
             Event::End(_) => {
                 let (atom, name) = open.pop()?;
                 let text = std::mem::take(&mut buf);
@@ -83,18 +80,6 @@ pub(super) fn parse_feed(xml: &[u8], base: &str) -> Option<Feed> {
             Event::Eof => return None,
             _ => {}
         }
-    }
-}
-
-/// Un riferimento per nome (`&amp;`): i cinque di XML; gli altri, niente.
-fn entity(name: &str) -> &'static str {
-    match name {
-        "amp" => "&",
-        "lt" => "<",
-        "gt" => ">",
-        "quot" => "\"",
-        "apos" => "'",
-        _ => "",
     }
 }
 

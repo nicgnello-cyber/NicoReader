@@ -21,6 +21,7 @@ mod resize;
 mod settings;
 pub mod update;
 pub mod upscale;
+mod xml;
 
 pub use book::{Book, Content, Error, absolute, exists, is_image, read_info, title_of};
 pub use decode::{DecodeError, MAX_PIXELS, Page, decode, dimensions};
