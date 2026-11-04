@@ -208,12 +208,12 @@ fn il_menu_in_due_colonne() {
     let c = ctx(Some(book(10)), &[]);
     ui.open_menu(100.0, 100.0, &c);
     let m = ui.menu.as_ref().unwrap();
-    let (frame, spots) = ui.menu_frame(&c, m, &m.rows);
-    assert!((frame.w - 2.0 * MENU_W).abs() < 1.0, "due colonne: {}", frame.w);
+    let (frame, spots) = m.frame(&c);
+    assert!((frame.w - 2.0 * super::menu::MENU_W).abs() < 1.0, "due colonne: {}", frame.w);
     let double =
         m.rows.iter().position(|r| matches!(r, Row::Item { cmd: Command::Act(Action::ToggleDouble), .. })).unwrap();
     let (x, y) = spots[double];
-    assert!(x > frame.x + MENU_W - 1.0, "la seconda colonna");
+    assert!(x > frame.x + super::menu::MENU_W - 1.0, "la seconda colonna");
     assert_eq!(ui.click(x + 50.0, y + 10.0, &c), Handled::Yes(Some(Command::Act(Action::ToggleDouble))));
 }
 
@@ -301,7 +301,7 @@ fn nella_galleria_vuota_un_clic_apre() {
     let recent = [Recent { path: "a.cbz".into(), title: "A".into(), place: "letto".into() }];
     let mut ui = Ui::new();
     let c = ctx(None, &recent);
-    let y = Ui::welcome_rows_top(&c) + 10.0;
+    let y = super::welcome::welcome_rows_top(&c) + 10.0;
     assert_eq!(ui.click(960.0, y, &c), Handled::Yes(Some(Command::Open("a.cbz".into()))));
     assert_eq!(ui.click(960.0, 20.0, &c), Handled::Yes(Some(Command::Act(Action::Open))));
 }
