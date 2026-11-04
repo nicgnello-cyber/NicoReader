@@ -1,3 +1,7 @@
+use super::crawl::{clean_title, remote_entry};
+use super::feed::FeedEntry;
+use super::http::{explain, quoted};
+use super::search::{fill_search, opensearch_template};
 use super::*;
 
 /// Una serie di Komga, com'e' (accorciata a un volume).
