@@ -509,6 +509,56 @@ pub fn libreria(
         let g = ctx.view;
         ui.open_menu(g.0 * 0.3, ctx.scale * 200.0, ctx);
     })?;
+    // le altre viste e i passaggi del mouse, per confrontare gli scatti
+    // prima e dopo un cambiamento che non deve cambiare niente a schermo
+    let s = scale;
+    let now = Instant::now();
+    shot("libreria-in-lettura", &|ui, _| ui.shelf.filter = fumetto::shelf::Filter::Reading)?;
+    shot("libreria-letti", &|ui, _| ui.shelf.filter = fumetto::shelf::Filter::Done)?;
+    shot("libreria-nessuno", &|ui, ctx| {
+        for c in "zzqx".chars() {
+            ui.key(Key::Char(c), ctx);
+        }
+    })?;
+    shot("libreria-cartelle", &|ui, _| ui.shelf.folders = true)?;
+    let inner = entries.iter().filter_map(|e| e.path.parent()).find(|p| *p != root).map(Path::to_path_buf);
+    if let Some(dir) = inner {
+        shot("libreria-dentro-cartella", &|ui, _| ui.shelf.enter_folder(dir.clone()))?;
+    }
+    for (name, sort) in [
+        ("libreria-per-anno", fumetto_core::LibrarySort::Year),
+        ("libreria-aggiunti", fumetto_core::LibrarySort::Added),
+        ("libreria-letti-di-recente", fumetto_core::LibrarySort::Read),
+    ] {
+        shot(name, &|ui, _| ui.shelf.set_sort(sort))?;
+    }
+    shot("libreria-frecce", &|ui, ctx| {
+        ui.key(Key::Right, ctx);
+        ui.key(Key::Down, ctx);
+        ui.key(Key::Right, ctx);
+    })?;
+    shot("libreria-sopra-una-cella", &|ui, ctx| {
+        ui.motion(100.0 * s, 300.0 * s, ctx, now);
+    })?;
+    // i tasti a destra della barra: cartelle, per cartelle, ordine
+    for (k, name) in
+        ["libreria-tasto-cartelle", "libreria-tasto-vista", "libreria-tasto-ordine"].into_iter().enumerate()
+    {
+        let x = view.0 - 14.0 * s - 40.0 * s * (k + 1) as f32 + 18.0 * s;
+        shot(name, &|ui, ctx| {
+            ui.motion(x, 26.0 * s, ctx, now);
+        })?;
+    }
+    shot("libreria-menu-ordine", &|ui, ctx| {
+        let _ = ui.click(view.0 - 14.0 * s - 120.0 * s + 18.0 * s, 26.0 * s, ctx);
+    })?;
+    shot("libreria-menu-cella", &|ui, ctx| ui.open_menu(100.0 * s, 300.0 * s, ctx))?;
+    shot("libreria-serie-in-lettura", &|ui, _| {
+        if let Some(series) = entries.iter().find_map(|e| e.series.clone()) {
+            ui.shelf.enter_series(series);
+            ui.shelf.filter = fumetto::shelf::Filter::Reading;
+        }
+    })?;
     let _ = Shelf::default();
     Ok(())
 }

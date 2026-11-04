@@ -76,192 +76,233 @@ fn tip(what: &str, key: &str) -> String {
 
 /// I tasti della barra, da sinistra a destra.
 pub(super) fn hud_buttons(ctx: &Context, b: &BookInfo) -> Vec<Button> {
+    let (right, right_start) = right_buttons(ctx, b);
+    let mut v = left_buttons(ctx);
+    v.extend(center_buttons(ctx, b, right_start));
+    v.extend(right);
+    v
+}
+
+fn act(a: Action) -> Option<Command> {
+    Some(Command::Act(a))
+}
+
+impl Button {
+    fn new(face: Look, x: f32, w: f32, cmd: Option<Command>, on: bool, tip: String) -> Button {
+        Button { face, x: x.round(), w: w.round(), cmd, on, tip }
+    }
+
+    fn icon(icon: Icon, x: f32, w: f32, cmd: Option<Command>, on: bool, tip: String) -> Button {
+        Button::new(Look::Icon(icon), x, w, cmd, on, tip)
+    }
+}
+
+/// A sinistra: aprire, la libreria, le miniature.
+fn left_buttons(ctx: &Context) -> Vec<Button> {
     let s = ctx.scale;
-    let vw = ctx.view.0;
+    let btn = BTN * s;
+    [
+        (Icon::Open, Action::Open, t("Apri", "Open"), Bind::Open),
+        (Icon::Gallery, Action::ToggleLibrary, t("Libreria", "Library"), Bind::Library),
+        (Icon::Thumbs, Action::ToggleThumbs, t("Miniature", "Thumbnails"), Bind::Thumbs),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(i, (icon, action, what, bind))| {
+        let x = 10.0 * s + i as f32 * (btn + 2.0 * s);
+        Button::icon(icon, x, btn, act(action), false, tip(what, &ctx.keys.label(bind)))
+    })
+    .collect()
+}
+
+/// Al centro: la pagina e come muoversi (nei manga al contrario: avanti e'
+/// a sinistra). Si scosta a sinistra se a destra non c'e' posto.
+fn center_buttons(ctx: &Context, b: &BookInfo, right_start: f32) -> Vec<Button> {
+    let s = ctx.scale;
     let btn = BTN * s;
     let k = |b: Bind| ctx.keys.label(b);
-    let act = |a| Some(Command::Act(a));
-    let mut v = Vec::new();
-    let mut push = |x: f32, w: f32, face: Look, cmd: Option<Command>, on: bool, tip: String| {
-        v.push(Button { face, x: x.round(), w: w.round(), cmd, on, tip });
+    let folio_w = 150.0 * s;
+    let center_w = 4.0 * btn + folio_w;
+    let x0 = ((ctx.view.0 - center_w) / 2.0).min(right_start - 24.0 * s - center_w);
+    let (back, forth, start, end) = if b.manga {
+        (Action::Next, Action::Prev, Action::Last, Action::First)
+    } else {
+        (Action::Prev, Action::Next, Action::First, Action::Last)
     };
-    let icon = Look::Icon;
+    let (back_key, forth_key, start_key, end_key) = if b.manga {
+        (k(Bind::Right), k(Bind::Left), k(Bind::Last), k(Bind::First))
+    } else {
+        (k(Bind::Left), k(Bind::Right), k(Bind::First), k(Bind::Last))
+    };
+    let folio = Look::Folio(format!("{}  /  {}", b.folio, b.pages));
+    vec![
+        Button::icon(Icon::First, x0, btn, act(start), false, tip(t("Inizio", "Start"), &start_key)),
+        Button::icon(Icon::Prev, x0 + btn, btn, act(back), false, tip(t("Indietro", "Back"), &back_key)),
+        Button::new(
+            folio,
+            x0 + 2.0 * btn,
+            folio_w,
+            act(Action::AskPage),
+            false,
+            tip(t("Vai a pagina", "Go to page"), &k(Bind::GoTo)),
+        ),
+        Button::icon(
+            Icon::Next,
+            x0 + 2.0 * btn + folio_w,
+            btn,
+            act(forth),
+            false,
+            tip(t("Avanti", "Forward"), &forth_key),
+        ),
+        Button::icon(Icon::Last, x0 + 3.0 * btn + folio_w, btn, act(end), false, tip(t("Fine", "End"), &end_key)),
+    ]
+}
 
-    // a sinistra: aprire e tornare alla galleria
-    let mut x = 10.0 * s;
-    push(x, btn, icon(Icon::Open), act(Action::Open), false, tip(t("Apri", "Open"), &k(Bind::Open)));
-    x += btn + 2.0 * s;
-    push(
-        x,
-        btn,
-        icon(Icon::Gallery),
-        act(Action::ToggleLibrary),
-        false,
-        tip(t("Libreria", "Library"), &k(Bind::Library)),
-    );
-    x += btn + 2.0 * s;
-    push(
-        x,
-        btn,
-        icon(Icon::Thumbs),
-        act(Action::ToggleThumbs),
-        false,
-        tip(t("Miniature", "Thumbnails"), &k(Bind::Thumbs)),
-    );
-
-    // a destra, dal bordo verso il centro
-    let mut r = vw - 10.0 * s;
+/// A destra, dal bordo verso il centro: nascondere la barra, lo schermo
+/// intero; lo zoom; il verso e i modi; il segno. I tasti (da sinistra), e
+/// dove comincia il gruppo.
+fn right_buttons(ctx: &Context, b: &BookInfo) -> (Vec<Button>, f32) {
+    let s = ctx.scale;
+    let btn = BTN * s;
+    let mut r = ctx.view.0 - 10.0 * s;
     let mut left_of = |w: f32| {
         r -= w;
         r
     };
     let hide = left_of(btn);
     let full = left_of(btn + 2.0 * s);
-    let sep1 = left_of(17.0 * s);
+    left_of(17.0 * s); // fra i gruppi, un po' d'aria
     let plus = left_of(btn);
     let zoom = left_of(64.0 * s);
     let minus = left_of(btn);
-    let sep2 = left_of(17.0 * s);
+    left_of(17.0 * s);
     let dir = left_of(btn);
     let strip = left_of(btn + 6.0 * s);
     let double = left_of(btn);
     let single = left_of(btn);
-    let sep3 = left_of(17.0 * s);
+    left_of(17.0 * s);
     let mark = left_of(btn);
-    let right_start = r;
-    let _ = (sep1, sep2, sep3);
 
-    // al centro: la pagina e come muoversi; si scosta a sinistra se non c'e' posto
-    let folio_w = 150.0 * s;
-    let center_w = 4.0 * btn + folio_w;
-    let cx0 = ((vw - center_w) / 2.0).min(right_start - 24.0 * s - center_w);
-    let (back, forth) = if b.manga { (Action::Next, Action::Prev) } else { (Action::Prev, Action::Next) };
-    let (start, end) = if b.manga { (Action::Last, Action::First) } else { (Action::First, Action::Last) };
-    let page_keys = if b.manga { (k(Bind::Right), k(Bind::Left)) } else { (k(Bind::Left), k(Bind::Right)) };
-    let (first_key, last_key) = if b.manga { (k(Bind::Last), k(Bind::First)) } else { (k(Bind::First), k(Bind::Last)) };
-    push(cx0, btn, icon(Icon::First), act(start), false, tip(t("Inizio", "Start"), &first_key));
-    push(cx0 + btn, btn, icon(Icon::Prev), act(back), false, tip(t("Indietro", "Back"), &page_keys.0));
-    push(
-        cx0 + 2.0 * btn,
-        folio_w,
-        Look::Folio(format!("{}  /  {}", b.folio, b.pages)),
-        act(Action::AskPage),
-        false,
-        tip(t("Vai a pagina", "Go to page"), &k(Bind::GoTo)),
-    );
-    push(
-        cx0 + 2.0 * btn + folio_w,
-        btn,
-        icon(Icon::Next),
-        act(forth),
-        false,
-        tip(t("Avanti", "Forward"), &page_keys.1),
-    );
-    push(cx0 + 3.0 * btn + folio_w, btn, icon(Icon::Last), act(end), false, tip(t("Fine", "End"), &last_key));
-
-    push(
+    let bookmark =
+        if b.bookmarked { t("Pagina segnata", "Bookmarked") } else { t("Segna la pagina", "Bookmark the page") };
+    let mut v = vec![Button::icon(
+        Icon::Bookmark,
         mark,
         btn,
-        icon(Icon::Bookmark),
         act(Action::ToggleBookmark),
         b.bookmarked,
-        tip(
-            if b.bookmarked { t("Pagina segnata", "Bookmarked") } else { t("Segna la pagina", "Bookmark the page") },
-            &k(Bind::Bookmark),
-        ),
-    );
+        tip(bookmark, &ctx.keys.label(Bind::Bookmark)),
+    )];
+    v.extend(mode_buttons(ctx, b, [single, double, strip, dir]));
+    v.extend(zoom_buttons(ctx, b, [minus, zoom, plus]));
+    v.extend(window_buttons(ctx, [full + 2.0 * s, hide]));
+    (v, mark)
+}
+
+/// Pagina singola, doppia, nastro, e il verso di lettura.
+fn mode_buttons(ctx: &Context, b: &BookInfo, [single, double, strip, dir]: [f32; 4]) -> [Button; 4] {
+    let btn = BTN * ctx.scale;
+    let k = |b: Bind| ctx.keys.label(b);
+    // la pagina singola si raggiunge lasciando il modo in cui si e'; gia' li', torna alla pagina intera
     let single_cmd = if b.double {
-        act(Action::ToggleDouble)
+        Action::ToggleDouble
     } else if b.strip {
-        act(Action::ToggleStrip)
+        Action::ToggleStrip
     } else {
-        None
+        Action::ZoomTo(Zoom::Page)
     };
-    let is_single = !b.double && !b.strip;
-    push(
-        single,
-        btn,
-        icon(Icon::Single),
-        single_cmd.or(act(Action::ZoomTo(Zoom::Page))),
-        is_single,
-        tip(t("Pagina singola", "Single page"), &k(if b.double { Bind::Double } else { Bind::Strip })),
-    );
-    push(
-        double,
-        btn,
-        icon(Icon::Double),
-        act(Action::ToggleDouble),
-        b.double,
-        tip(t("Doppia pagina", "Two pages"), &k(Bind::Double)),
-    );
-    push(strip, btn, icon(Icon::Strip), act(Action::ToggleStrip), b.strip, tip(t("Nastro", "Strip"), &k(Bind::Strip)));
-    push(
-        dir,
-        btn,
-        icon(if b.manga { Icon::RightToLeft } else { Icon::LeftToRight }),
-        act(Action::ToggleManga),
-        b.manga,
-        tip(
-            if b.manga {
-                t("Da destra a sinistra", "Right to left")
-            } else {
-                t("Da sinistra a destra", "Left to right")
-            },
-            &k(Bind::Manga),
+    let single_key = k(if b.double { Bind::Double } else { Bind::Strip });
+    let (dir_icon, dir_tip) = if b.manga {
+        (Icon::RightToLeft, t("Da destra a sinistra", "Right to left"))
+    } else {
+        (Icon::LeftToRight, t("Da sinistra a destra", "Left to right"))
+    };
+    [
+        Button::icon(
+            Icon::Single,
+            single,
+            btn,
+            act(single_cmd),
+            !b.double && !b.strip,
+            tip(t("Pagina singola", "Single page"), &single_key),
         ),
-    );
-    let zoomable = b.zoom.is_some();
-    push(
-        minus,
-        btn,
-        icon(Icon::Minus),
-        zoomable.then_some(Command::Act(Action::ZoomOut)),
-        false,
-        tip(t("Riduci", "Zoom out"), &k(Bind::ZoomOut)),
-    );
-    push(
-        zoom,
-        64.0 * s,
-        Look::Zoom(b.zoom.map_or("\u{2014}".into(), |z| format!("{z}%"))),
-        zoomable.then_some(Command::Act(Action::ZoomTo(Zoom::Page))),
-        false,
-        tip(
-            t("Livelli di zoom", "Zoom levels"),
-            &format!("{} {} {}", k(Bind::ZoomPage), k(Bind::ZoomWidth), k(Bind::ZoomActual)),
+        Button::icon(
+            Icon::Double,
+            double,
+            btn,
+            act(Action::ToggleDouble),
+            b.double,
+            tip(t("Doppia pagina", "Two pages"), &k(Bind::Double)),
         ),
-    );
-    push(
-        plus,
-        btn,
-        icon(Icon::Plus),
-        zoomable.then_some(Command::Act(Action::ZoomIn)),
-        false,
-        tip(t("Ingrandisci", "Zoom in"), &k(Bind::ZoomIn)),
-    );
-    push(
-        full + 2.0 * s,
-        btn,
-        icon(if ctx.fullscreen { Icon::FullExit } else { Icon::Full }),
-        act(Action::ToggleFullscreen),
-        false,
-        tip(
-            if ctx.fullscreen {
-                t("Esci dallo schermo intero", "Exit full screen")
-            } else {
-                t("Schermo intero", "Full screen")
-            },
-            &k(Bind::Fullscreen),
+        Button::icon(
+            Icon::Strip,
+            strip,
+            btn,
+            act(Action::ToggleStrip),
+            b.strip,
+            tip(t("Nastro", "Strip"), &k(Bind::Strip)),
         ),
-    );
-    push(
-        hide,
-        btn,
-        icon(Icon::Hide),
-        act(Action::ToggleHud),
-        false,
-        tip(t("Nascondi la barra", "Hide the bar"), &k(Bind::Hud)),
-    );
-    v
+        Button::icon(dir_icon, dir, btn, act(Action::ToggleManga), b.manga, tip(dir_tip, &k(Bind::Manga))),
+    ]
+}
+
+/// Riduci, la percentuale (apre i livelli), ingrandisci; spenti dove lo
+/// zoom non si regola.
+fn zoom_buttons(ctx: &Context, b: &BookInfo, [minus, zoom, plus]: [f32; 3]) -> [Button; 3] {
+    let s = ctx.scale;
+    let btn = BTN * s;
+    let k = |b: Bind| ctx.keys.label(b);
+    let when = |a: Action| b.zoom.is_some().then_some(Command::Act(a));
+    let percent = Look::Zoom(b.zoom.map_or("\u{2014}".into(), |z| format!("{z}%")));
+    let levels = format!("{} {} {}", k(Bind::ZoomPage), k(Bind::ZoomWidth), k(Bind::ZoomActual));
+    [
+        Button::icon(
+            Icon::Minus,
+            minus,
+            btn,
+            when(Action::ZoomOut),
+            false,
+            tip(t("Riduci", "Zoom out"), &k(Bind::ZoomOut)),
+        ),
+        Button::new(
+            percent,
+            zoom,
+            64.0 * s,
+            when(Action::ZoomTo(Zoom::Page)),
+            false,
+            tip(t("Livelli di zoom", "Zoom levels"), &levels),
+        ),
+        Button::icon(
+            Icon::Plus,
+            plus,
+            btn,
+            when(Action::ZoomIn),
+            false,
+            tip(t("Ingrandisci", "Zoom in"), &k(Bind::ZoomIn)),
+        ),
+    ]
+}
+
+/// Lo schermo intero e la barra da nascondere.
+fn window_buttons(ctx: &Context, [full, hide]: [f32; 2]) -> [Button; 2] {
+    let btn = BTN * ctx.scale;
+    let k = |b: Bind| ctx.keys.label(b);
+    let (full_icon, full_tip) = if ctx.fullscreen {
+        (Icon::FullExit, t("Esci dallo schermo intero", "Exit full screen"))
+    } else {
+        (Icon::Full, t("Schermo intero", "Full screen"))
+    };
+    [
+        Button::icon(full_icon, full, btn, act(Action::ToggleFullscreen), false, tip(full_tip, &k(Bind::Fullscreen))),
+        Button::icon(
+            Icon::Hide,
+            hide,
+            btn,
+            act(Action::ToggleHud),
+            false,
+            tip(t("Nascondi la barra", "Hide the bar"), &k(Bind::Hud)),
+        ),
+    ]
 }
 
 /// Il tasto della barra sotto il punto (x, y), se c'e'.
