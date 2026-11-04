@@ -1,5 +1,5 @@
 NICOREADER (prima: Fumetto) - lettore di fumetti, manga e webtoon
-Stato del progetto al 4 novembre 2026 (versione 0.4.5)
+Stato del progetto al 4 novembre 2026 (versione 0.4.6)
 =====================================================================
 
 Dal 27 settembre il programma si chiama NicoReader e il progetto e'
