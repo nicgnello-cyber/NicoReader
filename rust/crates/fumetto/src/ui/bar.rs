@@ -28,6 +28,8 @@ pub(crate) enum Icon {
     Shelf,
     /// Le cartelle una dentro l'altra: la vista per cartelle.
     Tree,
+    /// Righe sempre piu' corte: l'ordine.
+    Sort,
 }
 
 /// Cosa mostra un tasto della barra, e quindi quale tasto e'.
@@ -424,6 +426,11 @@ pub(crate) fn draw_icon(l: &mut Layer, icon: Icon, cx: f32, cy: f32, s: f32, col
             boxes.extend([(-8.0, -5.0, 4.0, 11.0), (-3.0, -7.5, 4.0, 13.5)]);
             line(&[(2.0, 6.0), (5.5, -6.0), (8.8, -5.0), (5.6, 6.0)]);
             line(&[(-9.5, 7.75), (9.5, 7.75)]);
+        }
+        Icon::Sort => {
+            line(&[(-8.0, -5.5), (8.0, -5.5)]);
+            line(&[(-8.0, 0.0), (3.0, 0.0)]);
+            line(&[(-8.0, 5.5), (-2.0, 5.5)]);
         }
         Icon::Tree => {
             boxes.extend([(-8.0, -8.5, 7.0, 5.0), (0.0, -2.5, 8.0, 5.0), (0.0, 4.0, 8.0, 5.0)]);

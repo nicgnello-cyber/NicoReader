@@ -312,6 +312,8 @@ impl App {
             Command::Series(_)
             | Command::Group(..)
             | Command::Folder(_)
+            | Command::SortMenu(..)
+            | Command::Sort(_)
             | Command::FoldersMenu(..)
             | Command::AskServer => {}
         }

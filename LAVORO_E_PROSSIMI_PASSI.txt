@@ -1,5 +1,5 @@
 NICOREADER (prima: Fumetto) - lettore di fumetti, manga e webtoon
-Stato del progetto al 29 ottobre 2026 (versione 0.4.5)
+Stato del progetto al 4 novembre 2026 (versione 0.4.5)
 =====================================================================
 
 Dal 27 settembre il programma si chiama NicoReader e il progetto e'
@@ -789,6 +789,35 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      numerati. Una prova controlla che entrambi siano totali. E dopo un
      errore il programma non riapre da solo l'ultimo volume ne' l'ultima
      cartella: niente piu' giri di chiusure a ogni avvio.
+  4q. [x] Robustezza della libreria (4 novembre). Due prove a caso,
+     ripetibili (xorshift): library.rs librerie_a_caso fa 40 alberi di
+     cartelle veri (nomi difficili, cartelle di immagini con dentro altri
+     volumi), li scandisce e controlla ordini, contenuto delle cartelle,
+     precedente e successivo (il precedente del seguente e' se stesso);
+     shelf.rs librerie_a_caso fa 15 librerie (anche server, raccolte,
+     liste) e le guarda in ogni vista, filtro, ordine e ricerca, entrando
+     nelle celle fino a tre livelli, con tasti e menu. E se nonostante
+     tutto il codice della libreria si ferma con un panic mentre e' a
+     schermo, NicoReader non si chiude: l'errore va in errori.txt, la
+     libreria riparte dall'inizio (per serie, per nome) con un avviso, e
+     non resta il segno della chiusura (crash::survived). Provato con un
+     errore messo apposta: il programma resta aperto.
+  4r. [x] Ordinamento della libreria (4 novembre): l'icona a righe nella
+     barra apre il menu (per nome, aggiunti di recente, letti di recente,
+     per anno di uscita); vale nella libreria intera, nei gruppi, nei filtri
+     e dentro le cartelle (per nome resta l'ordine del disco). Per le pile
+     contano il volume piu' recente e il primo anno. "Aggiunti": la data
+     di creazione del file (Entry.added); l'anno dalla ComicInfo (Year) o
+     dall'EPUB (dc:date): la cache delle schede diventa comicinfo-3.json e
+     si rilegge una volta. L'ordine si ricorda (library_sort; un valore
+     sconosciuto vale "per nome" senza perdere il resto). La costruzione
+     delle pile non e' piu' quadratica (una mappa per serie).
+     Serie con lo stesso nome in cartelle diverse (library.rs,
+     split_same_name_series): la cartella di una serie e' la prima sopra
+     il volume che si chiama come lei; piu' cartelle per un nome, piu'
+     serie ("Batman (2011)", "Batman (2016)"; "Saga (DC)" se anche i nomi
+     coincidono). Le sottocartelle di una serie (Dylan Dog/001-100) e i
+     volumi sciolti restano insieme.
   5. Il peso dell'eseguibile: da 15,3 a 20,7 MB con AVIF, JPEG XL e appunti
      (vedi 5, Tecnici).
   6. Distribuzione (capitolo 5).

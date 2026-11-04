@@ -28,4 +28,4 @@ pub use loader::{Decoded, Fit, Loaded, Loader, Target, decode_page, prefetch_ord
 pub use natural::natural_cmp;
 pub use progress::{Progress, Saved};
 pub use resize::{enlarge, resize};
-pub use settings::Settings;
+pub use settings::{LibrarySort, Settings};

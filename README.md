@@ -102,6 +102,11 @@ up (Backspace or Esc too). Folders full of different series, like an
 author's, are also collections. NicoReader remembers the view and the last
 folder you were in.
 
+The lines icon next to it sorts the library: by name, recently added,
+recently read, or by year (from ComicInfo.xml or the EPUB data). Two series
+with the same name in different folders, like `Batman (2011)` and
+`Batman (2016)`, stay separate.
+
 The shelves icon in the library bar shows the collections, reading lists,
 genres and publishers: from ComicInfo.xml (SeriesGroup, StoryArc with its
 number, Genre, Publisher), from EPUB metadata, and from a Komga or Kavita

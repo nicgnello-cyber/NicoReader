@@ -243,7 +243,8 @@ fn parse_package(opf: &str) -> Option<Package> {
             }
             Event::Start(e) => {
                 let name = e.local_name().as_ref().to_vec();
-                let wanted = matches!(name.as_slice(), b"title" | b"creator" | b"subject" | b"publisher" | b"meta");
+                let wanted =
+                    matches!(name.as_slice(), b"title" | b"creator" | b"subject" | b"publisher" | b"date" | b"meta");
                 open = wanted.then(|| (name, attr(&e, b"property"), attr(&e, b"id").or_else(|| attr(&e, b"refines"))));
                 text.clear();
             }
@@ -274,6 +275,7 @@ fn parse_package(opf: &str) -> Option<Package> {
                     (b"creator", _) => creators.push(value),
                     (b"subject", _) => subjects.push(value),
                     (b"publisher", _) => info.publisher = Some(value),
+                    (b"date", _) if info.year.is_none() => info.year = crate::comicinfo::year_of(&value),
                     (b"meta", Some("belongs-to-collection")) => collections.push((id, value)),
                     (b"meta", Some(prop)) => {
                         if let Some(target) = id.as_deref().and_then(|i| i.strip_prefix('#')) {

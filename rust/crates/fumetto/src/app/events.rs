@@ -226,6 +226,77 @@ impl ApplicationHandler<UserEvent> for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        if !self.shelf_shown() {
+            return self.handle_window_event(event_loop, event);
+        }
+        // un errore nel codice della libreria non chiude il programma: si
+        // annota (errori.txt) e la libreria torna all'inizio
+        let handled =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.handle_window_event(event_loop, event)));
+        if handled.is_err() {
+            self.shelf_failed();
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let now = Instant::now();
+        if self.progress.is_dirty() && now - self.last_save >= SAVE_EVERY {
+            self.save_progress();
+        }
+        self.keep_library_view();
+        if self.settings_dirty && now - self.settings_saved_at >= SAVE_EVERY {
+            self.settings_dirty = false;
+            self.settings_saved_at = now;
+            self.save_settings();
+        }
+        self.show_pending();
+        let mut wake: Option<Instant> = None;
+        if let Some(at) = self.retry_at {
+            if now >= at {
+                self.retry_at = None;
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            } else {
+                wake = Some(at);
+            }
+        }
+        // c'e' qualcosa da salvare: ci si risveglia per farlo anche se non
+        // succede nient'altro
+        if self.progress.is_dirty() {
+            let at = self.last_save + SAVE_EVERY;
+            wake = Some(wake.map_or(at, |w| w.min(at)));
+        }
+        if let Some(at) = self.search_tick(now) {
+            wake = Some(wake.map_or(at, |w| w.min(at)));
+        }
+        if let Some(at) = self.slideshow_tick(now, event_loop) {
+            wake = Some(wake.map_or(at, |w| w.min(at)));
+        }
+        // la didascalia che compare o svanisce vuole i suoi fotogrammi
+        if let Some(at) = self.ui.wake(now) {
+            if at <= now {
+                self.request_redraw();
+            } else {
+                wake = Some(wake.map_or(at, |w| w.min(at)));
+            }
+        }
+        if let Some(mut script) = self.script.take() {
+            match script.step(self) {
+                Step::Do(a) => self.act(a, event_loop),
+                Step::Wait => {}
+                Step::Done => return self.act(Action::Quit, event_loop),
+            }
+            self.script = Some(script);
+            let next = now + Duration::from_millis(4);
+            wake = Some(wake.map_or(next, |w| w.min(next)));
+        }
+        event_loop.set_control_flow(wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
+    }
+}
+
+impl App {
+    fn handle_window_event(&mut self, event_loop: &ActiveEventLoop, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
@@ -359,64 +430,6 @@ impl ApplicationHandler<UserEvent> for App {
         }
     }
 
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        let now = Instant::now();
-        if self.progress.is_dirty() && now - self.last_save >= SAVE_EVERY {
-            self.save_progress();
-        }
-        self.keep_library_view();
-        if self.settings_dirty && now - self.settings_saved_at >= SAVE_EVERY {
-            self.settings_dirty = false;
-            self.settings_saved_at = now;
-            self.save_settings();
-        }
-        self.show_pending();
-        let mut wake: Option<Instant> = None;
-        if let Some(at) = self.retry_at {
-            if now >= at {
-                self.retry_at = None;
-                if let Some(w) = &self.window {
-                    w.request_redraw();
-                }
-            } else {
-                wake = Some(at);
-            }
-        }
-        // c'e' qualcosa da salvare: ci si risveglia per farlo anche se non
-        // succede nient'altro
-        if self.progress.is_dirty() {
-            let at = self.last_save + SAVE_EVERY;
-            wake = Some(wake.map_or(at, |w| w.min(at)));
-        }
-        if let Some(at) = self.search_tick(now) {
-            wake = Some(wake.map_or(at, |w| w.min(at)));
-        }
-        if let Some(at) = self.slideshow_tick(now, event_loop) {
-            wake = Some(wake.map_or(at, |w| w.min(at)));
-        }
-        // la didascalia che compare o svanisce vuole i suoi fotogrammi
-        if let Some(at) = self.ui.wake(now) {
-            if at <= now {
-                self.request_redraw();
-            } else {
-                wake = Some(wake.map_or(at, |w| w.min(at)));
-            }
-        }
-        if let Some(mut script) = self.script.take() {
-            match script.step(self) {
-                Step::Do(a) => self.act(a, event_loop),
-                Step::Wait => {}
-                Step::Done => return self.act(Action::Quit, event_loop),
-            }
-            self.script = Some(script);
-            let next = now + Duration::from_millis(4);
-            wake = Some(wake.map_or(next, |w| w.min(next)));
-        }
-        event_loop.set_control_flow(wake.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
-    }
-}
-
-impl App {
     /// Il puntatore (mouse, o un dito) si e' mosso.
     pub(super) fn pointer_moved(&mut self, x: f32, y: f32, event_loop: &ActiveEventLoop) {
         let (dx, dy) = (x - self.cursor.0, y - self.cursor.1);

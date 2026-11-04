@@ -43,7 +43,7 @@ const MARKS: &[&str] = &[
 /// pagine.
 const LOOSE_IMAGES: usize = 3;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Entry {
     pub path: PathBuf,
     pub title: String,
@@ -55,6 +55,11 @@ pub struct Entry {
     pub authors: Option<String>,
     /// Le raccolte, le liste di lettura, i generi e l'editore di cui fa parte.
     pub groups: Vec<Group>,
+    /// Quando e' arrivato nella libreria (secondi dal 1970; 0: non si sa), per
+    /// "aggiunti di recente": la data del file.
+    pub added: u64,
+    /// L'anno di uscita, dalla ComicInfo.xml o dall'EPUB.
+    pub year: Option<u32>,
 }
 
 /// Che cosa riunisce dei volumi oltre la serie.
@@ -158,6 +163,7 @@ fn scan_with(roots: &[PathBuf], info: &mut dyn FnMut(&Path) -> Option<ComicInfo>
     found.sort_by(|a: &Entry, b| natural_cmp(&a.title, &b.title).then_with(|| a.path.cmp(&b.path)));
     found.dedup_by(|a, b| a.path == b.path);
     group_by_folder(&mut found, roots);
+    split_same_name_series(&mut found, roots);
     folder_collections(&mut found, roots);
     found
 }
@@ -199,7 +205,15 @@ fn is_volume_file(name: &str) -> bool {
 fn entry(path: PathBuf) -> Entry {
     let title = title_of(&path);
     let (name, number) = parse_series(&title);
-    Entry { series: number.map(|_| name), number, title, path, authors: None, groups: Vec::new() }
+    Entry { series: number.map(|_| name), number, title, added: added_at(&path), path, ..Entry::default() }
+}
+
+/// Quando il volume e' arrivato: la data di creazione del file (quella della
+/// copia sul disco), dove il sistema la tiene; se no l'ultima modifica.
+fn added_at(path: &Path) -> u64 {
+    let Ok(meta) = std::fs::metadata(path) else { return 0 };
+    let time = meta.created().or_else(|_| meta.modified());
+    time.ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs())
 }
 
 /// Cio' che dice la ComicInfo.xml vince su cio' che si indovina dal nome. Una
@@ -216,6 +230,7 @@ fn apply_info(e: &mut Entry, info: &ComicInfo) {
     }
     e.authors = info.authors.clone();
     e.groups = groups_of(info);
+    e.year = info.year;
 }
 
 /// Le schede gia' lette, per percorso, misura e data del volume (`None`: il
@@ -304,6 +319,62 @@ fn pieces_of_a_series(folder: &str, titles: &[&str]) -> bool {
     let folder = without_brackets(folder).to_lowercase();
     titles.iter().any(|t| first_number(t).is_some())
         || (!folder.is_empty() && titles.iter().all(|t| t.to_lowercase().starts_with(&folder)))
+}
+
+/// Due serie con lo stesso nome in cartelle diverse ("Batman (2011)/Batman
+/// v01.cbz" e "Batman (2016)/Batman v01.cbz") sono serie diverse: insieme
+/// farebbero una pila sola, con due volumi 1. La cartella di una serie e' la
+/// prima sopra il volume che si chiama come lei (parentesi a parte); se non
+/// ce n'e' una (volumi sciolti fra altri) la serie resta com'e'. Quando le
+/// cartelle di uno stesso nome sono piu' d'una, ogni serie prende il nome
+/// della sua ("Batman (2011)"); se anche questi coincidono, con quella sopra
+/// ("Batman (DC)").
+fn split_same_name_series(found: &mut [Entry], roots: &[PathBuf]) {
+    let home = |e: &Entry| -> Option<PathBuf> {
+        let series = without_brackets(e.series.as_deref()?);
+        let root = root_of(&e.path, roots)?;
+        e.path
+            .ancestors()
+            .skip(1)
+            .take_while(|a| *a != root && a.starts_with(root))
+            .find(|a| without_brackets(&name_of(a)).eq_ignore_ascii_case(series))
+            .map(Path::to_path_buf)
+    };
+    let homes: Vec<Option<PathBuf>> = found.iter().map(home).collect();
+    let mut by_name: HashMap<&str, Vec<&Path>> = HashMap::new();
+    for (e, h) in found.iter().zip(&homes) {
+        if let (Some(series), Some(h)) = (&e.series, h) {
+            let seen = by_name.entry(series).or_default();
+            if !seen.contains(&h.as_path()) {
+                seen.push(h);
+            }
+        }
+    }
+    let renamed: Vec<Option<String>> = found
+        .iter()
+        .zip(&homes)
+        .map(|(e, h)| {
+            let (series, h) = (e.series.as_deref()?, h.as_deref()?);
+            let others = by_name.get(series).filter(|v| v.len() > 1)?;
+            let own = name_of(h);
+            let clash = others.iter().filter(|o| name_of(o).eq_ignore_ascii_case(&own)).count() > 1;
+            Some(match h.parent().filter(|_| clash) {
+                Some(up) => format!("{own} ({})", name_of(up)),
+                None => own,
+            })
+        })
+        .collect();
+    for (e, name) in found.iter_mut().zip(renamed) {
+        if name.is_some() {
+            e.series = name;
+        }
+    }
+}
+
+/// Il nome di una cartella, cosi' com'e' (`title_of` toglierebbe cio' che
+/// segue un punto, come in un file).
+fn name_of(folder: &Path) -> String {
+    folder.file_name().map_or_else(|| folder.to_string_lossy().into_owned(), |n| n.to_string_lossy().into_owned())
 }
 
 /// Le cartelle che riuniscono serie (o volumi) diverse diventano raccolte:
@@ -622,6 +693,7 @@ mod tests {
             number: series.map(|s| s.1),
             authors: None,
             groups: list.map(|n| Group::new(GroupKind::ReadingList, "Nebbia", Some(n))).into_iter().collect(),
+            ..Entry::default()
         };
         let server = "http://casa:25600/opds/v1.2/books/";
         let entries = vec![
@@ -690,6 +762,122 @@ mod tests {
         }
     }
 
+    /// Un generatore di numeri a caso, sempre lo stesso (xorshift): le prove
+    /// sono ripetibili e un errore si ritrova.
+    struct Caso(u64);
+
+    impl Caso {
+        fn n(&mut self, max: usize) -> usize {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            (self.0 % max as u64) as usize
+        }
+
+        fn scegli<'a>(&mut self, v: &[&'a str]) -> &'a str {
+            v[self.n(v.len())]
+        }
+    }
+
+    /// Nomi difficili: numeri con e senza zeri, capitoli, parentesi, accenti,
+    /// punti, nomi uguali a meno delle maiuscole.
+    const NOMI: &[&str] = &[
+        "Batman",
+        "batman",
+        "Batman (2011)",
+        "Vol 1",
+        "Vol 10",
+        "Vol 2",
+        "Ch 3",
+        "01",
+        "1",
+        "10",
+        "X",
+        "Xa",
+        "Ça va",
+        "v1.5",
+        "Nebbia sul Porto",
+        "Nebbia sul Porto v03",
+        "Saga 01",
+        "[Gruppo] Saga",
+        "Episode 5",
+        "a.b",
+        "Ω",
+    ];
+
+    /// Un albero di cartelle a caso dentro `dir`: volumi vuoti (la scansione
+    /// guarda solo i nomi), immagini sciolte, cartelle di immagini che sono
+    /// volumi e a volte ne contengono altri.
+    fn albero(caso: &mut Caso, dir: &Path, depth: usize) {
+        std::fs::create_dir_all(dir).unwrap();
+        let quanti = if depth == 0 { 6 + caso.n(10) } else { 1 + caso.n(6) };
+        for _ in 0..quanti {
+            let name = caso.scegli(NOMI);
+            match caso.n(6) {
+                0 | 1 => {
+                    let _ = std::fs::write(dir.join(format!("{name}.cbz")), b"");
+                }
+                2 => {
+                    let _ = std::fs::write(dir.join(format!("{name} {}.cbr", caso.n(30))), b"");
+                }
+                3 => {
+                    for k in 0..caso.n(7) {
+                        let _ = std::fs::write(dir.join(format!("p{k}.jpg")), b"");
+                    }
+                }
+                4 | 5 if depth < 4 => albero(caso, &dir.join(name), depth + 1),
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn librerie_a_caso() {
+        let base = std::env::temp_dir().join(format!("fumetto-a-caso-{}", std::process::id()));
+        let mut caso = Caso(0x9e37_79b9_7f4a_7c15);
+        let mut volumi = 0;
+        for giro in 0..40 {
+            let root = base.join(format!("g{giro}"));
+            albero(&mut caso, &root, 0);
+            let roots = [root.clone()];
+            let found = scan_with(&roots, &mut |_| None);
+            let paths: Vec<&Path> = found.iter().map(|e| e.path.as_path()).collect();
+            volumi += paths.len();
+
+            // gli ordini sono totali anche qui: ordinare non si ferma
+            let mut v = paths.clone();
+            v.sort_by(|a, b| folder_cmp(a, b));
+            assert!(v.windows(2).all(|w| folder_cmp(w[0], w[1]).is_le()), "giro {giro}");
+            let mut e: Vec<&Entry> = found.iter().collect();
+            e.sort_by(|a, b| by_number(a, b));
+
+            // ogni cartella: cio' che contiene c'e' una volta sola
+            let all: Vec<usize> = (0..found.len()).collect();
+            let mut dirs: Vec<&Path> = paths.iter().filter_map(|p| p.parent()).collect();
+            dirs.push(&root);
+            for dir in dirs {
+                let c = folder_contents(&found, &all, dir);
+                let inside = c.volumes.len() + c.folders.iter().map(|f| f.1.len()).sum::<usize>();
+                assert_eq!(inside, paths.iter().filter(|p| p.starts_with(dir) && **p != dir).count(), "{dir:?}");
+            }
+
+            // dopo e prima: chi viene dopo ha come precedente quello di prima
+            for order in [Order::Series, Order::Folders] {
+                for p in &paths {
+                    if let Some(next) = neighbour(&found, &roots, p, order, true) {
+                        assert!(found.iter().any(|e| e.path == next), "{next:?} non e' nella libreria");
+                        if order == Order::Folders {
+                            let back = neighbour(&found, &roots, &next, order, false);
+                            assert_eq!(back.as_deref(), Some(*p), "giro {giro}: {p:?} -> {next:?}");
+                        }
+                    }
+                    let _ = neighbour(&found, &roots, p, order, false);
+                }
+            }
+        }
+        assert!(volumi > 1000, "librerie troppo piccole per provare qualcosa: {volumi} volumi");
+        let _ = std::fs::remove_dir_all(&base);
+    }
     #[test]
     fn gli_ordini_sono_totali() {
         // "/f/X" e' una cartella di immagini (un volume) con altri volumi dentro
@@ -719,6 +907,7 @@ mod tests {
             number,
             authors: None,
             groups: Vec::new(),
+            ..Entry::default()
         };
         let entries = [
             vol("/a", "Z", Some(1)),
@@ -901,6 +1090,42 @@ mod tests {
         let order: Vec<&str> = berserk.iter().map(|e| e.title.as_str()).collect();
         assert_eq!(order, ["Vol 1 \u{00b7} Ch 1", "Vol 1 \u{00b7} Ch 2", "Vol 2 \u{00b7} Ch 1"]);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn serie_con_lo_stesso_nome_in_cartelle_diverse() {
+        let roots = [PathBuf::from("/f")];
+        let mut found: Vec<Entry> = [
+            "/f/Batman (2011)/Batman v01.cbz",
+            "/f/Batman (2011)/Batman v02.cbz",
+            "/f/Batman (2016)/Batman v01.cbz",
+            "/f/DC/Saga/Saga 01.cbz",
+            "/f/Image/Saga/Saga 01.cbz",
+            "/f/Dylan Dog/001-100/Dylan Dog 001.cbz",
+            "/f/Dylan Dog/101-200/Dylan Dog 101.cbz",
+            "/f/Sparsi/Lupo 01.cbz",
+            "/f/Altri/Lupo 02.cbz",
+        ]
+        .iter()
+        .map(|p| entry(PathBuf::from(p)))
+        .collect();
+        split_same_name_series(&mut found, &roots);
+        let series: Vec<&str> = found.iter().map(|e| e.series.as_deref().unwrap_or("")).collect();
+        assert_eq!(
+            series,
+            [
+                "Batman (2011)",
+                "Batman (2011)",
+                "Batman (2016)",
+                "Saga (DC)",
+                "Saga (Image)",
+                "Dylan Dog",
+                "Dylan Dog",
+                "Lupo",
+                "Lupo",
+            ],
+            "una serie per cartella; le sottocartelle di una serie e i volumi sciolti restano insieme"
+        );
     }
 
     #[test]
