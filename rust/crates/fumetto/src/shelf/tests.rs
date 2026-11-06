@@ -319,7 +319,7 @@ fn raccolte_liste_e_generi() {
     let d = data(&e, &st, &at);
     let view = (1920.0, 1080.0);
     let mut shelf = Shelf::default();
-    assert!(BarGeo::new(&d, view.0, 1.0).groups_x.is_some(), "c'e' il tasto dei gruppi");
+    assert!(BarGeo::new(&d, view.0, 1.0, false).groups_x.is_some(), "c'e' il tasto dei gruppi");
     shelf.groups = true;
     let secs = shelf.sections(&d);
     let titles: Vec<&str> = secs.iter().map(|s| s.title.as_str()).collect();
@@ -478,4 +478,52 @@ fn la_cella_sotto_il_mouse_sale_e_torna_giu() {
     shelf.advance(&d, view, 1.0, ms(800));
     assert_eq!(shelf.cover_slots(&d, view, 1.0)[0].y, rest, "di nuovo al suo posto");
     assert!(!shelf.moving());
+}
+
+#[test]
+fn la_barra_non_si_sovrappone_a_nessuna_larghezza() {
+    use fumetto_core::library::Group;
+    let (mut e, st, at) = library();
+    e[0].groups = vec![Group::new(GroupKind::Genre, "Giallo", None)];
+    for reading in [false, true] {
+        let d = ShelfData { reading, ..data(&e, &st, &at) };
+        for s in [1.0, 1.25, 1.5, 2.0] {
+            for vw in (300..2400).step_by(10).map(|w| w as f32) {
+                for searching in [false, true] {
+                    let g = BarGeo::new(&d, vw, s, searching);
+                    let what = format!("larga {vw}, scala {s}, cerca {searching}, legge {reading}");
+                    let first_button = g.buttons().map(|b| b.2).fold(f32::MAX, f32::min);
+                    if first_button < 24.0 * s {
+                        continue; // neanche i tasti ci stanno: niente da disporre
+                    }
+                    // da sinistra: il nome, i filtri, la ricerca, i tasti
+                    let mut x = if g.logo { 150.0 * s } else { 24.0 * s };
+                    if let (Some(&t0), Some(&t3)) = (g.tabs.first(), g.tabs.last()) {
+                        assert!(t0 >= x - 0.5, "filtri sopra il nome: {what}");
+                        assert!(g.tab_w >= 72.0 * s, "filtri troppo stretti: {what}");
+                        x = t3 + g.tab_w + 16.0 * s;
+                    }
+                    assert!(g.search_w == 0.0 || g.search_x >= x - 1.0, "ricerca sopra i filtri: {what}");
+                    assert!(g.search_x + g.search_w <= first_button + 0.5, "ricerca sopra i tasti: {what}");
+                    if searching {
+                        assert!(
+                            g.search_w >= 120.0 * s - 1.0 || vw < 500.0 * s,
+                            "il testo cercato non ha posto: {what}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    // larga: tutto come prima, i filtri con i numeri e il nome
+    let d = data(&e, &st, &at);
+    let g = BarGeo::new(&d, 1920.0, 1.0, false);
+    assert!(g.logo && g.counts && !g.search_icon && g.tabs.len() == 4);
+    // stretta: il nome va via prima dei numeri, la lente per ultima
+    let g = BarGeo::new(&d, 800.0, 1.0, false);
+    assert!(!g.logo && g.counts && !g.search_icon, "a 800 punti restano i numeri");
+    let g = BarGeo::new(&d, 600.0, 1.0, false);
+    assert!(!g.counts && g.search_icon && g.tabs.len() == 4, "a 600 punti, la lente");
+    let g = BarGeo::new(&d, 600.0, 1.0, true);
+    assert!(g.tabs.is_empty() && g.search_w > 200.0, "mentre si cerca, il testo al posto dei filtri");
 }

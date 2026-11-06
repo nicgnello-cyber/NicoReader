@@ -199,15 +199,20 @@ impl Shelf {
         let mut l = Layer::default();
         l.rects.push(Rect::new(0.0, 0.0, vw, h, BLACK));
         l.rects.push(Rect::new(0.0, h - s.round(), vw, s.round(), alpha(HAIR, 0.8)));
-        l.texts.push(Text::new("NicoReader", Face::Serif, 24.0 * s, INK).on_baseline((24.0 * s).round(), cy + 8.0 * s));
-        let geo = BarGeo::new(d, vw, s);
+        let geo = BarGeo::new(d, vw, s, !self.search.is_empty());
+        if geo.logo {
+            l.texts.push(
+                Text::new("NicoReader", Face::Serif, 24.0 * s, INK).on_baseline((24.0 * s).round(), cy + 8.0 * s),
+            );
+        }
         self.draw_filters(&mut l, d, &geo, h, s);
         self.draw_search(&mut l, &geo, cy, s, m);
         self.draw_buttons(&mut l, &geo, vw, h, s, m);
         l
     }
 
-    /// I filtri, ognuno con quanti volumi tiene; quello scelto ha il punto.
+    /// I filtri, ognuno con quanti volumi tiene (se c'e' posto); quello
+    /// scelto ha il punto.
     fn draw_filters(&self, l: &mut Layer, d: &ShelfData, geo: &BarGeo, h: f32, s: f32) {
         let cy = (h / 2.0).round();
         let mut counts = [0usize; 4];
@@ -222,7 +227,8 @@ impl Shelf {
             let on = self.filter == *f;
             let hovered = self.hover == Some(Hit::Filter(*f));
             let color = if on || hovered { INK } else { MUTED };
-            let label = caps(&format!("{}  {count}", f.label()), size, color).tabular();
+            let text = if geo.counts { format!("{}  {count}", f.label()) } else { f.label().to_owned() };
+            let label = caps(&text, size, color).tabular();
             l.texts.push(label.boxed(geo.tab_w, Align::Center).on_baseline(*x, cy + 4.0 * s));
             if on {
                 let dd = 4.0 * s;
@@ -231,9 +237,14 @@ impl Shelf {
         }
     }
 
-    /// La ricerca: basta scrivere. Con del testo, il cursore e la crocetta.
+    /// La ricerca: basta scrivere. Con del testo, il cursore e la crocetta;
+    /// senza, in una finestra molto stretta, solo la lente.
     fn draw_search(&self, l: &mut Layer, geo: &BarGeo, cy: f32, s: f32, m: &mut dyn Measure) {
         let (sx, sw) = (geo.search_x, geo.search_w);
+        if geo.search_icon {
+            draw_icon(l, Icon::Search, (sx + sw / 2.0).round(), cy, s, MUTED_F);
+            return;
+        }
         let line = if self.search.is_empty() { HAIR } else { TICK };
         l.rects.push(Rect::new(sx, (cy + 13.0 * s).round(), sw, s.round(), line));
         draw_icon(l, Icon::Search, (sx + 9.0 * s).round(), cy, s, MUTED_F);
@@ -337,22 +348,48 @@ fn meta_of(s: Status) -> String {
 
 /// Dove stanno i pezzi della barra della libreria (senza misurare i testi).
 pub(super) struct BarGeo {
-    tabs: Vec<f32>,
-    tab_w: f32,
-    search_x: f32,
-    search_w: f32,
-    folders_x: Option<f32>,
+    /// Il nome a sinistra: in una finestra stretta lascia il posto.
+    pub(super) logo: bool,
+    pub(super) tabs: Vec<f32>,
+    pub(super) tab_w: f32,
+    /// Quanti volumi tiene ogni filtro, accanto al suo nome.
+    pub(super) counts: bool,
+    pub(super) search_x: f32,
+    pub(super) search_w: f32,
+    /// Della ricerca, senza testo, si vede solo la lente.
+    pub(super) search_icon: bool,
+    pub(super) folders_x: Option<f32>,
     /// La vista per cartelle.
-    browse_x: Option<f32>,
+    pub(super) browse_x: Option<f32>,
     /// L'ordine.
-    sort_x: Option<f32>,
+    pub(super) sort_x: Option<f32>,
     /// Solo se qualche volume fa parte di un gruppo.
     pub(super) groups_x: Option<f32>,
-    return_x: Option<f32>,
+    pub(super) return_x: Option<f32>,
 }
 
+/// Come stringere la barra quando la finestra si stringe, un passo dopo
+/// l'altro: prima filtri e ricerca piu' stretti, poi via il nome, poi via i
+/// numeri dei filtri, infine la ricerca si riduce alla lente (si cerca
+/// comunque scrivendo; mentre si cerca, il testo prende il posto dei filtri).
+struct Squeeze {
+    logo: bool,
+    counts: bool,
+    /// La larghezza minima di un filtro, in punti.
+    tab_min: f32,
+    search_icon: bool,
+}
+
+const SQUEEZES: [Squeeze; 4] = [
+    Squeeze { logo: true, counts: true, tab_min: 96.0, search_icon: false },
+    Squeeze { logo: false, counts: true, tab_min: 96.0, search_icon: false },
+    Squeeze { logo: false, counts: false, tab_min: 72.0, search_icon: false },
+    Squeeze { logo: false, counts: false, tab_min: 72.0, search_icon: true },
+];
+
 impl BarGeo {
-    pub(super) fn new(d: &ShelfData, vw: f32, s: f32) -> BarGeo {
+    /// `searching`: c'e' del testo nella ricerca.
+    pub(super) fn new(d: &ShelfData, vw: f32, s: f32, searching: bool) -> BarGeo {
         let step = 36.0 * s + 4.0 * s;
         let mut r = vw - 14.0 * s;
         let return_x = d.reading.then(|| {
@@ -365,33 +402,66 @@ impl BarGeo {
         };
         let (folders_x, browse_x, sort_x) = (Some(next()), Some(next()), Some(next()));
         let groups_x = d.entries[..d.library_len()].iter().any(|e| !e.groups.is_empty()).then(&mut next);
-        // i filtri in mezzo; in una finestra stretta si spostano a sinistra
-        // (dopo il nome) e si stringono, per lasciare posto alla ricerca
-        let (logo, room) = (150.0 * s, r - 16.0 * s - 120.0 * s - 16.0 * s);
-        let mut tab_w = (134.0 * s).round();
-        let mut x0 = ((vw - tab_w * 4.0) / 2.0).round();
-        if x0 + tab_w * 4.0 > room {
-            x0 = (room - tab_w * 4.0).max(logo).round();
-            tab_w = tab_w.min(((room - x0) / 4.0).floor()).max(96.0 * s);
-        }
-        let tabs_w = tab_w * 4.0;
-        let search_w = (250.0 * s).round().min((r - 16.0 * s) - (x0 + tabs_w + 16.0 * s)).max(120.0 * s);
-        let search_x = (r - 16.0 * s - search_w).round();
-        BarGeo {
-            tabs: (0..4).map(|k| x0 + k as f32 * tab_w).collect(),
-            tab_w,
-            search_x,
-            search_w,
+        let mut geo = BarGeo {
+            logo: true,
+            tabs: Vec::new(),
+            tab_w: (134.0 * s).round(),
+            counts: true,
+            search_x: 0.0,
+            search_w: 0.0,
+            search_icon: false,
             folders_x,
             browse_x,
             sort_x,
             groups_x,
             return_x,
+        };
+        geo.place_middle(vw, r - 16.0 * s, s, searching);
+        geo
+    }
+
+    /// I filtri e la ricerca, fra il nome e i tasti (la ricerca finisce in
+    /// `right`). Con spazio, i filtri al centro della finestra; se no, il
+    /// primo passo di `SQUEEZES` con cui ci stanno, subito prima della
+    /// ricerca. Se non ci stanno neanche cosi', restano la ricerca e i tasti.
+    fn place_middle(&mut self, vw: f32, right: f32, s: f32, searching: bool) {
+        let (gap, search_min, icon_w) = (16.0 * s, 120.0 * s, 28.0 * s);
+        let full = self.tab_w;
+        let centered = ((vw - full * 4.0) / 2.0).round();
+        let x0 = if centered + full * 4.0 <= right - search_min - gap {
+            centered
+        } else {
+            // quanto resta ai filtri, da dove cominciano
+            let room = |q: &Squeeze| {
+                let left = if q.logo { 150.0 * s } else { 24.0 * s };
+                let search = if q.search_icon { icon_w } else { search_min };
+                (left, right - search - gap - left)
+            };
+            let last = &SQUEEZES[SQUEEZES.len() - 1];
+            let q = SQUEEZES.iter().find(|q| room(q).1 >= q.tab_min * s * 4.0).unwrap_or(last);
+            let (left, space) = room(q);
+            (self.logo, self.counts, self.search_icon) = (q.logo, q.counts, q.search_icon);
+            self.tab_w = if space >= q.tab_min * s * 4.0 { full.min((space / 4.0).floor()) } else { 0.0 };
+            (left + space - self.tab_w * 4.0).round().max(left)
+        };
+        self.tabs = if self.tab_w > 0.0 { (0..4).map(|k| x0 + k as f32 * self.tab_w).collect() } else { Vec::new() };
+        if self.search_icon && searching {
+            // mentre si cerca, il testo prende il posto dei filtri
+            let left = if self.tab_w > 0.0 { x0 } else { 24.0 * s };
+            (self.tabs, self.search_icon, self.search_x, self.search_w) =
+                (Vec::new(), false, left, (right - left).max(0.0));
+            return;
         }
+        // senza filtri (una finestra strettissima) la ricerca comincia dal margine
+        let tabs_end = if self.tabs.is_empty() { 24.0 * s - gap } else { x0 + self.tab_w * 4.0 };
+        let room = (right - (tabs_end + gap)).max(0.0);
+        self.search_w =
+            if self.search_icon { if room >= icon_w { icon_w } else { 0.0 } } else { (250.0 * s).round().min(room) };
+        self.search_x = (right - self.search_w).round();
     }
 
     /// I tasti che ci sono, con la loro icona e dove stanno.
-    fn buttons(&self) -> impl Iterator<Item = (Hit, Icon, f32)> + use<> {
+    pub(super) fn buttons(&self) -> impl Iterator<Item = (Hit, Icon, f32)> + use<> {
         [
             (Hit::Groups, Icon::Shelf, self.groups_x),
             (Hit::Browse, Icon::Tree, self.browse_x),
@@ -406,7 +476,7 @@ impl BarGeo {
 
 /// Cosa c'e' nella barra in `x`.
 pub(super) fn bar_hit(d: &ShelfData, shelf: &Shelf, view: (f32, f32), s: f32, x: f32) -> Option<Hit> {
-    let g = BarGeo::new(d, view.0, s);
+    let g = BarGeo::new(d, view.0, s, !shelf.search.is_empty());
     if let Some(k) = g.tabs.iter().position(|&tx| x >= tx && x < tx + g.tab_w) {
         return Some(Hit::Filter(Filter::ALL[k]));
     }
