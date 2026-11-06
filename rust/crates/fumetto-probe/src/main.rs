@@ -6,7 +6,7 @@
 //!   fumetto-probe scansione <cartella>   decodifica ogni pagina di ogni volume (come prova_scan.py della versione Python)
 //!   fumetto-probe scatto <volume> [cartella] [larghezza altezza scala]
 //!                                        l'interfaccia vera sulle pagine vere, in PNG
-//!   fumetto-probe libreria <cartella> [uscita]
+//!   fumetto-probe libreria <cartella> [uscita] [larghezza altezza scala]
 //!                                        la libreria vera di una cartella, in PNG
 //!   fumetto-probe migliora <volume> [pagina] [larghezza altezza]
 //!                                        l'ingranditore AI su una pagina: prima e dopo, in PNG
@@ -45,7 +45,9 @@ fn main() {
         }
         ["libreria", root, rest @ ..] => {
             let out = rest.first().map_or("scatti".into(), PathBuf::from);
-            scatto::libreria(Path::new(root), &out, (1920, 1080), 1.0, power)
+            let num = |i: usize, d: f32| rest.get(i).and_then(|v| v.parse().ok()).unwrap_or(d);
+            let size = (num(1, 1920.0) as u32, num(2, 1080.0) as u32);
+            scatto::libreria(Path::new(root), &out, size, num(3, 1.0), power)
         }
         ["prepara", volume, n @ ..] => prepara(Path::new(volume), n.first().and_then(|n| n.parse().ok()).unwrap_or(8)),
         ["migliora", volume, rest @ ..] => {

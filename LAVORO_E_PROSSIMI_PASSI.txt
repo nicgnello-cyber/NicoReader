@@ -869,6 +869,13 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      - nella galleria vuota gli ultimi letti hanno la loro copertina, e sono
        solo quanti ne stanno sopra i tasti in fondo (in una finestra bassa si
        sovrapponevano).
+  4v. [x] La barra della libreria in una finestra stretta (6 novembre): sotto
+     gli 860 punti circa filtri e ricerca si sovrapponevano. Ora si stringe
+     a passi (shelf/draw.rs, SQUEEZES): filtri e ricerca piu' stretti, poi
+     via il nome, poi via i numeri dei filtri, infine la ricerca diventa la
+     sola lente (si cerca scrivendo; mentre si cerca, il testo prende il
+     posto dei filtri). Sotto i 550 punti circa restano ricerca e tasti.
+     Una prova le passa tutte, da 300 a 2400 pixel, a quattro scale.
   5. Distribuzione (capitolo 5).
 
   Da decidere tu, quando vuoi:
