@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use fumetto::shelf::{Filter, ShelfData};
+use fumetto::shelf::{CoverSlot, Filter, ShelfData};
 use fumetto_core::LibrarySort;
 use fumetto_core::library::{self, Entry, Status};
 use fumetto_render::Renderer;
@@ -60,8 +60,8 @@ impl Library {
         Library { entries, status, read_at, roots }
     }
 
-    /// Come la vede la libreria; `covered`: le copertine gia' pronte.
-    fn data<'a>(&'a self, covered: &'a dyn Fn(&Path) -> bool) -> ShelfData<'a> {
+    /// Come la vede la libreria; `cover_shown`: le copertine gia' pronte.
+    fn data<'a>(&'a self, cover_shown: &'a dyn Fn(&Path) -> f32) -> ShelfData<'a> {
         ShelfData {
             entries: &self.entries,
             status: &self.status,
@@ -72,7 +72,7 @@ impl Library {
             searching: false,
             scanning: false,
             roots: &self.roots,
-            covered,
+            cover_shown,
             reading: false,
         }
     }
@@ -117,21 +117,26 @@ impl Shelves<'_> {
         let (view, scale, size) = (self.view(), self.scale, self.size);
         let mut ui = Ui::new();
         let slots = {
-            let shelf = self.lib.data(&|_| true);
+            let shelf = self.lib.data(&|_| 1.0);
             let ctx = self.context(shelf);
             dress(&mut ui, &ctx);
             ui.shelf.cover_slots(ctx.shelf.as_ref().expect("la libreria"), view, scale)
         };
         self.upload_covers(&slots)?;
         let covers = &self.covers;
-        let covered = |p: &Path| covers.contains_key(p);
-        let ctx = self.context(self.lib.data(&covered));
-        let scene = ui.scene(&ctx, Instant::now() + Duration::from_millis(700), &mut self.overlay);
+        let cover_shown = |p: &Path| if covers.contains_key(p) { 1.0 } else { 0.0 };
+        let ctx = self.context(self.lib.data(&cover_shown));
+        // cio' che si anima (la cella sotto il mouse che sale) parte qui, e
+        // nello scatto, 700 ms dopo, e' arrivato
+        let now = Instant::now();
+        ui.scene(&ctx, now, &mut self.overlay);
+        let scene = ui.scene(&ctx, now + Duration::from_millis(700), &mut self.overlay);
+        let slots = ui.shelf.cover_slots(ctx.shelf.as_ref().expect("la libreria"), view, scale);
         let placements: Vec<Placement> = slots
             .iter()
-            .filter(|s| s.5)
-            .filter_map(|(p, x, y, cw, ch, _)| {
-                covers.get(p).map(|image| Placement { image, x: *x, y: *y, w: *cw, h: *ch })
+            .filter(|s| s.on_screen)
+            .filter_map(|s| {
+                covers.get(&s.path).map(|image| Placement::new(image, s.x, s.y, s.w, s.h).rounded(s.radius))
             })
             .collect();
         let overlay = &mut self.overlay;
@@ -146,19 +151,19 @@ impl Shelves<'_> {
     }
 
     /// Le copertine a schermo che non sono ancora sulla scheda video.
-    fn upload_covers(&mut self, slots: &[(PathBuf, f32, f32, f32, f32, bool)]) -> Result<(), String> {
+    fn upload_covers(&mut self, slots: &[CoverSlot]) -> Result<(), String> {
         let cache = self.out.join("cache");
-        for (path, _, _, cw, ch, _) in slots.iter().filter(|s| s.5) {
-            if self.covers.contains_key(path) {
+        for slot in slots.iter().filter(|s| s.on_screen) {
+            if self.covers.contains_key(&slot.path) {
                 continue;
             }
-            let page = fumetto_core::covers::cover(path, &cache)
-                .map(|p| fumetto_core::resize(&p, cw.round() as u32, ch.round() as u32, true));
+            let page = fumetto_core::covers::cover(&slot.path, &cache)
+                .map(|p| fumetto_core::resize(&p, slot.w.round() as u32, slot.h.round() as u32, true));
             match page {
                 Ok(p) => {
-                    self.covers.insert(path.clone(), self.renderer.upload(&p)?);
+                    self.covers.insert(slot.path.clone(), self.renderer.upload(&p)?);
                 }
-                Err(e) => println!("  copertina di {}: {e}", path.display()),
+                Err(e) => println!("  copertina di {}: {e}", slot.path.display()),
             }
         }
         Ok(())

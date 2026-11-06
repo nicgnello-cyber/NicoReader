@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use fumetto::keys::{self, Bind, Combo, KeyContext, Keymap};
 use fumetto::prefs::Pref;
-use fumetto::shelf::ShelfData;
+use fumetto::shelf::{CoverSlot, ShelfData};
 use fumetto::thumbs::{Thumbs, ThumbsData};
 use fumetto::ui::{self, BookInfo, Command, Context, Handled, Recent, Ui};
 use fumetto_core::covers::{Cover, CoverLoader};
@@ -244,9 +244,40 @@ struct Shown {
 /// Un'immagine da disegnare oltre alle pagine: una copertina della libreria
 /// o una miniatura.
 enum Extra {
-    Cover(PathBuf),
+    /// Con il raggio degli angoli e quanto si vede.
+    Cover {
+        path: PathBuf,
+        radius: f32,
+        opacity: f32,
+    },
     Thumb(usize),
 }
+
+/// Le copertine da disegnare, e se qualcuna sta ancora comparendo.
+struct ShownCovers {
+    extras: Vec<(Extra, f32, f32, f32, f32)>,
+    fading: bool,
+}
+
+/// Una copertina della libreria sulla scheda video.
+struct ShelfCover {
+    image: GpuImage,
+    /// La misura della cella per cui e' fatta.
+    size: (u32, u32),
+    /// Da quando c'e': compare sfumando.
+    since: Instant,
+}
+
+impl ShelfCover {
+    /// Quanto si vede, mentre compare.
+    fn shown(&self, now: Instant) -> f32 {
+        let a = (now.saturating_duration_since(self.since).as_secs_f32() / COVER_FADE).min(1.0);
+        a * a * (3.0 - 2.0 * a)
+    }
+}
+
+/// Quanto ci mette una copertina a comparire, in secondi.
+const COVER_FADE: f32 = 0.22;
 
 /// Le pagine pronte, dovunque siano: sulla scheda video, o in RAM prima che
 /// la scheda video arrivi (dopo, la RAM si svuota e resta solo l'una).
@@ -346,7 +377,7 @@ pub struct App {
     /// Le schede ComicInfo.xml gia' lette, accanto alla cache delle copertine.
     info_cache: PathBuf,
     /// Le copertine sulla scheda video, alla misura delle celle.
-    covers: HashMap<PathBuf, (GpuImage, (u32, u32))>,
+    covers: HashMap<PathBuf, ShelfCover>,
     /// Quelle che non si riesce a fare: non si richiedono di nuovo.
     covers_failed: std::collections::HashSet<PathBuf>,
     cover_loader: CoverLoader,

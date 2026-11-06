@@ -183,7 +183,7 @@ impl Ui {
             let handled = self.shelf.key(key, d, ctx.view, ctx.scale);
             return self.after_shelf(handled, ctx);
         }
-        if ctx.book.is_none() && !ctx.recent.is_empty() {
+        if ctx.book.is_none() && recent_shown(ctx) > 0 {
             return self.key_welcome(key, ctx);
         }
         Handled::No
@@ -237,7 +237,7 @@ impl Ui {
     /// Nella galleria vuota: le frecce scelgono fra gli ultimi letti, Invio
     /// lo apre.
     fn key_welcome(&mut self, key: Key, ctx: &Context) -> Handled {
-        let n = ctx.recent.len();
+        let n = recent_shown(ctx);
         match key {
             Key::Down => self.selected = Some(self.selected.map_or(0, |i| (i + 1) % n)),
             Key::Up => self.selected = Some(self.selected.map_or(n - 1, |i| (i + n - 1) % n)),

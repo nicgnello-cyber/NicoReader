@@ -2,9 +2,11 @@
 //!
 //! La prima pagina di un volume, ritagliata in 2:3 (la forma delle celle: i
 //! webtoon, strisce alte dieci volte la larghezza, si prendono dall'alto; le
-//! tavole orizzontali dal centro) e rimpicciolita in luce lineare come ogni
-//! pagina. Si tiene in cache su disco in WebP, 320x480: al secondo avvio la
-//! libreria compare subito, e mille copertine pesano una ventina di MB.
+//! copertine doppie, retro, dorso e fronte in una tavola orizzontale, dal
+//! lato del fronte) e rimpicciolita in luce lineare come ogni pagina. Si
+//! tiene in cache su disco in WebP, 480x720, abbastanza per le celle di uno
+//! schermo a doppia densita': al secondo avvio la libreria compare subito, e
+//! mille copertine pesano una quarantina di MB.
 //!
 //! La chiave di cache e' il percorso con la misura e la data del file: se il
 //! volume cambia, la copertina si rifa'.
@@ -20,8 +22,8 @@ use crate::loader::Fit;
 use crate::resize::resize;
 
 /// La misura delle copertine in cache.
-pub const COVER_W: u32 = 320;
-pub const COVER_H: u32 = 480;
+pub const COVER_W: u32 = 480;
+pub const COVER_H: u32 = 720;
 
 /// Il nome del file in cache per un volume: FNV-1a a 64 bit di percorso,
 /// misura e data. Stabile fra versioni del programma (l'hash della libreria
@@ -47,8 +49,11 @@ pub fn cache_name(path: &Path) -> Option<String> {
 /// La copertina, dalla cache o fatta adesso (e messa in cache).
 pub fn cover(path: &Path, cache: &Path) -> Result<Page, String> {
     let file = cache_name(path).map(|n| cache.join(n));
+    // una copertina di un'altra misura (le versioni prima della 0.4.8 le
+    // tenevano a 320x480) si rifa' e prende il suo posto
     if let Some(bytes) = file.as_ref().and_then(|f| std::fs::read(f).ok())
         && let Ok(page) = decode(&bytes)
+        && (page.width, page.height) == (COVER_W, COVER_H)
     {
         return Ok(page);
     }
@@ -64,11 +69,11 @@ pub fn cover(path: &Path, cache: &Path) -> Result<Page, String> {
     Ok(page)
 }
 
-/// La copertina di un volume, 320x480, senza cache.
+/// La copertina di un volume, alla misura della cache, senza cache.
 pub fn make(path: &Path) -> Result<Page, String> {
     // la copertina gia' pronta sul server pesa meno della prima pagina
     if let Some(page) = crate::remote::cover(path).and_then(|bytes| decode(&bytes).ok()) {
-        return Ok(resize(&crop_to_cover(&page), COVER_W, COVER_H, true));
+        return Ok(resize(&crop_to_cover(&page, false), COVER_W, COVER_H, true));
     }
     let book = Book::open(path).map_err(|e| e.to_string())?;
     let page =
@@ -76,20 +81,27 @@ pub fn make(path: &Path) -> Result<Page, String> {
             Content::Encoded(bytes) => decode(&bytes).map_err(|e| e.to_string())?,
             Content::Pixels(p) | Content::Exact(p, _) => p,
         };
-    let page = crop_to_cover(&page);
+    let right_to_left = book.info.as_ref().and_then(|i| i.right_to_left) == Some(true);
+    let page = crop_to_cover(&page, right_to_left);
     Ok(resize(&page, COVER_W, COVER_H, true))
 }
 
-/// Il pezzo 2:3 della pagina: dall'alto se e' piu' alta, dal centro se e'
-/// piu' larga.
-fn crop_to_cover(p: &Page) -> Page {
+/// Il pezzo 2:3 della pagina: dall'alto se e' piu' alta; dal centro se e'
+/// piu' larga ma non orizzontale. Una tavola orizzontale e' di solito una
+/// copertina doppia (retro, dorso e fronte): si prende il fronte, a destra,
+/// o a sinistra in un manga da leggere da destra a sinistra.
+fn crop_to_cover(p: &Page, right_to_left: bool) -> Page {
     let (w, h) = (p.width, p.height);
     let (cw, ch) = if h * COVER_W >= w * COVER_H {
         (w, (w * COVER_H / COVER_W).max(1))
     } else {
         ((h * COVER_W / COVER_H).max(1), h)
     };
-    let x0 = (w - cw) / 2;
+    let x0 = match (w > h, right_to_left) {
+        (false, _) => (w - cw) / 2,
+        (true, false) => w - cw,
+        (true, true) => 0,
+    };
     let mut rgba = Vec::with_capacity((cw * ch * 4) as usize);
     for row in 0..ch {
         let start = ((row * w + x0) * 4) as usize;
@@ -241,5 +253,52 @@ mod tests {
         let again = cover(&volume, &cache).unwrap();
         assert_eq!((again.width, again.height), (COVER_W, COVER_H), "riletta dalla cache");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn copertina_vecchia_rifatta() {
+        let dir = std::env::temp_dir().join(format!("fumetto-copertine-vecchie-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let volume = dir.join("Volume");
+        std::fs::create_dir_all(&volume).unwrap();
+        let rgba = [128u8; 4 * 200 * 300];
+        image::save_buffer(volume.join("001.png"), &rgba, 200, 300, image::ColorType::Rgba8).unwrap();
+        let cache = dir.join("cache");
+        std::fs::create_dir_all(&cache).unwrap();
+        // in cache, alla misura di prima
+        let old = Page { width: 320, height: 480, rgba: vec![128; 4 * 320 * 480], opaque: true };
+        std::fs::write(cache.join(cache_name(&volume).unwrap()), encode_webp(&old, 82.0).unwrap()).unwrap();
+        let c = cover(&volume, &cache).unwrap();
+        assert_eq!((c.width, c.height), (COVER_W, COVER_H), "rifatta alla misura nuova");
+        let again = decode(&std::fs::read(cache.join(cache_name(&volume).unwrap())).unwrap()).unwrap();
+        assert_eq!((again.width, again.height), (COVER_W, COVER_H), "e messa in cache al posto della vecchia");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Una tavola orizzontale: scura a sinistra, chiara a destra.
+    fn spread() -> Page {
+        let (w, h) = (300u32, 150u32);
+        let rgba =
+            (0..h).flat_map(|_| (0..w).flat_map(|x| if x < w / 2 { [0, 0, 0, 255] } else { [255; 4] })).collect();
+        Page { width: w, height: h, rgba, opaque: true }
+    }
+
+    #[test]
+    fn copertina_doppia_dal_fronte() {
+        let c = crop_to_cover(&spread(), false);
+        assert_eq!((c.width, c.height), (100, 150));
+        assert!(c.rgba.iter().all(|&v| v == 255), "il fronte, a destra");
+        let c = crop_to_cover(&spread(), true);
+        assert!(c.rgba.chunks(4).all(|px| px[..3] == [0, 0, 0]), "in un manga, a sinistra");
+    }
+
+    #[test]
+    fn tavola_poco_larga_dal_centro() {
+        // 3:4, piu' larga di 2:3 ma non orizzontale: dal centro
+        let (w, h) = (300u32, 400u32);
+        let rgba = (0..h).flat_map(|_| (0..w).flat_map(|x| [(x * 255 / (w - 1)) as u8, 0, 0, 255])).collect();
+        let c = crop_to_cover(&Page { width: w, height: h, rgba, opaque: true }, false);
+        assert_eq!(c.width, 266);
+        assert_eq!(c.rgba[0], (17 * 255 / 299) as u8, "il primo pixel tolto meta' del margine");
     }
 }

@@ -45,9 +45,11 @@ pub(crate) use menu::Row;
 use menu::{Menu, main_rows};
 use panels::{caption, goto, lens_ring, ruler, to_u8, toast_only};
 use server::{Outcome, ServerForm};
-use style::fade;
-pub(crate) use style::{ACCENT, ACCENT_TEXT, BLACK, HAIR, INK, INK_F, MUTED, MUTED_F, TICK, alpha, caps, fit, rgb};
-use welcome::{welcome, welcome_cta_hit, welcome_hit};
+pub(crate) use style::{
+    ACCENT, ACCENT_TEXT, BLACK, HAIR, INK, INK_F, MUTED, MUTED_F, PLATE, TICK, alpha, caps, fade, fit, rgb,
+};
+pub use welcome::welcome_covers;
+use welcome::{recent_shown, welcome, welcome_cta_hit, welcome_hit};
 
 /// Quanto resta la didascalia dopo l'ultimo movimento del mouse.
 const CAPTION_HOLD: Duration = Duration::from_millis(2400);
@@ -255,7 +257,7 @@ const BTN: f32 = 36.0;
 /// Corpo del numero di pagina nella didascalia.
 const FOLIO: f32 = 54.0;
 const WELCOME_W: f32 = 540.0;
-const WELCOME_ROW: f32 = 46.0;
+const WELCOME_ROW: f32 = 60.0;
 
 #[derive(Default)]
 pub struct Ui {
@@ -473,7 +475,7 @@ impl Ui {
     /// Quando ridisegnare, se non succede nient'altro: `now` mentre qualcosa
     /// sfuma, il momento in cui comincera' a sfumare, `None` se e' tutto fermo.
     pub fn wake(&self, now: Instant) -> Option<Instant> {
-        if self.shelf.gliding() || self.thumbs.gliding() {
+        if self.shelf.moving() || self.thumbs.gliding() {
             return Some(now);
         }
         [self.caption.as_ref(), self.toast.as_ref().map(|t| &t.1)]

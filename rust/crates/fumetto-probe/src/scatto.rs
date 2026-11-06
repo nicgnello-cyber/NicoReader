@@ -123,9 +123,7 @@ impl<'a> Studio<'a> {
         }
         let placements: Vec<Placement> = items
             .iter()
-            .filter_map(|it| {
-                ready.0.get(&it.page).map(|(image, _)| Placement { image, x: it.x, y: it.y, w: it.w, h: it.h })
-            })
+            .filter_map(|it| ready.0.get(&it.page).map(|(image, _)| Placement::new(image, it.x, it.y, it.w, it.h)))
             .collect();
         let st = look.settings;
         let ctx = Context {
@@ -146,7 +144,7 @@ impl<'a> Studio<'a> {
             None => Vec::new(),
         };
         let lens_placements: Vec<Placement> =
-            native.iter().map(|(image, x, y, w, h)| Placement { image, x: *x, y: *y, w: *w, h: *h }).collect();
+            native.iter().map(|(image, x, y, w, h)| Placement::new(image, *x, *y, *w, *h)).collect();
         let adjust = Adjust::from_steps(st.brightness, st.contrast, st.gamma);
         let mut ui = Ui::new();
         dress(&mut ui, &ctx);
@@ -358,8 +356,23 @@ fn gallery(studio: &mut Studio) -> Result<(), String> {
     ui.key(Key::Down, &ctx);
     ui.key(Key::Down, &ctx);
     let scene = ui.scene(&ctx, studio.later, &mut studio.overlay);
+    // le copertine degli ultimi letti, alla misura delle righe
+    let cache = studio.out.join("copertine");
+    let mut covers = Vec::new();
+    for slot in ui::welcome_covers(&ctx) {
+        match fumetto_core::covers::cover(&slot.path, &cache) {
+            Ok(p) => {
+                let page = fumetto_core::resize(&p, slot.w as u32, slot.h as u32, true);
+                covers.push((studio.renderer.upload(&page)?, slot));
+            }
+            // come nell'app: senza copertina resta il suo filo
+            Err(e) => println!("  copertina di {}: {e}", slot.path.display()),
+        }
+    }
+    let placements: Vec<Placement> =
+        covers.iter().map(|(image, s)| Placement::new(image, s.x, s.y, s.w, s.h).rounded(s.radius)).collect();
     let overlay = &mut studio.overlay;
-    let rgba = studio.renderer.render_to_rgba(size, &[], |encoder, target| {
+    let rgba = studio.renderer.render_to_rgba(size, &placements, |encoder, target| {
         if let Err(e) = overlay.draw(encoder, target, size, &scene) {
             eprintln!("galleria: {e}");
         }
@@ -412,7 +425,7 @@ fn miniature(
         .filter_map(|&(i, x, y, cw, ch, _)| {
             let image = images.get(&i)?;
             let (iw, ih) = (image.width as f32, image.height as f32);
-            Some(Placement { image, x: (x + (cw - iw) / 2.0).round(), y: (y + ch - ih).round(), w: iw, h: ih })
+            Some(Placement::new(image, (x + (cw - iw) / 2.0).round(), (y + ch - ih).round(), iw, ih))
         })
         .collect();
     let ctx = Context {

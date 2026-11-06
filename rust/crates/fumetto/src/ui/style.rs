@@ -10,6 +10,8 @@ pub(crate) const HAIR: [f32; 4] = rgb(0x3B, 0x38, 0x33);
 pub(crate) const TICK: [f32; 4] = rgb(0x5F, 0x5A, 0x52);
 pub(crate) const ACCENT: [f32; 4] = rgb(0xC9, 0x55, 0x3C);
 pub(crate) const BLACK: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
+/// Dove un'immagine non c'e' ancora (una copertina, una miniatura).
+pub(crate) const PLATE: [f32; 4] = rgb(0x17, 0x16, 0x14);
 
 pub(crate) const INK_F: [f32; 4] = rgb(0xED, 0xE8, 0xDF);
 
@@ -19,7 +21,7 @@ pub(crate) const fn rgb(r: u8, g: u8, b: u8) -> [f32; 4] {
     [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0]
 }
 
-pub(super) fn fade(c: [u8; 4], a: f32) -> [u8; 4] {
+pub(crate) fn fade(c: [u8; 4], a: f32) -> [u8; 4] {
     [c[0], c[1], c[2], (c[3] as f32 * a).round() as u8]
 }
 

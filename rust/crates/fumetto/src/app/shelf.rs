@@ -307,7 +307,7 @@ impl App {
 
 /// La libreria come la vede l'interfaccia.
 pub(super) fn shelf_data<'a>(
-    lib: &'a Lib, roots: &'a [PathBuf], covered: &'a dyn Fn(&Path) -> bool, reading: bool, searching: bool,
+    lib: &'a Lib, roots: &'a [PathBuf], cover_shown: &'a dyn Fn(&Path) -> f32, reading: bool, searching: bool,
 ) -> ShelfData<'a> {
     ShelfData {
         entries: &lib.entries,
@@ -319,12 +319,12 @@ pub(super) fn shelf_data<'a>(
         read_at: &lib.read_at,
         scanning: lib.scanning,
         roots,
-        covered,
+        cover_shown,
         reading,
     }
 }
 
 /// Per i tasti e i clic le copertine non contano.
-pub(super) fn always(_: &Path) -> bool {
-    true
+pub(super) fn always(_: &Path) -> f32 {
+    1.0
 }

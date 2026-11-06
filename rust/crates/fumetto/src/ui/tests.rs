@@ -305,3 +305,24 @@ fn nella_galleria_vuota_un_clic_apre() {
     assert_eq!(ui.click(960.0, y, &c), Handled::Yes(Some(Command::Open("a.cbz".into()))));
     assert_eq!(ui.click(960.0, 20.0, &c), Handled::Yes(Some(Command::Act(Action::Open))));
 }
+
+#[test]
+fn gli_ultimi_letti_stanno_sopra_i_tasti() {
+    let recent: Vec<Recent> = (0..8)
+        .map(|i| Recent { path: format!("{i}.cbz").into(), title: format!("{i}"), place: "letto".into() })
+        .collect();
+    let tall = ctx(None, &recent);
+    assert_eq!(super::recent_shown(&tall), 6, "al massimo sei");
+    assert_eq!(super::welcome_covers(&tall).len(), 6, "ognuno con la sua copertina");
+    let short = Context { view: (1100.0, 700.0), scale: 1.5, ..ctx(None, &recent) };
+    let n = super::recent_shown(&short);
+    assert!(n < 6, "in una finestra bassa, meno righe");
+    let last = super::welcome::welcome_rows_top(&short) + n as f32 * super::WELCOME_ROW * 1.5;
+    assert!(last <= 700.0 - 56.0 * 1.5, "l'ultima finisce sopra i tasti in fondo");
+    // le frecce scelgono solo fra quelli mostrati
+    let mut ui = Ui::new();
+    for _ in 0..n {
+        ui.key(Key::Down, &short);
+    }
+    assert_eq!(ui.selected, Some(0), "dopo l'ultimo si torna al primo");
+}
