@@ -16,8 +16,8 @@ use fumetto_render::{Align, Face, Layer, Measure, Rect, Text};
 use crate::reader::Action;
 use crate::strip::glide_step;
 use crate::ui::{
-    self, ACCENT, BLACK, Command, HAIR, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, alpha, caps, draw_icon, fit,
-    rgb,
+    self, ACCENT, BLACK, Command, HAIR, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, PLATE, alpha, caps, draw_icon,
+    fit,
 };
 
 /// Cio' che le miniature devono sapere, dall'app.
@@ -255,7 +255,7 @@ impl Thumbs {
             let y = y - if hovered { (4.0 * s).round() } else { 0.0 };
             let (w, h) = (g.cell_w, g.cell_h);
             if !(d.ready)(i) {
-                l.rects.push(Rect::new(x, y, w, h, rgb(0x17, 0x16, 0x14)));
+                l.rects.push(Rect::new(x, y, w, h, PLATE));
             }
             if self.selected == Some(i) {
                 let o = 5.0 * s;

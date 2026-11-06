@@ -97,25 +97,31 @@ impl Shelf {
         }
     }
 
-    /// Una cella: la copertina (o la sua targa), la pila o la cartella, la
-    /// scelta, quanto se ne e' letto, il titolo e sotto i dettagli.
+    /// Una cella: la copertina (o la sua targa, finche' la copertina non
+    /// c'e'), la pila o la cartella, la scelta, quanto se ne e' letto, il
+    /// titolo e sotto i dettagli.
     fn draw_tile(&self, l: &mut Layer, d: &ShelfData, g: &Geo, k: usize, p: &Placed, m: &mut dyn Measure) {
         let s = g.s;
         let hovered = self.hover == Some(Hit::Tile(k));
-        let lift = if hovered { (4.0 * s).round() } else { 0.0 };
-        let (x, y, w, h) = (p.x, p.y - lift, p.w, p.h);
+        let (x, y, w, h) = (p.x, p.y - self.lift(k, s), p.w, p.h);
+        let r = corner(s);
         let e = &d.entries[p.tile.cover()];
-        if !(d.covered)(&e.path) {
-            // la copertina non e' ancora pronta: una targa con il titolo
-            l.rects.push(Rect::new(x, y, w, h, rgb(0x17, 0x16, 0x14)));
-            let plate = Text::new(e.title.as_str(), Face::Serif, 18.0 * s, MUTED).boxed(w - 28.0 * s, Align::Center);
+        let shown = (d.cover_shown)(&e.path).clamp(0.0, 1.0);
+        if shown < 1.0 {
+            // la targa con il titolo, che svanisce mentre la copertina compare
+            let a = 1.0 - shown;
+            l.rects.push(Rect::new(x, y, w, h, alpha(PLATE, a)).radius(r));
+            let plate =
+                Text::new(e.title.as_str(), Face::Serif, 18.0 * s, fade(MUTED, a)).boxed(w - 28.0 * s, Align::Center);
             l.texts.push(plate.on_baseline(x + 14.0 * s, y + h / 2.0));
         }
+        // un filo di luce sul bordo: le copertine scure non si perdono nel nero
+        l.rects.push(Rect::new(x, y, w, h, [1.0, 1.0, 1.0, 0.07]).radius(r).stroke(s.round().max(1.0)));
         draw_shape(l, &p.tile, x, y, w, h, s);
         if self.selected == Some(k) {
             let o = 5.0 * s;
             l.rects.push(
-                Rect::new(x - o, y - o, w + 2.0 * o, h + 2.0 * o, ACCENT).radius(4.0 * s).stroke((2.0 * s).round()),
+                Rect::new(x - o, y - o, w + 2.0 * o, h + 2.0 * o, ACCENT).radius(r + o).stroke((2.0 * s).round()),
             );
         }
         if let Tile::Volume(i) = p.tile {

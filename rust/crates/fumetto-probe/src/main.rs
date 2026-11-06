@@ -142,7 +142,7 @@ fn gpu(power: wgpu::PowerPreference) -> Result<(Gpu, Renderer), String> {
 }
 
 fn at(image: &GpuImage, x: f32, y: f32, w: f32, h: f32) -> Placement<'_> {
-    Placement { image, x, y, w, h }
+    Placement::new(image, x, y, w, h)
 }
 
 fn exact(image: &GpuImage) -> Placement<'_> {

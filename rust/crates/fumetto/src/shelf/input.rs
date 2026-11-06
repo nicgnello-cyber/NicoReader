@@ -184,8 +184,14 @@ impl Shelf {
         self.glide = 0.0;
     }
 
-    /// Fa avanzare lo scorrimento morbido; `true` se c'e' ancora movimento.
+    /// Fa avanzare lo scorrimento morbido e le celle che si alzano; `true`
+    /// se c'e' ancora movimento.
     pub fn advance(&mut self, d: &ShelfData, view: (f32, f32), s: f32, now: Instant) -> bool {
+        let lifting = self.advance_lifts(now);
+        self.advance_glide(d, view, s, now) || lifting
+    }
+
+    fn advance_glide(&mut self, d: &ShelfData, view: (f32, f32), s: f32, now: Instant) -> bool {
         let dt = self.last.map_or(1.0 / 60.0, |t| (now - t).as_secs_f32()).min(0.05);
         if self.glide.abs() < 0.5 {
             (self.glide, self.last) = (0.0, None);
@@ -203,10 +209,48 @@ impl Shelf {
         true
     }
 
-    pub fn gliding(&self) -> bool {
-        self.glide.abs() >= 0.5
+    /// Qualcosa si muove ancora: serve il prossimo fotogramma.
+    pub fn moving(&self) -> bool {
+        self.glide.abs() >= 0.5 || self.lifting()
+    }
+
+    /// La cella sotto il mouse sale, le altre tornano giu', in `LIFT_TIME`.
+    fn advance_lifts(&mut self, now: Instant) -> bool {
+        let hovered = match self.hover {
+            Some(Hit::Tile(k)) => Some(k),
+            _ => None,
+        };
+        if let Some(k) = hovered
+            && !self.lifts.iter().any(|l| l.0 == k)
+        {
+            self.lifts.push((k, 0.0));
+        }
+        let dt = self.lifted_at.map_or(1.0 / 60.0, |t| now.saturating_duration_since(t).as_secs_f32());
+        let step = dt / LIFT_TIME;
+        for (k, a) in &mut self.lifts {
+            *a = if Some(*k) == hovered { (*a + step).min(1.0) } else { (*a - step).max(0.0) };
+        }
+        self.lifts.retain(|&(k, a)| a > 0.0 || Some(k) == hovered);
+        let lifting = self.lifting();
+        self.lifted_at = lifting.then_some(now);
+        lifting
+    }
+
+    fn lifting(&self) -> bool {
+        self.lifts.iter().any(|&(k, a)| if self.hover == Some(Hit::Tile(k)) { a < 1.0 } else { a > 0.0 })
+    }
+
+    /// Di quanto e' alzata la cella `k`, in pixel interi (la copertina si
+    /// copia texel per texel).
+    pub(super) fn lift(&self, k: usize, s: f32) -> f32 {
+        let a = self.lifts.iter().find(|l| l.0 == k).map_or(0.0, |l| l.1);
+        (LIFT * s * a * a * (3.0 - 2.0 * a)).round()
     }
 }
+
+/// Quanto sale la cella sotto il mouse, e in quanto tempo.
+pub(super) const LIFT: f32 = 5.0;
+const LIFT_TIME: f32 = 0.14;
 
 #[derive(Clone, Copy)]
 enum Dir {

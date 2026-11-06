@@ -6,15 +6,21 @@
 //   1  bicubico Catmull-Rom: la pagina va ingrandita (webtoon stretti, zoom).
 //      Ingrandire non crea moire', basta interpolare bene, e lo si fa qui a
 //      ogni fotogramma invece di tenere in memoria una copia ingrandita.
+//
+// Con un raggio, gli angoli dell'immagine si arrotondano sfumando sul nero,
+// che e' lo sfondo dove si disegna (le copertine); con un'opacita' minore di
+// 1 l'immagine si vede solo in parte, sempre sul nero (mentre compare).
 
 struct Quad {
     rect: vec4f,      // x, y, larghezza, altezza sullo schermo, in pixel
     src: vec4f,       // x, y, larghezza, altezza nel tassello, in texel
     viewport: vec2f,  // misura del bersaglio in pixel
     mode: u32,
-    _pad: u32,
+    radius: f32,      // raggio degli angoli di `whole`; 0 = angoli vivi
     adjust: vec4f,    // luminosita', contrasto, 1/gamma, 1 = da applicare
     clip: vec4f,      // centro x, y e raggio di un cerchio, 1 = solo dentro (la lente)
+    whole: vec4f,     // tutta l'immagine sullo schermo, di cui il tassello e' un pezzo
+    opacity: f32,     // quanto si vede, sul nero
 }
 
 @group(0) @binding(0) var tex: texture_2d<f32>;
@@ -31,6 +37,15 @@ fn vs(@builtin(vertex_index) i: u32) -> @builtin(position) vec4f {
 fn texel(p: vec2i) -> vec4f {
     let size = vec2i(textureDimensions(tex)) - 1;
     return textureLoad(tex, clamp(p, vec2i(0), size), 0);
+}
+
+// quanto del pixel cade dentro l'immagine con gli angoli arrotondati
+fn inside_corners(p: vec2f) -> f32 {
+    let half = q.whole.zw * 0.5;
+    let r = min(q.radius, min(half.x, half.y));
+    let d = abs(p - q.whole.xy - half) - half + vec2f(r);
+    let dist = length(max(d, vec2f(0.0))) + min(max(d.x, d.y), 0.0) - r;
+    return clamp(0.5 - dist, 0.0, 1.0);
 }
 
 // pesi di Catmull-Rom per i quattro campioni attorno a t (0 <= t < 1)
@@ -76,5 +91,8 @@ fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
         rgb = pow(clamp(rgb, vec3f(0.0), vec3f(1.0)), vec3f(q.adjust.z));
         rgb = clamp((rgb - 0.5) * q.adjust.y + 0.5 + q.adjust.x, vec3f(0.0), vec3f(1.0));
     }
-    return vec4f(rgb, 1.0);
+    if q.radius > 0.0 {
+        rgb *= inside_corners(pos.xy);
+    }
+    return vec4f(rgb * q.opacity, 1.0);
 }

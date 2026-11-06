@@ -151,6 +151,26 @@ pub struct Placement<'a> {
     pub y: f32,
     pub w: f32,
     pub h: f32,
+    /// Il raggio degli angoli, in pixel: fuori dagli angoli resta il nero.
+    pub radius: f32,
+    /// Quanto si vede, sul nero: meno di 1 mentre compare.
+    pub opacity: f32,
+}
+
+impl<'a> Placement<'a> {
+    pub fn new(image: &'a GpuImage, x: f32, y: f32, w: f32, h: f32) -> Placement<'a> {
+        Placement { image, x, y, w, h, radius: 0.0, opacity: 1.0 }
+    }
+
+    /// Con gli angoli arrotondati (le copertine).
+    pub fn rounded(self, radius: f32) -> Placement<'a> {
+        Placement { radius, ..self }
+    }
+
+    /// Che si vede solo in parte, sul nero.
+    pub fn faded(self, opacity: f32) -> Placement<'a> {
+        Placement { opacity, ..self }
+    }
 }
 
 #[repr(C)]
@@ -160,11 +180,18 @@ struct QuadUniform {
     src: [f32; 4],
     viewport: [f32; 2],
     mode: u32,
-    _pad: u32,
+    /// il raggio degli angoli di `whole`; 0 = angoli vivi
+    radius: f32,
     /// luminosita', contrasto, 1/gamma, 1 = da applicare
     adjust: [f32; 4],
     /// centro x, y e raggio del cerchio, 1 = da ritagliare
     clip: [f32; 4],
+    /// tutta l'immagine sullo schermo (un tassello ne e' solo una striscia):
+    /// gli angoli arrotondati sono i suoi
+    whole: [f32; 4],
+    /// quanto si vede, sul nero
+    opacity: f32,
+    _pad: [f32; 3],
 }
 
 pub struct Renderer {
@@ -373,7 +400,18 @@ impl Renderer {
                     rect = [cx0, cy0, cx1 - cx0, cy1 - cy0];
                 }
                 quads.push((
-                    QuadUniform { rect, src, viewport: [tw, th], mode: (!exact) as u32, _pad: 0, adjust, clip },
+                    QuadUniform {
+                        rect,
+                        src,
+                        viewport: [tw, th],
+                        mode: (!exact) as u32,
+                        radius: it.radius,
+                        adjust,
+                        clip,
+                        whole: [x, y, it.w, it.h],
+                        opacity: it.opacity,
+                        _pad: [0.0; 3],
+                    },
                     &t.bind,
                 ));
             }

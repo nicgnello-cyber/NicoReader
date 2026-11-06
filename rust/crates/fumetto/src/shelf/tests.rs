@@ -23,7 +23,7 @@ fn data<'a>(entries: &'a [Entry], status: &'a [Status], read_at: &'a [u64]) -> S
         edited: &[],
         scanning: false,
         roots: &[],
-        covered: &|_| true,
+        cover_shown: &|_| 1.0,
         reading: false,
     }
 }
@@ -449,4 +449,33 @@ fn misura_la_disposizione() {
         }
         println!("{name}: {:.2} ms per disposizione", t.elapsed().as_secs_f64() * 1000.0 / n as f64);
     }
+}
+
+#[test]
+fn la_cella_sotto_il_mouse_sale_e_torna_giu() {
+    let entries = [entry("A", None), entry("B", None)];
+    let (status, read_at) = ([Status::New; 2], [0; 2]);
+    let d = data(&entries, &status, &read_at);
+    let view = (1280.0, 800.0);
+    let mut shelf = Shelf::default();
+    let (x, y) = shelf.layout(&d, &Geo::new(view, 1.0)).placed.first().map(|p| (p.x, p.y)).unwrap();
+    let rest = shelf.cover_slots(&d, view, 1.0)[0].y;
+    shelf.motion(&d, view, 1.0, x + 10.0, y + 10.0);
+    let t0 = Instant::now();
+    assert!(shelf.advance(&d, view, 1.0, t0), "comincia a salire");
+    assert!(shelf.moving());
+    let ms = |n| t0 + std::time::Duration::from_millis(n);
+    shelf.advance(&d, view, 1.0, ms(60));
+    let half = shelf.cover_slots(&d, view, 1.0)[0].y;
+    assert!(half < rest && half > rest - input::LIFT, "a meta' strada: {half}");
+    shelf.advance(&d, view, 1.0, ms(400));
+    assert_eq!(shelf.cover_slots(&d, view, 1.0)[0].y, rest - input::LIFT, "su del tutto");
+    assert!(!shelf.moving(), "poi si ferma");
+    // il mouse va via: torna giu'
+    shelf.motion(&d, view, 1.0, 5.0, 790.0);
+    shelf.advance(&d, view, 1.0, ms(410));
+    assert!(shelf.moving());
+    shelf.advance(&d, view, 1.0, ms(800));
+    assert_eq!(shelf.cover_slots(&d, view, 1.0)[0].y, rest, "di nuovo al suo posto");
+    assert!(!shelf.moving());
 }

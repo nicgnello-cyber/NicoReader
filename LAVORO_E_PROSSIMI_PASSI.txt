@@ -213,7 +213,7 @@ Il capitolo 7 ne tiene la memoria e i numeri.
                                           e i tasti scelti ("keys": solo i
                                           comandi cambiati, per nome stabile:
                                           "lente": ["Z"])
-    %LOCALAPPDATA%\Fumetto\copertine\     copertine in cache (WebP 320x480,
+    %LOCALAPPDATA%\Fumetto\copertine\     copertine in cache (WebP 480x720,
                                           si possono cancellare: si rifanno)
     %LOCALAPPDATA%\Fumetto\upscaler\      l'ingranditore AI, se scaricato
                                           (9 MB; e' quello che aveva
@@ -853,6 +853,22 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      Non e' piu' lento: decodifica e rimpicciolimento su pagine A4 a 300
      dpi (JPEG a colori e grigi, PNG, WebP), tre giri, uguali o un po'
      piu' veloci di prima. Gli scatti della sonda restano identici.
+  4u. [x] Copertine piu' belle (6 novembre):
+     - angoli appena arrotondati (li fa lo shader delle pagine, present.wgsl,
+       con un raggio per immagine) e un filo di luce sul bordo, perche' le
+       copertine scure non si perdano nel nero (un'ombra sul nero non si
+       vedrebbe);
+     - la cella sotto il mouse sale di 5 punti in 0,14 s e torna giu' allo
+       stesso modo, invece di saltare;
+     - una copertina appena pronta compare sfumando sulla sua targa (0,22 s);
+     - in cache a 480x720 invece di 320x480: nitide anche su uno schermo a
+       doppia densita'. Quelle vecchie si rifanno da sole, una volta;
+     - una copertina doppia (retro, dorso e fronte in una tavola larga) mostra
+       il fronte, a destra, o a sinistra nei manga da destra a sinistra,
+       invece del dorso in mezzo;
+     - nella galleria vuota gli ultimi letti hanno la loro copertina, e sono
+       solo quanti ne stanno sopra i tasti in fondo (in una finestra bassa si
+       sovrapponevano).
   5. Distribuzione (capitolo 5).
 
   Da decidere tu, quando vuoi:

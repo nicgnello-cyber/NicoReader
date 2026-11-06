@@ -166,7 +166,7 @@ impl App {
         }
     }
 
-    /// Nessun volume: la galleria vuota.
+    /// Nessun volume: la galleria vuota, con le copertine degli ultimi letti.
     fn draw_gallery(&mut self, now: Instant) {
         let ctx = context(
             self.window.as_deref(),
@@ -180,7 +180,13 @@ impl App {
             look!(self),
         );
         let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut Estimate));
-        self.present(&[], &[], &scene);
+        let slots = ui::welcome_covers(&ctx);
+        // qui non c'e' una targa: la copertina compare dal nero
+        let shown = self.show_covers(&slots, now, |a| a);
+        self.present(&[], &shown.extras, &scene);
+        if shown.fading {
+            self.request_redraw();
+        }
     }
 
     /// Le misure per la prova automatica: quando arriva la prima pagina,
@@ -225,15 +231,8 @@ impl App {
         let view = (vw as f32, vh as f32);
         let scale = self.scale();
         let covers = &self.covers;
-        let covered = |p: &Path| covers.contains_key(p);
-        let d = shelf_data(&self.lib, &self.settings.library, &covered, self.book.is_some(), self.search.waiting());
-        let slots = self.ui.shelf.cover_slots(&d, view, scale);
-        let px = |v: f32| v.round().max(1.0) as u32;
-        let wanted: Vec<(PathBuf, (u32, u32))> = slots
-            .iter()
-            .map(|(p, _, _, w, h, _)| (p.clone(), (px(*w), px(*h))))
-            .filter(|(p, size)| !self.covers_failed.contains(p) && self.covers.get(p).is_none_or(|c| c.1 != *size))
-            .collect();
+        let cover_shown = |p: &Path| covers.get(p).map_or(0.0, |c| c.shown(now));
+        let d = shelf_data(&self.lib, &self.settings.library, &cover_shown, self.book.is_some(), self.search.waiting());
         let ctx = context(
             self.window.as_deref(),
             &self.book,
@@ -246,18 +245,49 @@ impl App {
             look!(self),
         );
         let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut Estimate));
+        // dopo la scena, che fa avanzare le celle che si alzano
+        let Some(d) = &ctx.shelf else { return };
+        let slots = self.ui.shelf.cover_slots(d, view, scale);
+        // la targa della cella sfuma sopra la copertina: questa si vede tutta
+        let shown = self.show_covers(&slots, now, |_| 1.0);
+        // le copertine lontane si lasciano andare: a 170x255 pesano 170 KB l'una
+        if self.covers.len() > 400 {
+            let keep: std::collections::HashSet<&PathBuf> = slots.iter().map(|s| &s.path).collect();
+            self.covers.retain(|p, _| keep.contains(p));
+        }
+        self.present(&[], &shown.extras, &scene);
+        if shown.fading {
+            self.request_redraw();
+        }
+    }
+
+    /// Chiede le copertine che mancano (o sono di un'altra misura) e dice
+    /// come disegnare quelle a schermo; `opacity`: quanto si vede una
+    /// copertina mentre compare.
+    fn show_covers(&mut self, slots: &[CoverSlot], now: Instant, opacity: impl Fn(f32) -> f32) -> ShownCovers {
+        let px = |v: f32| v.round().max(1.0) as u32;
+        let covers = &self.covers;
+        let wanted: Vec<(PathBuf, (u32, u32))> = slots
+            .iter()
+            .map(|s| (s.path.clone(), (px(s.w), px(s.h))))
+            .filter(|(p, size)| !self.covers_failed.contains(p) && covers.get(p).is_none_or(|c| c.size != *size))
+            .collect();
         if wanted != self.cover_wanted {
             self.cover_loader.request(wanted.clone());
             self.cover_wanted = wanted;
         }
-        let shown: Vec<(Extra, f32, f32, f32, f32)> =
-            slots.iter().filter(|s| s.5).map(|(p, x, y, w, h, _)| (Extra::Cover(p.clone()), *x, *y, *w, *h)).collect();
-        // le copertine lontane si lasciano andare: a 170x255 pesano 170 KB l'una
-        if self.covers.len() > 400 {
-            let keep: std::collections::HashSet<&PathBuf> = slots.iter().map(|s| &s.0).collect();
-            self.covers.retain(|p, _| keep.contains(p));
-        }
-        self.present(&[], &shown, &scene);
+        let mut fading = false;
+        let extras = slots
+            .iter()
+            .filter(|s| s.on_screen)
+            .filter_map(|s| {
+                let a = covers.get(&s.path)?.shown(now);
+                fading |= a < 1.0;
+                let cover = Extra::Cover { path: s.path.clone(), radius: s.radius, opacity: opacity(a) };
+                Some((cover, s.x, s.y, s.w, s.h))
+            })
+            .collect();
+        ShownCovers { extras, fading }
     }
 
     /// Le miniature: ogni pagina nella sua cella, alla misura della cella.
@@ -344,22 +374,22 @@ impl App {
         scene: &Scene,
     ) -> Option<Instant> {
         // le copertine della libreria restano com'erano: le regolazioni sono per le pagine
-        let adjust = if covers.iter().any(|c| matches!(c.0, Extra::Cover(_))) { Adjust::NONE } else { self.adjust() };
+        let adjust =
+            if covers.iter().any(|c| matches!(c.0, Extra::Cover { .. })) { Adjust::NONE } else { self.adjust() };
         let target = self.reader.as_ref().map(|r| r.target());
         let size = self.view_size();
         let frame = self.acquire_frame()?;
         let gfx = self.gfx.as_mut()?;
         let placements: Vec<Placement> = items
             .iter()
-            .filter_map(|it| {
-                self.shown.get(&it.page).map(|s| Placement { image: &s.image, x: it.x, y: it.y, w: it.w, h: it.h })
-            })
+            .filter_map(|it| self.shown.get(&it.page).map(|s| Placement::new(&s.image, it.x, it.y, it.w, it.h)))
             .chain(covers.iter().filter_map(|(what, x, y, w, h)| {
-                let image = match what {
-                    Extra::Cover(p) => &self.covers.get(p)?.0,
-                    Extra::Thumb(i) => &self.thumb_images.get(i)?.0,
-                };
-                Some(Placement { image, x: *x, y: *y, w: *w, h: *h })
+                Some(match what {
+                    Extra::Cover { path, radius, opacity } => {
+                        Placement::new(&self.covers.get(path)?.image, *x, *y, *w, *h).rounded(*radius).faded(*opacity)
+                    }
+                    Extra::Thumb(i) => Placement::new(&self.thumb_images.get(i)?.0, *x, *y, *w, *h),
+                })
             }))
             .collect();
         let lens_placements = lens
@@ -606,7 +636,7 @@ fn lens_placements<'a>(
                 Some((image, t)) if same(t) => image,
                 _ => &shown.get(&it.page)?.image,
             };
-            Some(Placement { image, x: it.x, y: it.y, w: it.w, h: it.h })
+            Some(Placement::new(image, it.x, it.y, it.w, it.h))
         })
         .collect()
 }

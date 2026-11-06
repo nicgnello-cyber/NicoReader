@@ -37,7 +37,10 @@ impl App {
         match (&self.gfx, c.page) {
             (Some(gfx), Ok(page)) => {
                 if let Ok(image) = gfx.renderer.upload(&page) {
-                    self.covers.insert(c.path, (image, c.size));
+                    // rifatta per una cella di un'altra misura: era gia' a
+                    // schermo, non ricompare da capo
+                    let since = self.covers.get(&c.path).map_or_else(Instant::now, |old| old.since);
+                    self.covers.insert(c.path, ShelfCover { image, size: c.size, since });
                     self.request_redraw();
                 }
             }

@@ -32,8 +32,8 @@ use fumetto_render::{Align, Face, Layer, Measure, Rect, Text};
 use crate::reader::Action;
 use crate::strip::glide_step;
 use crate::ui::{
-    self, ACCENT, BLACK, Command, HAIR, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, TICK, alpha, caps, draw_icon,
-    fit, rgb,
+    self, ACCENT, BLACK, Command, HAIR, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, PLATE, TICK, alpha, caps,
+    draw_icon, fade, fit,
 };
 
 /// Cio' che la libreria deve sapere, dall'app.
@@ -54,8 +54,9 @@ pub struct ShelfData<'a> {
     /// La scansione delle cartelle e' in corso.
     pub scanning: bool,
     pub roots: &'a [PathBuf],
-    /// La copertina di questo volume e' gia' sulla scheda video.
-    pub covered: &'a dyn Fn(&Path) -> bool,
+    /// Quanto si vede la copertina di questo volume: 0 non e' ancora sulla
+    /// scheda video, 1 del tutto; in mezzo sta comparendo.
+    pub cover_shown: &'a dyn Fn(&Path) -> f32,
     /// Dietro la libreria c'e' un volume aperto: si puo' tornare a leggerlo.
     pub reading: bool,
 }
@@ -227,6 +228,25 @@ impl Geo {
     }
 }
 
+/// Dove va una copertina, in pixel della finestra.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CoverSlot {
+    pub path: PathBuf,
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    /// Il raggio degli angoli.
+    pub radius: f32,
+    /// Si vede adesso (le altre si preparano prima che servano).
+    pub on_screen: bool,
+}
+
+/// Il raggio degli angoli delle copertine: appena arrotondati, come la carta.
+fn corner(s: f32) -> f32 {
+    (3.0 * s).round()
+}
+
 #[derive(Default)]
 pub struct Shelf {
     pub filter: Filter,
@@ -254,6 +274,10 @@ pub struct Shelf {
     /// La cella scelta con la tastiera (indice fra quelle disposte).
     selected: Option<usize>,
     hover: Option<Hit>,
+    /// Le celle che si alzano sotto il mouse, o che tornano giu': quanto
+    /// sono alzate, da 0 a 1.
+    lifts: Vec<(usize, f32)>,
+    lifted_at: Option<Instant>,
 }
 
 mod draw;
@@ -379,8 +403,8 @@ impl Shelf {
     }
 
     /// Dove disegnare le copertine, e quali preparare: quelle a schermo, poi
-    /// una fila sopra e due sotto. (percorso, x, y, larghezza, altezza, a schermo).
-    pub fn cover_slots(&self, d: &ShelfData, view: (f32, f32), scale: f32) -> Vec<(PathBuf, f32, f32, f32, f32, bool)> {
+    /// una fila sopra e due sotto.
+    pub fn cover_slots(&self, d: &ShelfData, view: (f32, f32), scale: f32) -> Vec<CoverSlot> {
         let g = Geo::new(view, scale);
         let lay = self.layout(d, &g);
         let mut v: Vec<_> = lay
@@ -388,14 +412,18 @@ impl Shelf {
             .iter()
             .enumerate()
             .filter(|(_, p)| p.y + p.h > g.top - g.row_h && p.y < g.view.1 + 2.0 * g.row_h)
-            .map(|(k, p)| {
-                let lift = if self.hover == Some(Hit::Tile(k)) { (4.0 * scale).round() } else { 0.0 };
-                let on_screen = p.y + p.h > g.top && p.y < g.view.1;
-                (d.entries[p.tile.cover()].path.clone(), p.x, p.y - lift, p.w, p.h, on_screen)
+            .map(|(k, p)| CoverSlot {
+                path: d.entries[p.tile.cover()].path.clone(),
+                x: p.x,
+                y: p.y - self.lift(k, scale),
+                w: p.w,
+                h: p.h,
+                radius: corner(scale),
+                on_screen: p.y + p.h > g.top && p.y < g.view.1,
             })
             .collect();
         // prima quelle a schermo
-        v.sort_by_key(|slot| !slot.5);
+        v.sort_by_key(|slot| !slot.on_screen);
         v
     }
 
