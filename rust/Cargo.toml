@@ -8,7 +8,9 @@ version = "0.4.6"
 license = "MIT OR Apache-2.0"
 
 [profile.release]
-lto = "thin"
+# "fat": tutto il programma ottimizzato come un pezzo solo. Rispetto a
+# "thin" l'eseguibile e' 1,7 MB piu' leggero, e non piu' lento
+lto = "fat"
 codegen-units = 1
 strip = true
 
@@ -16,3 +18,91 @@ strip = true
 # dieci volte piu' lente e ogni misura fatta in debug mentirebbe
 [profile.dev.package."*"]
 opt-level = 3
+
+# Ottimizzati per la misura invece che per la velocita': cio' che non sta
+# sulla strada delle pagine (decodifica e rimpicciolimento restano al
+# massimo). L'interfaccia: finestra, caratteri e testo, scheda video
+# (preparazione e shader, non il disegno), finestre di sistema, appunti,
+# JSON e XML. 1,8 MB in meno, nessuna differenza che si veda o si misuri.
+[profile.release.package.naga]
+opt-level = "s"
+[profile.release.package.wgpu]
+opt-level = "s"
+[profile.release.package.wgpu-core]
+opt-level = "s"
+[profile.release.package.wgpu-hal]
+opt-level = "s"
+[profile.release.package.wgpu-types]
+opt-level = "s"
+[profile.release.package.ash]
+opt-level = "s"
+[profile.release.package.glow]
+opt-level = "s"
+[profile.release.package.khronos-egl]
+opt-level = "s"
+[profile.release.package.softbuffer]
+opt-level = "s"
+[profile.release.package.winit]
+opt-level = "s"
+[profile.release.package.x11rb]
+opt-level = "s"
+[profile.release.package.x11rb-protocol]
+opt-level = "s"
+[profile.release.package.x11-dl]
+opt-level = "s"
+[profile.release.package.wayland-backend]
+opt-level = "s"
+[profile.release.package.wayland-client]
+opt-level = "s"
+[profile.release.package.wayland-protocols]
+opt-level = "s"
+[profile.release.package.smithay-client-toolkit]
+opt-level = "s"
+[profile.release.package.sctk-adwaita]
+opt-level = "s"
+[profile.release.package.calloop]
+opt-level = "s"
+[profile.release.package.glyphon]
+opt-level = "s"
+[profile.release.package.cosmic-text]
+opt-level = "s"
+[profile.release.package.harfrust]
+opt-level = "s"
+[profile.release.package.skrifa]
+opt-level = "s"
+[profile.release.package.read-fonts]
+opt-level = "s"
+[profile.release.package.font-types]
+opt-level = "s"
+[profile.release.package.swash]
+opt-level = "s"
+[profile.release.package.zeno]
+opt-level = "s"
+[profile.release.package.tiny-skia]
+opt-level = "s"
+[profile.release.package.ttf-parser]
+opt-level = "s"
+[profile.release.package.ab_glyph]
+opt-level = "s"
+[profile.release.package.fontdb]
+opt-level = "s"
+[profile.release.package.unicode-bidi]
+opt-level = "s"
+[profile.release.package.unicode-linebreak]
+opt-level = "s"
+[profile.release.package.rfd]
+opt-level = "s"
+[profile.release.package.arboard]
+opt-level = "s"
+[profile.release.package.keyring]
+opt-level = "s"
+[profile.release.package.serde_json]
+opt-level = "s"
+[profile.release.package.quick-xml]
+opt-level = "s"
+[profile.release.package.regex]
+opt-level = "s"
+[profile.release.package.regex-automata]
+opt-level = "s"
+[profile.release.package.regex-syntax]
+opt-level = "s"
