@@ -106,7 +106,15 @@ pub(super) fn goto(ctx: &Context, g: &GoTo, m: &mut dyn Measure) -> Layer {
     let (vw, vh) = ctx.view;
     let cx = vw / 2.0;
     let mut l = Layer::default();
+    // la pagina resta appena visibile, per sapere dove si e'; dietro il
+    // numero e il righello un alone piu' scuro, dai bordi morbidi, perche'
+    // il testo della pagina non si legga sotto le cifre
     l.rects.push(Rect::new(0.0, 0.0, vw, vh, [0.0, 0.0, 0.0, 0.9]));
+    let (x0, w, ruler_y) = ruler(ctx);
+    let (top, bottom) = (vh / 2.0 - 200.0 * s, ruler_y + 110.0 * s);
+    let pad = 140.0 * s;
+    let pool = Rect::new(x0 - pad, top, w + 2.0 * pad, bottom - top, [0.0, 0.0, 0.0, 0.99]);
+    l.rects.push(pool.radius(pad).blur(110.0 * s));
     draw_number(&mut l, ctx, g, m);
     let y = draw_ruler(&mut l, ctx, g);
     let (hint, color) = if g.valid() {

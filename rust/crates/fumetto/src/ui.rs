@@ -32,6 +32,7 @@ use crate::thumbs::{Thumbs, ThumbsData};
 mod bar;
 mod input;
 mod menu;
+mod motion;
 mod panels;
 mod server;
 mod style;
@@ -43,6 +44,7 @@ use bar::{Hover, hud, hud_hit};
 pub(crate) use bar::{Icon, draw_icon, tooltip};
 pub(crate) use menu::Row;
 use menu::{Menu, main_rows};
+use motion::{Motion, Part, appear, veil};
 use panels::{caption, goto, lens_ring, ruler, to_u8, toast_only};
 use server::{Outcome, ServerForm};
 pub(crate) use style::{
@@ -156,6 +158,8 @@ pub enum Command {
     ResetVolume(PathBuf),
     /// Dalle miniature: va alla pagina (da 0) e torna a leggere.
     Page(usize),
+    /// La misura delle miniature, scelta con + e -.
+    ThumbSize(f32),
     /// Una scelta fatta nelle impostazioni.
     Pref(crate::prefs::Pref),
     /// Interni all'interfaccia: aprire una serie, un gruppo o una cartella,
@@ -278,6 +282,8 @@ pub struct Ui {
     pub thumbs: Thumbs,
     /// Il foglio delle impostazioni, se e' aperto.
     pub prefs: Option<Prefs>,
+    /// Cio' che sta comparendo.
+    motion: Motion,
 }
 
 impl Ui {
@@ -475,7 +481,7 @@ impl Ui {
     /// Quando ridisegnare, se non succede nient'altro: `now` mentre qualcosa
     /// sfuma, il momento in cui comincera' a sfumare, `None` se e' tutto fermo.
     pub fn wake(&self, now: Instant) -> Option<Instant> {
-        if self.shelf.moving() || self.thumbs.gliding() {
+        if self.shelf.moving() || self.thumbs.gliding() || self.motion.moving(now) {
             return Some(now);
         }
         [self.caption.as_ref(), self.toast.as_ref().map(|t| &t.1)]
@@ -493,19 +499,26 @@ impl Ui {
         if self.toast.as_ref().is_some_and(|t| t.1.gone(now)) {
             self.toast = None;
         }
+        let visible = [self.menu.is_some(), self.prefs.is_some(), ctx.shelf.is_some(), ctx.thumbs.is_some()];
+        self.motion.frame(visible, now);
+        let shown = |part| self.motion.shown(part, now);
+        let s = ctx.scale;
         let mut scene = Scene::default();
         if let Some((x, y, r)) = ctx.lens {
-            scene.layers.push(lens_ring(x, y, r, ctx.scale));
+            scene.layers.push(lens_ring(x, y, r, s));
         }
         let toast = self.toast.as_ref().map(|(text, s)| (text.as_str(), s.alpha(now)));
-        // le miniature e la libreria coprono la pagina: sopra, solo gli avvisi
+        // le miniature e la libreria coprono la pagina (e compaiono dal nero):
+        // sopra, solo gli avvisi
         let covering = if let Some(d) = &ctx.thumbs {
-            self.thumbs.advance(d, ctx.view, ctx.scale, now);
-            scene.layers.extend(self.thumbs.layers(d, ctx.view, ctx.scale, m));
+            self.thumbs.advance(d, ctx.view, s, now);
+            scene.layers.extend(self.thumbs.layers(d, ctx.view, s, m));
+            scene.layers.extend(veil(ctx.view, shown(Part::Thumbs)));
             true
         } else if let Some(d) = &ctx.shelf {
-            self.shelf.advance(d, ctx.view, ctx.scale, now);
-            scene.layers.extend(self.shelf.layers(d, ctx.view, ctx.scale, m));
+            self.shelf.advance(d, ctx.view, s, now);
+            scene.layers.extend(self.shelf.layers(d, ctx.view, s, m));
+            scene.layers.extend(veil(ctx.view, shown(Part::Shelf)));
             true
         } else {
             false
@@ -532,13 +545,21 @@ impl Ui {
             scene.layers.push(welcome(ctx, self.selected, m));
         }
         if let Some(p) = &self.prefs {
-            scene.layers.extend(p.layers(ctx.settings, ctx.keys, ctx.view, ctx.scale, m));
+            // il foglio scivola dentro da destra
+            let a = shown(Part::Prefs);
+            for mut l in p.layers(ctx.settings, ctx.keys, ctx.view, s, m) {
+                appear(&mut l, a, 36.0 * s, 0.0);
+                scene.layers.push(l);
+            }
         }
         if let Some(f) = &self.server {
             scene.layers.push(f.layer(ctx, m));
         }
         if let Some(menu) = &self.menu {
-            scene.layers.push(menu.layer(ctx, m));
+            // il menu scende appena, da sotto il punto da cui si apre
+            let mut l = menu.layer(ctx, m);
+            appear(&mut l, shown(Part::Menu), 0.0, -6.0 * s);
+            scene.layers.push(l);
         }
         scene
     }

@@ -400,7 +400,8 @@ fn miniature(
     fn always(_: usize) -> bool {
         true
     }
-    let d = ThumbsData { title: &book.title, pages: book.len(), here, bookmarks: &marks, ratio, ready: &always };
+    let d =
+        ThumbsData { title: &book.title, pages: book.len(), here, bookmarks: &marks, ratio, size: 1.0, ready: &always };
     let mut thumbs = Thumbs::default();
     thumbs.open(here);
     let (cw, ch) = Thumbs::cell_size(&d, view, scale);

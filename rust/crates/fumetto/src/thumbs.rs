@@ -30,6 +30,8 @@ pub struct ThumbsData<'a> {
     pub bookmarks: &'a [usize],
     /// Altezza / larghezza tipica delle pagine: la forma delle celle.
     pub ratio: f32,
+    /// Quanto sono grandi, rispetto alla misura di partenza (+ e -).
+    pub size: f32,
     /// La miniatura di questa pagina e' gia' sulla scheda video.
     pub ready: &'a dyn Fn(usize) -> bool,
 }
@@ -39,7 +41,22 @@ pub struct ThumbsData<'a> {
 enum Hit {
     Page(usize),
     Close,
+    Smaller,
+    Bigger,
     Bar,
+}
+
+/// Le misure delle miniature fra cui si passa con + e -.
+const SIZES: [f32; 7] = [0.6, 0.8, 1.0, 1.25, 1.6, 2.0, 2.5];
+
+/// La misura dopo `size`, verso le piu' grandi o le piu' piccole; `None` se
+/// si e' gia' in fondo.
+fn next_size(size: f32, bigger: bool) -> Option<f32> {
+    if bigger {
+        SIZES.into_iter().find(|&k| k > size + 0.01)
+    } else {
+        SIZES.into_iter().rev().find(|&k| k < size - 0.01)
+    }
 }
 
 /// Le misure della griglia per questa finestra.
@@ -60,9 +77,11 @@ impl Geo {
         let pad = (44.0 * s).round();
         let gap = (24.0 * s).round();
         let avail = view.0 - 2.0 * pad;
-        // celle piu' strette per le pagine larghe, cosi' l'area resta simile
+        // celle piu' strette per le pagine larghe, cosi' l'area resta simile;
+        // su uno schermo largo, non piu' di una dozzina per fila
         let ratio = d.ratio.clamp(0.4, 2.5);
-        let want = 132.0 * s * (1.5 / ratio).sqrt().clamp(0.7, 1.9);
+        let base = (156.0 * s).max((avail - 11.0 * gap) / 12.0);
+        let want = base * d.size.clamp(SIZES[0], SIZES[SIZES.len() - 1]) * (1.5 / ratio).sqrt().clamp(0.7, 1.9);
         let cols = (((avail + gap) / (want + gap)).floor() as usize).max(2);
         let cell_w = ((avail - (cols - 1) as f32 * gap) / cols as f32).floor();
         let cell_h = (cell_w * ratio).round().min((view.1 - ui::hud_height(s)) * 0.8);
@@ -142,8 +161,17 @@ impl Thumbs {
     fn hit(&self, d: &ThumbsData, view: (f32, f32), s: f32, x: f32, y: f32) -> Option<Hit> {
         let g = Geo::new(d, view, s);
         if y < g.top {
-            let cx = view.0 - 14.0 * s - 36.0 * s;
-            return Some(if x >= cx && x < cx + 36.0 * s { Hit::Close } else { Hit::Bar });
+            let on = |bx: f32| x >= bx && x < bx + 36.0 * s;
+            let [smaller, bigger, close] = bar_buttons(view.0, s);
+            return Some(if on(close) {
+                Hit::Close
+            } else if on(bigger) {
+                Hit::Bigger
+            } else if on(smaller) {
+                Hit::Smaller
+            } else {
+                Hit::Bar
+            });
         }
         let row = ((y + self.scroll - g.top - 28.0 * s) / g.row_h).floor();
         let col = ((x - g.pad) / (g.cell_w + g.gap)).floor();
@@ -167,6 +195,8 @@ impl Thumbs {
         match self.hit(d, view, s, x, y) {
             Some(Hit::Page(i)) => Handled::Yes(Some(Command::Page(i))),
             Some(Hit::Close) => Handled::Yes(Some(Command::Act(Action::ToggleThumbs))),
+            Some(Hit::Smaller) => Handled::Yes(self.resize(d, false)),
+            Some(Hit::Bigger) => Handled::Yes(self.resize(d, true)),
             Some(Hit::Bar) | None => Handled::Yes(None),
         }
     }
@@ -191,11 +221,22 @@ impl Thumbs {
             Key::Home => 0,
             Key::End => last,
             Key::Enter => return Handled::Yes(Some(Command::Page(at))),
+            Key::Char('+' | '=') => return Handled::Yes(self.resize(d, true)),
+            Key::Char('-' | '_') => return Handled::Yes(self.resize(d, false)),
             Key::Escape | Key::Char('t' | 'T') => return Handled::Yes(Some(Command::Act(Action::ToggleThumbs))),
             _ => return Handled::Yes(None),
         });
         self.reveal_selected(d, &g);
         Handled::Yes(None)
+    }
+
+    /// Miniature piu' grandi o piu' piccole: la pagina scelta (o quella che si
+    /// legge) resta a schermo, al centro.
+    fn resize(&mut self, d: &ThumbsData, bigger: bool) -> Option<Command> {
+        let size = next_size(d.size, bigger)?;
+        self.reveal = Some(self.selected.unwrap_or(d.here));
+        self.glide = 0.0;
+        Some(Command::ThumbSize(size))
     }
 
     /// La miniatura scelta con la tastiera si porta tutta a schermo.
@@ -306,26 +347,58 @@ impl Thumbs {
         l.texts.push(title.on_baseline(x0, cy + 7.5 * s));
         l.texts.push(count.on_baseline(x0 + title_w + 18.0 * s, cy + 5.0 * s));
 
-        let x = vw - 14.0 * s - 36.0 * s;
-        let hovered = self.hover == Some(Hit::Close);
         let by = ((h - 36.0 * s) / 2.0).round();
-        if hovered {
-            l.rects.push(Rect::new(x, by, 36.0 * s, 36.0 * s, [1.0, 1.0, 1.0, 0.075]).radius(8.0 * s));
-        }
-        draw_icon(&mut l, Icon::Close, (x + 18.0 * s).round(), cy, s, if hovered { INK_F } else { MUTED_F });
-        if hovered {
-            ui::tooltip(
-                &mut l,
-                m,
+        let [smaller, bigger, close] = bar_buttons(vw, s);
+        let buttons = [
+            (
+                Hit::Smaller,
+                Icon::Minus,
+                smaller,
+                next_size(d.size, false).is_some(),
+                t("Miniature piu\u{2019} piccole   \u{00b7}   \u{2212}", "Smaller thumbnails   \u{00b7}   \u{2212}"),
+            ),
+            (
+                Hit::Bigger,
+                Icon::Plus,
+                bigger,
+                next_size(d.size, true).is_some(),
+                t("Miniature piu\u{2019} grandi   \u{00b7}   +", "Larger thumbnails   \u{00b7}   +"),
+            ),
+            (
+                Hit::Close,
+                Icon::Close,
+                close,
+                true,
                 t("Torna alla lettura   \u{00b7}   Esc", "Back to reading   \u{00b7}   Esc"),
-                x + 18.0 * s,
-                h,
-                vw,
-                s,
-            );
+            ),
+        ];
+        for (hit, icon, x, enabled, tip) in buttons {
+            let hovered = self.hover == Some(hit) && enabled;
+            if hovered {
+                l.rects.push(Rect::new(x, by, 36.0 * s, 36.0 * s, [1.0, 1.0, 1.0, 0.075]).radius(8.0 * s));
+            }
+            let color = if !enabled {
+                alpha(MUTED_F, 0.35)
+            } else if hovered {
+                INK_F
+            } else {
+                MUTED_F
+            };
+            draw_icon(&mut l, icon, (x + 18.0 * s).round(), cy, s, color);
+            if hovered {
+                ui::tooltip(&mut l, m, tip, x + 18.0 * s, h, vw, s);
+            }
         }
         l
     }
+}
+
+/// Dove stanno, da sinistra, i tasti della barra: piu' piccole, piu'
+/// grandi, e (dopo un po' d'aria) tornare a leggere.
+fn bar_buttons(vw: f32, s: f32) -> [f32; 3] {
+    let close = (vw - 14.0 * s - 36.0 * s).round();
+    let bigger = (close - 17.0 * s - 36.0 * s).round();
+    [(bigger - 36.0 * s).round(), bigger, close]
 }
 
 #[cfg(test)]
@@ -333,7 +406,7 @@ mod tests {
     use super::*;
 
     fn data(pages: usize, here: usize, bookmarks: &[usize]) -> ThumbsData<'_> {
-        ThumbsData { title: "Nebbia sul Porto v03", pages, here, bookmarks, ratio: 1.5, ready: &|_| true }
+        ThumbsData { title: "Nebbia sul Porto v03", pages, here, bookmarks, ratio: 1.5, size: 1.0, ready: &|_| true }
     }
 
     const VIEW: (f32, f32) = (1920.0, 1080.0);
@@ -380,5 +453,33 @@ mod tests {
         let wide = Geo::new(&ThumbsData { ratio: 0.7, ..data(10, 0, &[]) }, VIEW, 1.0);
         assert!(tall.cell_h > tall.cell_w && wide.cell_h < wide.cell_w);
         assert!(wide.cols < tall.cols, "le tavole larghe hanno celle piu' larghe");
+    }
+
+    #[test]
+    fn piu_grandi_e_piu_piccole() {
+        let marks = [];
+        let mut th = Thumbs::default();
+        th.open(40);
+        let d = data(100, 40, &marks);
+        assert_eq!(th.key(Key::Char('+'), &d, VIEW, 1.0), Handled::Yes(Some(Command::ThumbSize(1.25))));
+        assert_eq!(th.key(Key::Char('-'), &d, VIEW, 1.0), Handled::Yes(Some(Command::ThumbSize(0.8))));
+        // in fondo non si va oltre
+        let big = ThumbsData { size: 2.5, ..data(100, 40, &marks) };
+        assert_eq!(th.key(Key::Char('+'), &big, VIEW, 1.0), Handled::Yes(None));
+        // i tasti della barra fanno lo stesso
+        let [smaller, bigger, _] = bar_buttons(VIEW.0, 1.0);
+        assert_eq!(th.click(&d, VIEW, 1.0, bigger + 10.0, 20.0), Handled::Yes(Some(Command::ThumbSize(1.25))));
+        assert_eq!(th.click(&d, VIEW, 1.0, smaller + 10.0, 20.0), Handled::Yes(Some(Command::ThumbSize(0.8))));
+        // piu' grandi: meno per fila
+        let cols = |size| Geo::new(&ThumbsData { size, ..data(100, 40, &marks) }, VIEW, 1.0).cols;
+        assert!(cols(2.0) < cols(1.0) && cols(1.0) < cols(0.6));
+    }
+
+    #[test]
+    fn su_uno_schermo_largo_non_troppe_per_fila() {
+        let marks = [];
+        let d = data(100, 0, &marks);
+        assert!(Geo::new(&d, (3840.0, 2160.0), 1.0).cols <= 12);
+        assert!(Geo::new(&d, (1920.0, 1080.0), 1.0).cols <= 12);
     }
 }

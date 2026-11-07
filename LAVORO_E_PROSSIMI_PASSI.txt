@@ -1,5 +1,5 @@
 NICOREADER (prima: Fumetto) - lettore di fumetti, manga e webtoon
-Stato del progetto al 6 novembre 2026 (versione 0.4.7)
+Stato del progetto al 7 novembre 2026 (versione 0.4.8)
 =====================================================================
 
 Dal 27 settembre il programma si chiama NicoReader e il progetto e'
@@ -876,6 +876,23 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      sola lente (si cerca scrivendo; mentre si cerca, il testo prende il
      posto dei filtri). Sotto i 550 punti circa restano ricerca e tasti.
      Una prova le passa tutte, da 300 a 2400 pixel, a quattro scale.
+  4w. [x] Le altre rifiniture (7 novembre), nella 0.4.8:
+     - "Vai a pagina": dietro numero e righello un alone quasi nero dai bordi
+       morbidi; il testo della pagina non si legge piu' sotto le cifre (le
+       trasparenze si mescolano in luce lineare: serve 0,99 al centro);
+     - la barra di lettura: in doppia pagina, al posto di "- -- +", un
+       "adatta" spento, e gli altri tasti non si spostano. In una finestra
+       stretta si stringe a passi (ui/bar.rs, Squeeze): via inizio e fine,
+       poi lo zoom, poi i modi (restano tasti e menu). Una prova le passa
+       tutte, da 560 a 2600 pixel, a quattro scale;
+     - le miniature: piu' grandi di partenza (e non piu' di una dozzina per
+       fila su uno schermo largo), e regolabili con + e - (tasti e pulsanti
+       nella loro barra), fra 0,6 e 2,5 volte; la scelta si ricorda
+       (impostazioni.json, thumb_size);
+     - le transizioni (ui/motion.rs): il menu scende appena e compare in
+       0,12 s, il foglio delle impostazioni scivola da destra in 0,18 s,
+       libreria e miniature compaiono dal nero in 0,16 s. Il giro di pagina
+       resta istantaneo. Il primo fotogramma non anima niente.
   5. Distribuzione (capitolo 5).
 
   Da decidere tu, quando vuoi:

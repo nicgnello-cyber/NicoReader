@@ -51,6 +51,9 @@ pub struct Settings {
     pub library_folder: Option<PathBuf>,
     /// Come si ordina la libreria.
     pub library_sort: LibrarySort,
+    /// Quanto sono grandi le miniature delle pagine (+ e -), rispetto alla
+    /// misura di partenza.
+    pub thumb_size: f32,
 }
 
 impl Default for Settings {
@@ -75,6 +78,7 @@ impl Default for Settings {
             library_folders: false,
             library_folder: None,
             library_sort: LibrarySort::Name,
+            thumb_size: 1.0,
         }
     }
 }

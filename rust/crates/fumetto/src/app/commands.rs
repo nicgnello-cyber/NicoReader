@@ -22,6 +22,10 @@ impl App {
                 self.thumbs_open = false;
                 self.act(Action::GoTo(p), event_loop);
             }
+            Command::ThumbSize(size) => {
+                self.settings.thumb_size = size;
+                self.settings_dirty = true;
+            }
             Command::AddServer(server) => self.check_server(server),
             Command::OpenWithPassword(path, password) => self.open_with_password(&path, &password),
             Command::RemoveServer(url) => self.remove_server(&url),
