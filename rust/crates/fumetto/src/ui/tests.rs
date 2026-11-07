@@ -293,7 +293,50 @@ fn nella_doppia_pagina_lo_zoom_e_spento() {
     c.hud = true;
     let b = c.book.as_ref().unwrap();
     let buttons = hud_buttons(&c, b);
-    assert!(buttons.iter().filter(|b| matches!(b.face, Look::Icon(Icon::Plus | Icon::Minus))).all(|b| b.cmd.is_none()));
+    assert!(!buttons.iter().any(|b| matches!(b.face, Look::Icon(Icon::Plus | Icon::Minus))), "niente piu' e meno");
+    let zoom = buttons.iter().find(|b| b.id() == Hover::Zoom).unwrap();
+    assert!(
+        zoom.cmd.is_none() && !matches!(&zoom.face, Look::Zoom(z) if z.contains('\u{2014}')),
+        "spento, senza trattino"
+    );
+    // i tasti dei modi restano dove sono: quello della doppia pagina non scappa via dal mouse
+    let single = ctx(Some(book(10)), &[]);
+    let single = Context { hud: true, ..single };
+    let at = |c: &Context| {
+        let b = c.book.as_ref().unwrap();
+        hud_buttons(c, b).into_iter().find(|b| b.face == Look::Icon(Icon::Double)).map(|b| b.x)
+    };
+    assert_eq!(at(&c), at(&single));
+}
+
+#[test]
+fn la_barra_di_lettura_non_si_sovrappone() {
+    for s in [1.0, 1.25, 1.5, 2.0] {
+        // sotto i 540 punti neanche il passo piu' stretto basta
+        for vw in (560..2600).step_by(10).map(|w| w as f32).filter(|w| w / s >= 540.0) {
+            let c = Context { view: (vw, 800.0), scale: s, hud: true, ..ctx(Some(book(212)), &[]) };
+            let b = c.book.as_ref().unwrap();
+            let buttons = hud_buttons(&c, b);
+            for w in buttons.windows(2) {
+                assert!(
+                    w[0].x + w[0].w <= w[1].x + 0.5,
+                    "larga {vw}, scala {s}: {:?} sopra {:?}",
+                    w[0].face,
+                    w[1].face
+                );
+            }
+            assert!(buttons.last().is_some_and(|b| b.x + b.w <= vw), "larga {vw}, scala {s}: fuori a destra");
+        }
+    }
+    // larga: tutto; poi se ne vanno inizio e fine, lo zoom, i modi
+    let has = |vw: f32, icon: Icon| {
+        let c = Context { view: (vw, 800.0), hud: true, ..ctx(Some(book(212)), &[]) };
+        hud_buttons(&c, c.book.as_ref().unwrap()).iter().any(|b| b.face == Look::Icon(icon))
+    };
+    assert!(has(1920.0, Icon::First) && has(1920.0, Icon::Plus) && has(1920.0, Icon::Double));
+    assert!(!has(880.0, Icon::First) && has(880.0, Icon::Plus));
+    assert!(!has(760.0, Icon::Plus) && has(760.0, Icon::Double));
+    assert!(!has(600.0, Icon::Double) && has(600.0, Icon::Bookmark));
 }
 
 #[test]

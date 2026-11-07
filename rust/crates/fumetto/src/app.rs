@@ -56,7 +56,9 @@ macro_rules! input_context {
             $app.shelf_shown().then(|| {
                 shelf_data(&$app.lib, &$app.settings.library, &always, $app.book.is_some(), $app.search.waiting())
             }),
-            $app.thumbs_shown().then(|| thumbs_data(&$app.book, $app.reader.as_ref(), &always_ready)).flatten(),
+            $app.thumbs_shown()
+                .then(|| thumbs_data(&$app.book, $app.reader.as_ref(), &always_ready, $app.settings.thumb_size))
+                .flatten(),
             look!($app),
         )
     };

@@ -297,7 +297,7 @@ impl App {
         let scale = self.scale();
         let images = &self.thumb_images;
         let ready = |i: usize| images.contains_key(&i);
-        let Some(d) = thumbs_data(&self.book, self.reader.as_ref(), &ready) else { return };
+        let Some(d) = thumbs_data(&self.book, self.reader.as_ref(), &ready, self.settings.thumb_size) else { return };
         let (cw, ch) = Thumbs::cell_size(&d, view, scale);
         let base = self.reader.as_ref().map_or(Target::plain(Fit::Width(1)), |r| r.target());
         let target = Target { fit: Fit::Contain { width: cw, height: ch }, ..base };
@@ -595,7 +595,7 @@ pub(super) fn context<'a>(
 
 /// Le miniature come le vede l'interfaccia.
 pub(super) fn thumbs_data<'a>(
-    book: &'a Option<Arc<Book>>, reader: Option<&'a Reader>, ready: &'a dyn Fn(usize) -> bool,
+    book: &'a Option<Arc<Book>>, reader: Option<&'a Reader>, ready: &'a dyn Fn(usize) -> bool, size: f32,
 ) -> Option<ThumbsData<'a>> {
     let (book, r) = (book.as_ref()?, reader?);
     Some(ThumbsData {
@@ -604,6 +604,7 @@ pub(super) fn thumbs_data<'a>(
         here: r.here(),
         bookmarks: r.bookmarks(),
         ratio: r.typical_ratio(),
+        size,
         ready,
     })
 }
