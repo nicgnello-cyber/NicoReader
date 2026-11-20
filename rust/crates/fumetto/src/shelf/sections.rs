@@ -25,7 +25,7 @@ impl Shelf {
             return single(stacks(d, &visible, self.sort));
         }
         if self.groups {
-            return group_sections(d, self.filter, &needle, &found);
+            return group_sections(d, self.filter, &needle, &|e| matches_text(e, &needle));
         }
         // per cartelle: la ricerca resta un elenco unico, i filtri valgono dentro
         if self.folders && needle.is_empty() {
@@ -82,7 +82,15 @@ impl Shelf {
 
 /// Il volume corrisponde alla ricerca (gia' in minuscolo): nel titolo, nella
 /// serie o negli autori.
+/// Il volume risponde alla ricerca: titolo, serie, autori, o uno dei suoi
+/// tag (un personaggio, una categoria, un'etichetta).
 fn matches(e: &Entry, needle: &str) -> bool {
+    matches_text(e, needle) || e.groups.iter().any(|g| g.name.to_lowercase().contains(needle))
+}
+
+/// Titolo, serie o autori rispondono alla ricerca (fra i tag, i tag del
+/// volume si guardano a uno a uno: non devono portarsi dietro gli altri).
+fn matches_text(e: &Entry, needle: &str) -> bool {
     let has = |text: &str| text.to_lowercase().contains(needle);
     needle.is_empty() || has(&e.title) || e.series.as_deref().is_some_and(has) || e.authors.as_deref().is_some_and(has)
 }
@@ -285,7 +293,7 @@ pub(super) fn cover_and_done(d: &ShelfData, members: &[usize]) -> (usize, usize)
 }
 
 pub(super) fn in_group(e: &Entry, kind: GroupKind, name: &str) -> bool {
-    e.groups.iter().any(|g| g.kind == kind && g.name == name)
+    e.groups.iter().any(|g| g.kind == kind && library::same_name(&g.name, name))
 }
 
 /// I volumi di un gruppo nel loro ordine: quello della lista di lettura, se
@@ -304,43 +312,47 @@ pub(super) fn sort_members(d: &ShelfData, members: &mut [usize], kind: GroupKind
 }
 
 /// Il nome di un tipo di gruppo, al plurale (titolo di sezione) o al singolare.
-pub(super) fn kind_label(kind: GroupKind, plural: bool) -> &'static str {
-    match (kind, plural) {
-        (GroupKind::Collection, true) => t("Raccolte", "Collections"),
-        (GroupKind::Collection, false) => t("Raccolta", "Collection"),
-        (GroupKind::ReadingList, true) => t("Liste di lettura", "Reading lists"),
-        (GroupKind::ReadingList, false) => t("Lista di lettura", "Reading list"),
-        (GroupKind::Genre, true) => t("Generi", "Genres"),
-        (GroupKind::Genre, false) => t("Genere", "Genre"),
-        (GroupKind::Publisher, true) => t("Editori", "Publishers"),
-        (GroupKind::Publisher, false) => t("Editore", "Publisher"),
-    }
+/// Il nome di una categoria di tag, al singolare o al plurale.
+pub(crate) fn kind_label(kind: GroupKind, plural: bool) -> &'static str {
+    let (it, en) = match kind {
+        GroupKind::Collection => (["Raccolta", "Raccolte"], ["Collection", "Collections"]),
+        GroupKind::ReadingList => (["Lista di lettura", "Liste di lettura"], ["Reading list", "Reading lists"]),
+        GroupKind::Author => (["Autore", "Autori"], ["Author", "Authors"]),
+        GroupKind::Character => (["Personaggio", "Personaggi"], ["Character", "Characters"]),
+        GroupKind::Team => (["Gruppo", "Gruppi"], ["Team", "Teams"]),
+        GroupKind::Genre => (["Categoria", "Categorie"], ["Genre", "Genres"]),
+        GroupKind::Format => (["Tipologia", "Tipologie"], ["Type", "Types"]),
+        GroupKind::Language => (["Lingua", "Lingue"], ["Language", "Languages"]),
+        GroupKind::Location => (["Luogo", "Luoghi"], ["Place", "Places"]),
+        GroupKind::Publisher => (["Editore", "Editori"], ["Publisher", "Publishers"]),
+        GroupKind::Tag => (["Etichetta", "Etichette"], ["Label", "Labels"]),
+    };
+    t(it[usize::from(plural)], en[usize::from(plural)])
 }
 
 pub(super) fn groups_title() -> &'static str {
-    t("Raccolte e liste", "Collections and lists")
+    t("Tag", "Tags")
 }
 
-/// La vista dei gruppi: una sezione per tipo, una pila per gruppo. Cercando,
-/// un gruppo resta se il suo nome corrisponde (con tutti i volumi) o se ci
-/// sono volumi che corrispondono (solo quelli).
 pub(super) fn group_sections(
     d: &ShelfData, filter: Filter, needle: &str, found: &dyn Fn(&Entry) -> bool,
 ) -> Vec<Section> {
-    // per tipo (raccolte, liste, generi, editori: l'ordine di `GroupKind`) e per nome
-    let mut groups: BTreeMap<(GroupKind, &str), Vec<usize>> = BTreeMap::new();
+    // per tipo (l'ordine di `GroupKind`) e per nome, senza badare alle
+    // maiuscole: "batman" di un volume e "Batman" di un altro sono uno
+    let mut groups: BTreeMap<(GroupKind, String), (&str, Vec<usize>)> = BTreeMap::new();
     for (i, e) in d.entries[..d.library_len()].iter().enumerate() {
         if !filter.keeps(d.status[i]) {
             continue;
         }
         let hit = found(e);
         for g in e.groups.iter().filter(|g| hit || g.name.to_lowercase().contains(needle)) {
-            let members = groups.entry((g.kind, g.name.as_str())).or_default();
+            let (_, members) = groups.entry((g.kind, g.name.to_lowercase())).or_insert((g.name.as_str(), Vec::new()));
             if members.last() != Some(&i) {
                 members.push(i);
             }
         }
     }
+    let groups = groups.into_iter().map(|((kind, _), (name, members))| ((kind, name), members));
     let mut sections: Vec<(GroupKind, Section)> = Vec::new();
     for ((kind, name), mut members) in groups {
         sort_members(d, &mut members, kind, name);

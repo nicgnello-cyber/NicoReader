@@ -240,7 +240,7 @@ impl App {
 
     /// Salva i dati corretti di un volume (vuoti: tornano quelli del file).
     pub(super) fn save_volume(&mut self, path: &Path, edit: fumetto_core::edits::VolumeEdit) {
-        let reset = edit.is_empty();
+        let reset = !edit.has_details();
         let had_rtl = self.edits.get(path).and_then(|e| e.right_to_left).is_some();
         let rtl = edit.right_to_left;
         match self.edits.set(path, edit) {
@@ -296,7 +296,9 @@ impl App {
 
     pub(super) fn refresh_shelf(&mut self) {
         let edits = &self.edits;
-        self.lib.edited = self.lib.entries.iter().map(|e| edits.get(&e.path).is_some()).collect();
+        // "torna ai dati del file" solo dove i dati sono corretti (non solo i tag)
+        self.lib.edited =
+            self.lib.entries.iter().map(|e| edits.get(&e.path).is_some_and(|e| e.has_details())).collect();
         let progress = &self.progress;
         self.lib.status = self.lib.entries.iter().map(|e| Status::of(progress, &e.path)).collect();
         self.lib.read_at = self.lib.entries.iter().map(|e| progress.get(&e.path).map_or(0, |s| s.read_at)).collect();

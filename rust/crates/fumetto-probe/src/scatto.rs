@@ -281,6 +281,33 @@ fn reading_shots(studio: &mut Studio) -> Result<(), String> {
         ui.poke(now);
         ui.toast("Pagina segnata", now);
     })?;
+    studio.shot("tag", Look::bar(), &unchanged, &|ui, ctx| {
+        // un volume con qualche tag, una libreria che ne conosce altri, e
+        // "Wol" scritto: i suggerimenti
+        use fumetto_core::library::{Group, GroupKind};
+        let tag = |kind, name: &str| Group::new(kind, name, None);
+        let mine = vec![
+            tag(GroupKind::Character, "Tempesta"),
+            tag(GroupKind::Character, "Ciclope"),
+            tag(GroupKind::Team, "X-Men"),
+            tag(GroupKind::Author, "Chris Claremont"),
+            tag(GroupKind::Author, "John Byrne"),
+            tag(GroupKind::Genre, "Supereroi"),
+            tag(GroupKind::Language, "Italiano"),
+            tag(GroupKind::Tag, "da rileggere"),
+        ];
+        let known = vec![
+            (tag(GroupKind::Character, "Wolverine"), 12),
+            (tag(GroupKind::Character, "Wolfsbane"), 2),
+            (tag(GroupKind::Character, "Tempesta"), 9),
+        ];
+        let title = ctx.book.as_ref().map_or_else(String::new, |b| b.title.to_owned());
+        ui.edit_tags("prova.cbz".into(), title, mine, known);
+        for c in "Wol".chars() {
+            ui.key(Key::Char(c), ctx);
+        }
+        ui.key(Key::Down, ctx);
+    })?;
     studio.shot("vai-a-pagina", Look::bar(), &mark, &|ui, ctx| {
         let Some(b) = &ctx.book else { return };
         ui.ask_page(b.here, b.pages, b.bookmarks);

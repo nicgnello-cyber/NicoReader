@@ -7,6 +7,9 @@ use super::*;
 impl Ui {
     /// La rotella: nella libreria scorre; `false` se non e' affar suo.
     pub fn wheel(&mut self, pixels: f32, ctx: &Context) -> bool {
+        if self.tags.is_some() {
+            return true;
+        }
         if self.menu.is_some() {
             return false;
         }
@@ -30,6 +33,9 @@ impl Ui {
     /// Il mouse si e' mosso: `true` se va ridisegnato.
     pub fn motion(&mut self, x: f32, y: f32, ctx: &Context, now: Instant) -> bool {
         self.pointer = (x, y);
+        if let Some(f) = &mut self.tags {
+            return f.motion(x, y);
+        }
         let hover = if self.modal() { None } else { hud_hit(ctx, x, y).filter(|b| b.cmd.is_some()).map(|b| b.id()) };
         let hover_changed = hover != self.hover;
         self.hover = hover;
@@ -77,6 +83,10 @@ impl Ui {
             // fuori dai campi non si chiude: si perderebbe cio' che si e' scritto
             f.click(ctx, x, y);
             return Handled::Yes(None);
+        }
+        if let Some(f) = &mut self.tags {
+            let outcome = f.click(x, y);
+            return Handled::Yes(self.tags_outcome(outcome));
         }
         if let Some(m) = &self.menu {
             let hit = m.hit(ctx, x, y);
@@ -163,6 +173,10 @@ impl Ui {
                 Outcome::Submit(cmd) => Some(cmd),
             });
         }
+        if let Some(f) = &mut self.tags {
+            let outcome = f.key(key);
+            return Handled::Yes(self.tags_outcome(outcome));
+        }
         // Tab serve solo al modulo: altrove resta ai tasti scelti da chi legge
         if key == Key::Tab {
             return Handled::No;
@@ -187,6 +201,24 @@ impl Ui {
             return self.key_welcome(key, ctx);
         }
         Handled::No
+    }
+
+    /// Cosa ne viene di un tasto o di un clic nei tag: andare fra i volumi
+    /// di un tag li chiude.
+    fn tags_outcome(&mut self, outcome: Outcome) -> Option<Command> {
+        match outcome {
+            Outcome::Stay => None,
+            Outcome::Close => {
+                self.close_tags();
+                None
+            }
+            Outcome::Submit(cmd) => {
+                if matches!(cmd, Command::ShowGroup(..)) {
+                    self.close_tags();
+                }
+                Some(cmd)
+            }
+        }
     }
 
     /// Un tasto con la pagina da scegliere aperta: cifre, frecce, Invio.

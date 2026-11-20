@@ -102,3 +102,31 @@ fn il_nome_del_file() {
     assert!(!is_comic_info("NotComicInfo.xml"));
     assert!(!is_comic_info("ComicInfo.xml.bak"));
 }
+
+#[test]
+fn personaggi_gruppi_luoghi_e_lingua() {
+    let xml = "<ComicInfo><Series>X-Men</Series><Writer>Chris Claremont</Writer><Penciller>John Byrne</Penciller>\
+               <Characters>Wolverine, Tempesta, wolverine</Characters><Teams>X-Men, Hellfire Club</Teams>\
+               <Locations>New York</Locations><Tags>da rileggere</Tags><Format>Graphic Novel</Format>\
+               <LanguageISO>it</LanguageISO><Manga>Yes</Manga><Genre>Supereroi</Genre></ComicInfo>";
+    let info = ComicInfo::parse(xml.as_bytes()).unwrap();
+    assert_eq!(info.characters, ["Wolverine", "Tempesta"], "senza ripetere");
+    assert_eq!(info.teams, ["X-Men", "Hellfire Club"]);
+    assert_eq!(info.locations, ["New York"]);
+    assert_eq!(info.tags, ["da rileggere"]);
+    assert_eq!(info.format.as_deref(), Some("Graphic Novel"));
+    assert_eq!(info.language.as_deref(), Some("it"));
+    assert!(info.manga && info.right_to_left.is_none(), "manga, ma il verso non e' detto");
+    use crate::library::{Group, GroupKind, groups_of, language_name};
+    let groups = groups_of(&info);
+    let has = |kind, name: &str| groups.iter().any(|g| g.same(&Group::new(kind, name, None)));
+    assert!(has(GroupKind::Author, "Chris Claremont") && has(GroupKind::Author, "John Byrne"));
+    assert!(has(GroupKind::Character, "Tempesta") && has(GroupKind::Team, "Hellfire Club"));
+    assert!(has(GroupKind::Format, "Manga") && has(GroupKind::Format, "Graphic Novel"));
+    assert!(has(GroupKind::Location, "New York") && has(GroupKind::Tag, "da rileggere"));
+    assert!(has(GroupKind::Language, &language_name("it")));
+    assert_eq!(groups.iter().filter(|g| g.kind == GroupKind::Character).count(), 2);
+    assert_eq!(language_name("XX"), "XX", "un codice sconosciuto resta il codice");
+    assert_eq!(language_name("Klingon"), "Klingon", "un nome per esteso resta com'e'");
+    assert_eq!(language_name("en-US"), language_name("eng"));
+}

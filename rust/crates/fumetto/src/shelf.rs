@@ -290,7 +290,8 @@ mod tests;
 #[cfg(test)]
 use draw::BarGeo;
 use draw::bar_hit;
-use sections::{folder_name, groups_title, kind_label, sort_label, sources};
+pub(crate) use sections::kind_label;
+use sections::{folder_name, groups_title, sort_label, sources};
 
 impl Shelf {
     /// Non si e' nella libreria intera: c'e' un'intestazione per tornarci.

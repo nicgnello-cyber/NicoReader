@@ -81,6 +81,7 @@ fn volume_menu(d: &ShelfData, i: usize) -> Vec<Row> {
     if d.status[i] != Status::New {
         rows.push(Row::plain(t("Segna come da leggere", "Mark as unread"), Command::MarkRead(path.clone(), false)));
     }
+    rows.push(Row::plain(t("Tag\u{2026}", "Tags\u{2026}"), Command::EditTags(path.clone())));
     rows.push(Row::plain(t("Modifica i dati\u{2026}", "Edit details\u{2026}"), Command::EditVolume(path.clone())));
     if d.edited.get(i) == Some(&true) {
         let label = t("Torna ai dati del file", "Back to the file's details");

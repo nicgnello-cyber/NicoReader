@@ -1,7 +1,9 @@
 //! ComicInfo.xml: la scheda che ComicRack, ComicTagger, Komga, Kavita e Mihon
 //! mettono dentro i CBZ (o nella cartella del capitolo). Dice serie, numero,
 //! titolo, autori e se e' un manga da leggere da destra a sinistra, meglio di
-//! quanto si indovini dal nome del file.
+//! quanto si indovini dal nome del file; e i personaggi, i gruppi, i luoghi,
+//! la lingua, il tipo di pubblicazione e le etichette, che diventano i tag
+//! del volume.
 //!
 //! Il file e' piatto (un elemento <ComicInfo> con dentro solo testo), quindi
 //! basta cercare i tag: niente libreria XML.
@@ -36,6 +38,18 @@ pub struct ComicInfo {
     pub story_arcs: Vec<(String, Option<u32>)>,
     /// L'anno di uscita (Year), per ordinare la libreria.
     pub year: Option<u32>,
+    /// I personaggi (Characters), i gruppi (Teams), i luoghi (Locations), le
+    /// etichette libere (Tags).
+    pub characters: Vec<String>,
+    pub teams: Vec<String>,
+    pub locations: Vec<String>,
+    pub tags: Vec<String>,
+    /// Il tipo di pubblicazione (Format: "Graphic Novel", "One-Shot").
+    pub format: Option<String>,
+    /// La lingua (LanguageISO: "it", "en-US").
+    pub language: Option<String>,
+    /// Dichiarato manga (Manga = Yes o YesAndRightToLeft).
+    pub manga: bool,
 }
 
 impl ComicInfo {
@@ -92,6 +106,13 @@ impl ComicInfo {
             series_group: list("SeriesGroup"),
             story_arcs,
             year: tag("Year").as_deref().and_then(year_of),
+            characters: list("Characters"),
+            teams: list("Teams"),
+            locations: list("Locations"),
+            tags: list("Tags"),
+            format: tag("Format"),
+            language: tag("LanguageISO"),
+            manga: tag("Manga").is_some_and(|m| m.starts_with("Yes")),
         };
         (info != ComicInfo::default()).then_some(info)
     }

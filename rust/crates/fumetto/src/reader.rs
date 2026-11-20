@@ -105,6 +105,8 @@ pub enum Action {
     ToggleLens,
     /// Il foglio delle impostazioni.
     ToggleSettings,
+    /// I tag del volume aperto.
+    EditTags,
 }
 
 /// Dove sono le pagine pronte non interessa qui: basta sapere per quale
@@ -469,7 +471,8 @@ impl Reader {
             | Action::SavePage
             | Action::CopyPage
             | Action::ToggleLens
-            | Action::ToggleSettings => {}
+            | Action::ToggleSettings
+            | Action::EditTags => {}
         }
         self.clamp_center();
         let turned = self.mode != Mode::Strip && (self.page, self.mode) != before && before.1 == self.mode;

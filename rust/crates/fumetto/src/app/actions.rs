@@ -42,6 +42,7 @@ impl App {
                 self.request_redraw();
             }
             Action::ToggleLens => self.toggle_lens(),
+            Action::EditTags => self.edit_open_tags(),
             Action::ToggleSlideshow => self.toggle_slideshow(),
             Action::ToggleUpscale => self.toggle_upscale(),
             Action::ToggleWebtoon => self.toggle_webtoon(),
