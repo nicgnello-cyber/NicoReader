@@ -52,6 +52,7 @@ pub enum Bind {
     Linear,
     Slideshow,
     Bookmark,
+    Tags,
     Save,
     Copy,
     Open,
@@ -67,11 +68,11 @@ pub enum Bind {
 impl Bind {
     // una tabella: a una voce per riga sarebbe lunga quaranta righe
     #[rustfmt::skip]
-    pub const ALL: [Bind; 39] = [
+    pub const ALL: [Bind; 40] = [
         Bind::Right, Bind::Left, Bind::Down, Bind::Up, Bind::Next, Bind::Prev, Bind::First, Bind::Last, Bind::GoTo,
         Bind::Thumbs, Bind::Double, Bind::Cover, Bind::Strip, Bind::StripWider, Bind::StripNarrower, Bind::Manga,
         Bind::ZoomIn, Bind::ZoomOut, Bind::ZoomPage, Bind::ZoomWidth, Bind::ZoomActual, Bind::Lens, Bind::RotateRight,
-        Bind::RotateLeft, Bind::Trim, Bind::Upscale, Bind::Linear, Bind::Slideshow, Bind::Bookmark, Bind::Save,
+        Bind::RotateLeft, Bind::Trim, Bind::Upscale, Bind::Linear, Bind::Slideshow, Bind::Bookmark, Bind::Tags, Bind::Save,
         Bind::Copy, Bind::Open, Bind::OpenFolder, Bind::Library, Bind::Close, Bind::Fullscreen, Bind::Hud,
         Bind::Settings, Bind::Quit,
     ];
@@ -108,6 +109,7 @@ impl Bind {
             Bind::Linear => "luce_lineare",
             Bind::Slideshow => "presentazione",
             Bind::Bookmark => "segnalibro",
+            Bind::Tags => "tag",
             Bind::Save => "salva",
             Bind::Copy => "copia",
             Bind::Open => "apri",
@@ -157,6 +159,7 @@ impl Bind {
             Bind::Linear => t("Luce lineare o gamma", "Linear light or gamma"),
             Bind::Slideshow => t("Presentazione", "Slideshow"),
             Bind::Bookmark => t("Segna la pagina", "Bookmark the page"),
+            Bind::Tags => t("Tag del volume", "Volume tags"),
             Bind::Save => t("Salva la pagina", "Save the page"),
             Bind::Copy => t("Copia la pagina", "Copy the page"),
             Bind::Open => t("Apri", "Open"),
@@ -190,7 +193,7 @@ impl Bind {
             Bind::RotateRight | Bind::RotateLeft | Bind::Trim | Bind::Upscale | Bind::Linear => {
                 t("La pagina", "The page")
             }
-            Bind::Slideshow | Bind::Bookmark | Bind::Save | Bind::Copy => t("Altro", "More"),
+            Bind::Slideshow | Bind::Bookmark | Bind::Tags | Bind::Save | Bind::Copy => t("Altro", "More"),
             Bind::Open
             | Bind::OpenFolder
             | Bind::Library
@@ -234,6 +237,7 @@ impl Bind {
             Bind::Linear => &["G"],
             Bind::Slideshow => &["S"],
             Bind::Bookmark => &["Ctrl+B"],
+            Bind::Tags => &["E"],
             Bind::Save => &["Ctrl+S"],
             Bind::Copy => &["Ctrl+C"],
             Bind::Open => &["Ctrl+O"],
@@ -479,6 +483,7 @@ pub fn action(b: Bind, k: &KeyContext) -> Action {
         Bind::Linear => Action::ToggleLinear,
         Bind::Slideshow => Action::ToggleSlideshow,
         Bind::Bookmark => Action::ToggleBookmark,
+        Bind::Tags => Action::EditTags,
         Bind::Save => Action::SavePage,
         Bind::Copy => Action::CopyPage,
         Bind::Open => Action::Open,

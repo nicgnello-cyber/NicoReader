@@ -221,9 +221,9 @@ impl App {
             return self.capture_key(event, event_loop);
         }
         let command = if cfg!(target_os = "macos") { self.modifiers.super_key() } else { self.modifiers.control_key() };
-        // il modulo del server: Ctrl+V incolla, e Ctrl+Alt (AltGr su
-        // Windows, per la @ della tastiera italiana) scrive
-        if self.ui.server_open() && command && !self.modifiers.alt_key() {
+        // un modulo o i tag: Ctrl+V incolla, e Ctrl+Alt (AltGr su Windows,
+        // per la @ della tastiera italiana) scrive
+        if self.ui.typing() && command && !self.modifiers.alt_key() {
             if event.key_without_modifiers() == Key::Character("v".into())
                 && let Ok(text) = arboard::Clipboard::new().and_then(|mut c| c.get_text())
             {
@@ -232,7 +232,7 @@ impl App {
             }
             return;
         }
-        let command = command && !self.ui.server_open();
+        let command = command && !self.ui.typing();
         if !command && self.ui_key_first(event, event_loop) {
             return;
         }

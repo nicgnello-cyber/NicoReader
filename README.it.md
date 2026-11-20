@@ -11,7 +11,8 @@ Legge cartelle, CBZ/ZIP, CBR/RAR (anche solidi), CB7/7Z, CBT/TAR, PDF ed EPUB
 (quelli fatti di immagini: manga e fumetti); pagine
 JPEG, PNG, WebP, GIF, BMP, AVIF e JPEG XL. Ha la libreria con le serie
 (prese dalla ComicInfo.xml quando il volume ce l'ha: i manga si aprono anche
-da destra a sinistra da soli), miniature, segnalibri, doppia pagina, nastro per i webtoon (riconosciuti da
+da destra a sinistra da soli) e i tag (personaggi, autori, categorie... da
+aggiungere anche mentre si legge), miniature, segnalibri, doppia pagina, nastro per i webtoon (riconosciuti da
 soli), zoom, lente, luminosità/contrasto/gamma, tasti personalizzabili, e un
 ingrandimento AI facoltativo (Real-ESRGAN, sulla scheda video, senza niente
 da scaricare). La libreria può mostrare anche i volumi di un server Komga o
@@ -105,10 +106,20 @@ per letti di recente o per anno di uscita (dalla ComicInfo.xml o dai dati
 dell'EPUB). Due serie con lo stesso nome in cartelle diverse, come
 `Batman (2011)` e `Batman (2016)`, restano separate.
 
-L'icona degli scaffali nella barra della libreria mostra raccolte, liste di
-lettura, generi ed editori: dalla ComicInfo.xml (SeriesGroup, StoryArc con il
-suo numero, Genre, Publisher), dai dati degli EPUB e da un server Komga o
-Kavita (le sue raccolte e liste di lettura). Una lista di lettura si apre nel
+Ogni volume ha i suoi tag: autori, personaggi, gruppi, categoria, tipologia
+(manga, graphic novel...), lingua, luoghi, editore, raccolte, liste di
+lettura ed etichette libere. Arrivano dalla ComicInfo.xml (Writer, Penciller,
+Characters, Teams, Genre, Format, LanguageISO, Locations, Publisher,
+SeriesGroup, StoryArc, Tags), dai dati degli EPUB e da un server Komga o
+Kavita; e se ne aggiungono mentre si legge: **E** (o tasto destro → Tag del
+volume…, o dal menu di una copertina) apre i tag del volume. Si sceglie la
+categoria con ← →, si scrive (i tag gia' usati in libreria si suggeriscono,
+con quanti volumi li hanno) e Invio lo aggiunge; la × lo toglie. I tag messi
+a mano stanno in `correzioni.json`, nella cartella dei dati: il file del
+volume non si tocca. Un clic su un tag porta in libreria fra gli altri volumi
+che ce l'hanno ("questo personaggio c'e' anche in..."). L'icona degli
+scaffali nella barra della libreria mostra tutti i tag, per categoria; e la
+ricerca trova un volume anche dai suoi tag. Una lista di lettura si apre nel
 suo ordine, anche fra serie diverse.
 
 Per leggere da un server Komga o Kavita: tasto destro → Aggiungi un server…

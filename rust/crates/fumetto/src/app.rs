@@ -110,6 +110,7 @@ mod draw;
 mod events;
 mod search;
 mod shelf;
+mod tags;
 mod tools;
 mod touch;
 mod update;
@@ -469,14 +470,15 @@ fn open_data(data: Option<&Path>, covers_dir: &Path) -> fumetto_core::edits::Edi
     fumetto_core::edits::Edits::load(data.join("correzioni.json"))
 }
 
-/// Dove stanno le schede lette dai volumi. "-3": ora dicono anche l'anno
-/// (prima, con "-2", generi, editore e raccolte); quelle vecchie non lo
+/// Dove stanno le schede lette dai volumi. "-4": ora dicono anche
+/// personaggi, gruppi, luoghi, tipologia, lingua ed etichette (prima, con
+/// "-3", l'anno; con "-2", generi, editore e raccolte); quelle vecchie non li
 /// hanno, e si rileggono tutte una volta.
 fn info_cache_file(covers_dir: &Path) -> PathBuf {
-    for old in ["comicinfo.json", "comicinfo-2.json"] {
+    for old in ["comicinfo.json", "comicinfo-2.json", "comicinfo-3.json"] {
         let _ = std::fs::remove_file(covers_dir.with_file_name(old));
     }
-    covers_dir.with_file_name("comicinfo-3.json")
+    covers_dir.with_file_name("comicinfo-4.json")
 }
 
 impl App {

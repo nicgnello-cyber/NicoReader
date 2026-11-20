@@ -145,6 +145,7 @@ fn i_dati_di_un_volume() {
         series: Some("Nebbia sul Porto".into()),
         number: Some(Some(3)),
         right_to_left: Some(true),
+        ..VolumeEdit::default()
     };
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::SaveVolume("/f/scan_03.cbz".into(), saved))));
     ui.server_checked(Ok(()));
@@ -368,4 +369,81 @@ fn gli_ultimi_letti_stanno_sopra_i_tasti() {
         ui.key(Key::Down, &short);
     }
     assert_eq!(ui.selected, Some(0), "dopo l'ultimo si torna al primo");
+}
+
+#[test]
+fn i_tag_si_aggiungono_scrivendo() {
+    use fumetto_core::library::{Group, GroupKind};
+    let tag = |kind, name: &str| Group::new(kind, name, None);
+    let mut ui = Ui::new();
+    let c = ctx(Some(book(10)), &[]);
+    let path = std::path::PathBuf::from("/f/x-men-141.cbz");
+    let known = vec![
+        (tag(GroupKind::Character, "Wolverine"), 12),
+        (tag(GroupKind::Character, "Tempesta"), 4),
+        (tag(GroupKind::Character, "Wolfsbane"), 1),
+        (tag(GroupKind::Genre, "Supereroi"), 30),
+    ];
+    let mine = vec![tag(GroupKind::Character, "Tempesta")];
+    ui.edit_tags(path.clone(), "X-Men 141".into(), mine, known.clone());
+    assert!(ui.modal() && ui.typing());
+    // si parte dai personaggi: "wol" suggerisce Wolverine (il piu' usato) e Wolfsbane
+    for ch in "wol".chars() {
+        assert_eq!(ui.key(Key::Char(ch), &c), Handled::Yes(None), "le lettere si scrivono, non sono tasti");
+    }
+    ui.key(Key::Down, &c);
+    let add = |name: &str| Handled::Yes(Some(Command::AddTag(path.clone(), tag(GroupKind::Character, name))));
+    assert_eq!(ui.key(Key::Enter, &c), add("Wolverine"));
+    // scritto per intero, con le maiuscole sbagliate: il nome com'e' in libreria
+    for ch in "WOLFSBANE".chars() {
+        ui.key(Key::Char(ch), &c);
+    }
+    assert_eq!(ui.key(Key::Enter, &c), add("Wolfsbane"));
+    // un tag nuovo, in un'altra categoria
+    ui.key(Key::Right, &c); // gruppi
+    for ch in "Hellfire Club".chars() {
+        ui.key(Key::Char(ch), &c);
+    }
+    let club = tag(GroupKind::Team, "Hellfire Club");
+    assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::AddTag(path.clone(), club.clone()))));
+    // gia' messo: Invio non lo ripete
+    for ch in "hellfire club".chars() {
+        ui.key(Key::Char(ch), &c);
+    }
+    assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(None));
+    // l'app rimanda i tag com'erano salvati
+    let now = vec![tag(GroupKind::Character, "Tempesta"), tag(GroupKind::Team, "Hellfire Club")];
+    ui.tags_changed(&path, now, known);
+    // Esc chiude, e la prossima volta si riparte dalla categoria scelta
+    assert_eq!(ui.key(Key::Escape, &c), Handled::Yes(None));
+    assert!(!ui.modal());
+    ui.edit_tags(path.clone(), "X-Men 141".into(), Vec::new(), Vec::new());
+    for ch in "X".chars() {
+        ui.key(Key::Char(ch), &c);
+    }
+    assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::AddTag(path.clone(), tag(GroupKind::Team, "X")))));
+}
+
+#[test]
+fn un_clic_su_un_tag_porta_agli_altri_volumi() {
+    use fumetto_core::library::{Group, GroupKind};
+    let mut ui = Ui::new();
+    let c = ctx(Some(book(10)), &[]);
+    let path = std::path::PathBuf::from("/f/x-men-141.cbz");
+    let wolverine = Group::new(GroupKind::Character, "Wolverine", None);
+    ui.edit_tags(path.clone(), "X-Men 141".into(), vec![wolverine.clone()], Vec::new());
+    // si disegna: e' il disegno a sapere dove sta ogni cosa
+    let scene = ui.scene(&c, Instant::now(), &mut fumetto_render::Estimate);
+    let texts: Vec<&str> = scene.layers.iter().flat_map(|l| l.texts.iter().map(|t| t.text.as_str())).collect();
+    assert!(texts.contains(&"Wolverine"), "il tag del volume si vede");
+    let name = scene.layers.last().unwrap().texts.iter().find(|t| t.text == "Wolverine").unwrap();
+    let (x, y) = (name.x + 5.0, name.y + 4.0);
+    assert_eq!(ui.click(x, y, &c), Handled::Yes(Some(Command::ShowGroup(GroupKind::Character, "Wolverine".into()))));
+    assert!(!ui.modal(), "per andare fra i volumi si chiude");
+    // la crocetta lo toglie
+    ui.edit_tags(path.clone(), "X-Men 141".into(), vec![wolverine.clone()], Vec::new());
+    let scene = ui.scene(&c, Instant::now(), &mut fumetto_render::Estimate);
+    let pill = scene.layers.last().unwrap().rects.iter().find(|r| r.radius > 10.0 && r.y > name.y - 40.0).unwrap();
+    let (x, y) = (pill.x + pill.w - 6.0, pill.y + pill.h / 2.0);
+    assert_eq!(ui.click(x, y, &c), Handled::Yes(Some(Command::RemoveTag(path, wolverine))));
 }

@@ -52,7 +52,11 @@ impl Shelf {
                 .on_baseline(g.pad, top + 78.0 * s),
         );
         let text = if self.groups && self.series.is_none() && self.group.is_none() {
-            t("Dalle schede dei volumi e dai server", "From the volumes\u{2019} metadata and the servers").to_owned()
+            t(
+                "Dalle schede dei volumi, dai server e messi da te",
+                "From the volumes\u{2019} metadata, the servers, and yours",
+            )
+            .to_owned()
         } else {
             let count = volumes_read(totals.0, totals.1);
             match (&self.series, &self.group) {
@@ -163,7 +167,7 @@ impl Shelf {
         } else if !self.search.is_empty() || self.filter != Filter::All {
             t("Nessun risultato", "Nothing found")
         } else if self.groups {
-            t("Nessuna raccolta, lista, genere o editore", "No collections, lists, genres or publishers")
+            t("Nessun tag: aggiungine dal lettore", "No tags yet: add some while reading")
         } else {
             t("Nessun fumetto in queste cartelle", "No comics in these folders")
         };
@@ -289,7 +293,11 @@ impl Shelf {
     /// Il suggerimento di un tasto della barra.
     fn button_tip(&self, hit: &Hit) -> String {
         match hit {
-            Hit::Groups => t("Raccolte, liste, generi, editori", "Collections, lists, genres, publishers").to_owned(),
+            Hit::Groups => t(
+                "Tag: autori, personaggi, categorie, raccolte\u{2026}",
+                "Tags: authors, characters, genres, collections\u{2026}",
+            )
+            .to_owned(),
             Hit::Folders => t("Cartelle della libreria", "Library folders").to_owned(),
             Hit::Browse if self.browsing() => t("Torna alle serie", "Back to the series").to_owned(),
             Hit::Browse => t("Per cartelle, come su disco", "By folder, as on disk").to_owned(),

@@ -257,6 +257,7 @@ pub(super) fn main_rows(ctx: &Context) -> Vec<Row> {
         i(t("Vai a pagina\u{2026}", "Go to page\u{2026}"), Bind::GoTo, false, Action::AskPage),
         i(t("Miniature", "Thumbnails"), Bind::Thumbs, ctx.thumbs.is_some(), Action::ToggleThumbs),
         i(t("Segna la pagina", "Bookmark the page"), Bind::Bookmark, b.bookmarked, Action::ToggleBookmark),
+        i(t("Tag del volume\u{2026}", "Volume tags\u{2026}"), Bind::Tags, false, Action::EditTags),
     ]);
     if !b.bookmarks.is_empty() {
         rows.push(Row::Head(t("Segnalibri", "Bookmarks")));

@@ -165,11 +165,13 @@ fn un_epub_come_volume() {
         entries[0].groups,
         [
             Group::new(GroupKind::Collection, "Gialli italiani", None),
+            Group::new(GroupKind::Author, "Mario Rossi", None),
+            Group::new(GroupKind::Author, "Anna Bianchi", None),
             Group::new(GroupKind::Genre, "Giallo", None),
             Group::new(GroupKind::Genre, "Avventura", None),
             Group::new(GroupKind::Publisher, "Edizioni Prova", None),
         ],
-        "raccolte, generi ed editore dalla scheda"
+        "raccolte, autori, generi ed editore dalla scheda"
     );
     let text = dir.join("romanzo.epub");
     let opf = br#"<package xmlns="http://www.idpf.org/2007/opf"><manifest>

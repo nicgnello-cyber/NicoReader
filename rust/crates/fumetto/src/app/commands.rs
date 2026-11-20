@@ -33,7 +33,15 @@ impl App {
             Command::ForgetDownload(path) => self.forget_download(&path),
             Command::EditVolume(path) => self.edit_volume(path),
             Command::SaveVolume(path, edit) => self.save_volume(&path, edit),
-            Command::ResetVolume(path) => self.save_volume(&path, fumetto_core::edits::VolumeEdit::default()),
+            // i dati tornano quelli del file; i tag messi a mano restano
+            Command::ResetVolume(path) => {
+                let tags = self.edits.get(&path).map(fumetto_core::edits::VolumeEdit::only_tags);
+                self.save_volume(&path, tags.unwrap_or_default());
+            }
+            Command::EditTags(path) => self.edit_tags(path),
+            Command::AddTag(path, tag) => self.change_tag(&path, tags::TagChange::Add(tag)),
+            Command::RemoveTag(path, tag) => self.change_tag(&path, tags::TagChange::Remove(tag)),
+            Command::ShowGroup(kind, name) => self.show_group(kind, name),
             // quelli interni li ha gia' fatti l'interfaccia
             Command::Series(_)
             | Command::Group(..)

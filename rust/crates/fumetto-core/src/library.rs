@@ -67,7 +67,8 @@ pub struct Entry {
     pub number: Option<u32>,
     /// Gli autori, dalla ComicInfo.xml: per cercarli.
     pub authors: Option<String>,
-    /// Le raccolte, le liste di lettura, i generi e l'editore di cui fa parte.
+    /// I suoi tag: raccolte, liste di lettura, autori, personaggi, gruppi,
+    /// categorie, tipologia, lingua, luoghi, editore, etichette.
     pub groups: Vec<Group>,
     /// Quando e' arrivato nella libreria (secondi dal 1970; 0: non si sa), per
     /// "aggiunti di recente": la data del file.
@@ -76,7 +77,9 @@ pub struct Entry {
     pub year: Option<u32>,
 }
 
-/// Che cosa riunisce dei volumi oltre la serie.
+/// Che cosa riunisce dei volumi oltre la serie: i tag del volume. Vengono
+/// dalla sua scheda (ComicInfo.xml, EPUB), dal server, o da chi legge (le
+/// correzioni). L'ordine e' quello delle sezioni nella libreria.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum GroupKind {
     /// Una raccolta di serie ("Universo Marvel"; SeriesGroup, le collezioni
@@ -85,8 +88,36 @@ pub enum GroupKind {
     /// Una lista di lettura: volumi di serie diverse in un ordine preciso
     /// (StoryArc, le liste di Komga e Kavita).
     ReadingList,
+    /// Chi l'ha scritto o disegnato.
+    Author,
+    Character,
+    /// Un gruppo di personaggi ("X-Men", "Cappello di paglia").
+    Team,
+    /// La categoria: azione, giallo, fantascienza (Genre).
     Genre,
+    /// Il tipo di pubblicazione: manga, graphic novel, one-shot (Format).
+    Format,
+    Language,
+    Location,
     Publisher,
+    /// Un'etichetta libera ("da rileggere", "regalo di Anna").
+    Tag,
+}
+
+impl GroupKind {
+    pub const ALL: [GroupKind; 11] = [
+        GroupKind::Collection,
+        GroupKind::ReadingList,
+        GroupKind::Author,
+        GroupKind::Character,
+        GroupKind::Team,
+        GroupKind::Genre,
+        GroupKind::Format,
+        GroupKind::Language,
+        GroupKind::Location,
+        GroupKind::Publisher,
+        GroupKind::Tag,
+    ];
 }
 
 /// Un gruppo di cui fa parte un volume; `order`: il suo posto nella lista.
@@ -94,6 +125,7 @@ pub enum GroupKind {
 pub struct Group {
     pub kind: GroupKind,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub order: Option<u32>,
 }
 
@@ -101,16 +133,70 @@ impl Group {
     pub fn new(kind: GroupKind, name: impl Into<String>, order: Option<u32>) -> Group {
         Group { kind, name: name.into(), order }
     }
+
+    /// Lo stesso tag, senza badare alle maiuscole ("batman" e' "Batman").
+    pub fn same(&self, other: &Group) -> bool {
+        self.kind == other.kind && same_name(&self.name, &other.name)
+    }
 }
 
-/// I gruppi che dice una scheda.
+/// Due nomi uguali senza badare alle maiuscole, anche fuori dall'ASCII.
+pub fn same_name(a: &str, b: &str) -> bool {
+    a.eq_ignore_ascii_case(b) || a.to_lowercase() == b.to_lowercase()
+}
+
+/// I gruppi (i tag) che dice una scheda, senza doppi.
 pub fn groups_of(info: &ComicInfo) -> Vec<Group> {
     let mut out: Vec<Group> = Vec::new();
-    out.extend(info.series_group.iter().map(|n| Group::new(GroupKind::Collection, n, None)));
-    out.extend(info.story_arcs.iter().map(|(n, o)| Group::new(GroupKind::ReadingList, n, *o)));
-    out.extend(info.genres.iter().map(|n| Group::new(GroupKind::Genre, n, None)));
-    out.extend(info.publisher.iter().map(|n| Group::new(GroupKind::Publisher, n, None)));
+    let mut add = |g: Group| {
+        if !g.name.trim().is_empty() && !out.iter().any(|o| o.same(&g)) {
+            out.push(Group { name: g.name.trim().to_owned(), ..g });
+        }
+    };
+    let names = |kind: GroupKind, v: &[String]| -> Vec<Group> { v.iter().map(|n| Group::new(kind, n, None)).collect() };
+    let mut all = names(GroupKind::Collection, &info.series_group);
+    all.extend(info.story_arcs.iter().map(|(n, o)| Group::new(GroupKind::ReadingList, n, *o)));
+    all.extend(info.authors.iter().flat_map(|a| a.split(',')).map(|n| Group::new(GroupKind::Author, n, None)));
+    all.extend(names(GroupKind::Character, &info.characters));
+    all.extend(names(GroupKind::Team, &info.teams));
+    all.extend(names(GroupKind::Genre, &info.genres));
+    all.extend(info.manga.then(|| Group::new(GroupKind::Format, "Manga", None)));
+    all.extend(info.format.iter().map(|f| Group::new(GroupKind::Format, f, None)));
+    all.extend(info.language.iter().map(|c| Group::new(GroupKind::Language, language_name(c), None)));
+    all.extend(names(GroupKind::Location, &info.locations));
+    all.extend(info.publisher.iter().map(|p| Group::new(GroupKind::Publisher, p, None)));
+    all.extend(names(GroupKind::Tag, &info.tags));
+    for g in all {
+        add(g);
+    }
     out
+}
+
+/// Il nome di una lingua dal suo codice ("it", "en-US", "jpn"), nella lingua
+/// del programma; un codice che non si conosce resta com'e', in maiuscolo.
+pub fn language_name(code: &str) -> String {
+    let code = code.trim();
+    let base = code.split(['-', '_']).next().unwrap_or(code).to_ascii_lowercase();
+    let known: &[(&[&str], &str, &str)] = &[
+        (&["it", "ita"], "Italiano", "Italian"),
+        (&["en", "eng"], "Inglese", "English"),
+        (&["ja", "jpn"], "Giapponese", "Japanese"),
+        (&["fr", "fra", "fre"], "Francese", "French"),
+        (&["es", "spa"], "Spagnolo", "Spanish"),
+        (&["de", "deu", "ger"], "Tedesco", "German"),
+        (&["pt", "por"], "Portoghese", "Portuguese"),
+        (&["zh", "zho", "chi"], "Cinese", "Chinese"),
+        (&["ko", "kor"], "Coreano", "Korean"),
+        (&["ru", "rus"], "Russo", "Russian"),
+        (&["nl", "nld", "dut"], "Olandese", "Dutch"),
+        (&["pl", "pol"], "Polacco", "Polish"),
+    ];
+    match known.iter().find(|(codes, _, _)| codes.contains(&base.as_str())) {
+        Some((_, it, en)) => crate::lingua::t(it, en).to_owned(),
+        // un nome gia' scritto per esteso ("Italiano") resta com'e'
+        None if code.chars().count() > 3 => code.to_owned(),
+        None => code.to_uppercase(),
+    }
 }
 
 /// Dove si e' arrivati in un volume.

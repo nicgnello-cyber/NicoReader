@@ -9,7 +9,8 @@ moiré), turn in a millisecond, and reopen where you left off.
 It reads folders, CBZ/ZIP, CBR/RAR (solid archives too), CB7/7Z, CBT/TAR,
 PDF and EPUB (the ones made of images: manga and comics), with JPEG, PNG, WebP, GIF, BMP, AVIF and JPEG XL pages. It has a library
 organized by series (from ComicInfo.xml when a volume has one, so manga also
-open right to left on their own), thumbnails, bookmarks, two-page spreads, a vertical strip
+open right to left on their own) and tags (characters, authors, genres...
+that you can also add while reading), thumbnails, bookmarks, two-page spreads, a vertical strip
 for webtoons (detected automatically), zoom, a magnifier,
 brightness/contrast/gamma, customizable keys, and optional AI upscaling
 (Real-ESRGAN, on the graphics card, nothing to download). The library can
@@ -107,11 +108,21 @@ recently read, or by year (from ComicInfo.xml or the EPUB data). Two series
 with the same name in different folders, like `Batman (2011)` and
 `Batman (2016)`, stay separate.
 
-The shelves icon in the library bar shows the collections, reading lists,
-genres and publishers: from ComicInfo.xml (SeriesGroup, StoryArc with its
-number, Genre, Publisher), from EPUB metadata, and from a Komga or Kavita
-server (its collections and reading lists). A reading list opens in its own
-order, even across different series.
+Every volume has its tags: authors, characters, teams, genre, type (manga,
+graphic novel...), language, places, publisher, collections, reading lists
+and free labels. They come from ComicInfo.xml (Writer, Penciller,
+Characters, Teams, Genre, Format, LanguageISO, Locations, Publisher,
+SeriesGroup, StoryArc, Tags), from EPUB metadata and from a Komga or Kavita
+server; and you can add them while reading: **E** (or right click → Volume
+tags…, or from a cover's menu) opens the volume's tags. Pick the kind with
+← →, type (the tags already in the library are suggested, with how many
+volumes have them) and Enter adds it; the × removes it. The tags you add are
+kept in `correzioni.json`, in the data folder: the volume's file is never
+touched. A click on a tag takes you to the library, among the other volumes
+that have it ("this character is also in..."). The shelves icon in the
+library bar shows all the tags, by kind; and the search finds a volume by its
+tags too. A reading list opens in its own order, even across different
+series.
 
 To read from a Komga or Kavita server: right click → Add a server… (or the
 folder icon in the library). For Komga, the server address with your user

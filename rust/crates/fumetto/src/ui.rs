@@ -16,7 +16,7 @@
 //! scelto. Le icone sono tratti sottili disegnati qui, alla scala dello
 //! schermo: niente immagini, niente caratteri di icone.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use fumetto_core::lingua::{italian, t};
@@ -36,6 +36,7 @@ mod motion;
 mod panels;
 mod server;
 mod style;
+mod tags;
 #[cfg(test)]
 mod tests;
 mod welcome;
@@ -50,6 +51,7 @@ use server::{Outcome, ServerForm};
 pub(crate) use style::{
     ACCENT, ACCENT_TEXT, BLACK, HAIR, INK, INK_F, MUTED, MUTED_F, PLATE, TICK, alpha, caps, fade, fit, rgb,
 };
+use tags::TagsForm;
 pub use welcome::welcome_covers;
 use welcome::{recent_shown, welcome, welcome_cta_hit, welcome_hit};
 
@@ -154,6 +156,12 @@ pub enum Command {
     EditVolume(PathBuf),
     /// Salva i dati corretti di un volume.
     SaveVolume(PathBuf, fumetto_core::edits::VolumeEdit),
+    /// I tag di un volume: aprirli, aggiungerne uno, toglierne uno.
+    EditTags(PathBuf),
+    AddTag(PathBuf, fumetto_core::library::Group),
+    RemoveTag(PathBuf, fumetto_core::library::Group),
+    /// La libreria, fra i volumi che hanno questo tag.
+    ShowGroup(fumetto_core::library::GroupKind, String),
     /// Toglie le correzioni: tornano i dati del file.
     ResetVolume(PathBuf),
     /// Dalle miniature: va alla pagina (da 0) e torna a leggere.
@@ -282,6 +290,9 @@ pub struct Ui {
     pub thumbs: Thumbs,
     /// Il foglio delle impostazioni, se e' aperto.
     pub prefs: Option<Prefs>,
+    /// I tag di un volume, se sono aperti; e l'ultima categoria scelta.
+    tags: Option<TagsForm>,
+    tag_kind: usize,
     /// Cio' che sta comparendo.
     motion: Motion,
 }
@@ -293,7 +304,11 @@ impl Ui {
 
     /// Una finestra dell'interfaccia e' aperta: tasti e clic vanno a lei.
     pub fn modal(&self) -> bool {
-        self.goto.is_some() || self.menu.is_some() || self.prefs.is_some() || self.server.is_some()
+        self.goto.is_some()
+            || self.menu.is_some()
+            || self.prefs.is_some()
+            || self.server.is_some()
+            || self.tags.is_some()
     }
 
     /// Un modulo da scrivere e' aperto (un server, la password di un PDF):
@@ -329,11 +344,48 @@ impl Ui {
         }
     }
 
-    /// Testo incollato (Ctrl+V), nel campo scelto del modulo.
+    /// Testo incollato (Ctrl+V), nel campo scelto del modulo o dei tag.
     pub fn paste(&mut self, text: &str) {
         if let Some(f) = &mut self.server {
             f.type_text(text);
+        } else if let Some(f) = &mut self.tags {
+            f.type_text(text);
         }
+    }
+
+    /// Apre i tag di un volume: quelli che ha, e quelli della libreria (con
+    /// quanti volumi li hanno) da suggerire.
+    pub fn edit_tags(
+        &mut self, path: PathBuf, title: String, tags: Vec<fumetto_core::library::Group>,
+        known: Vec<(fumetto_core::library::Group, usize)>,
+    ) {
+        self.menu = None;
+        self.goto = None;
+        self.prefs = None;
+        self.tags = Some(TagsForm::new(path, title, tags, known, self.tag_kind));
+    }
+
+    /// I tag del volume come sono dopo un cambio (se sono ancora aperti su di lui).
+    pub fn tags_changed(
+        &mut self, path: &Path, tags: Vec<fumetto_core::library::Group>,
+        known: Vec<(fumetto_core::library::Group, usize)>,
+    ) {
+        if let Some(f) = self.tags.as_mut().filter(|f| f.path() == path) {
+            f.update(tags, known);
+        }
+    }
+
+    /// Chiude i tag, ricordando la categoria scelta.
+    pub fn close_tags(&mut self) {
+        if let Some(f) = self.tags.take() {
+            self.tag_kind = f.kind_index();
+        }
+    }
+
+    /// Si sta scrivendo: in un modulo (un server, una password, i dati di
+    /// un volume) o nei tag. I tasti con Ctrl sono per il testo.
+    pub fn typing(&self) -> bool {
+        self.server.is_some() || self.tags.is_some()
     }
 
     /// Com'e' andata la prova del collegamento: se bene il modulo si chiude,
@@ -374,7 +426,7 @@ impl Ui {
     /// Il tasto del mouse premuto: nelle impostazioni puo' cominciare a
     /// trascinare una regolazione.
     pub fn press(&mut self, x: f32, y: f32, ctx: &Context) -> Option<Command> {
-        if self.menu.is_some() || self.goto.is_some() || self.server.is_some() {
+        if self.menu.is_some() || self.goto.is_some() || self.server.is_some() || self.tags.is_some() {
             return None;
         }
         self.prefs.as_mut()?.press(ctx.settings, ctx.keys, ctx.view, ctx.scale, x, y)
@@ -553,6 +605,9 @@ impl Ui {
             }
         }
         if let Some(f) = &self.server {
+            scene.layers.push(f.layer(ctx, m));
+        }
+        if let Some(f) = &self.tags {
             scene.layers.push(f.layer(ctx, m));
         }
         if let Some(menu) = &self.menu {
