@@ -527,3 +527,21 @@ fn la_barra_non_si_sovrappone_a_nessuna_larghezza() {
     let g = BarGeo::new(&d, 600.0, 1.0, true);
     assert!(g.tabs.is_empty() && g.search_w > 200.0, "mentre si cerca, il testo al posto dei filtri");
 }
+
+#[test]
+fn la_ricerca_trova_anche_i_tag() {
+    use fumetto_core::library::Group;
+    let (mut e, st, at) = library();
+    e[2].groups.push(Group::new(GroupKind::Character, "Wolverine", None));
+    e[3].groups.push(Group::new(GroupKind::Tag, "da rileggere", None));
+    let d = data(&e, &st, &at);
+    let view = (1920.0, 1080.0);
+    let mut shelf = Shelf::default();
+    let found = |shelf: &Shelf| -> Vec<Tile> { shelf.sections(&d).into_iter().flat_map(|s| s.tiles).collect() };
+    for c in "wolver".chars() {
+        shelf.key(Key::Char(c), &d, view, 1.0);
+    }
+    assert_eq!(found(&shelf), [Tile::Volume(2)], "il personaggio, senza badare alle maiuscole");
+    shelf.search = "rilegg".into();
+    assert_eq!(found(&shelf), [Tile::Volume(3)], "un'etichetta, anche a meta'");
+}
