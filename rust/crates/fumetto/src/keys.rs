@@ -123,10 +123,6 @@ impl Bind {
         }
     }
 
-    pub fn from_id(id: &str) -> Option<Bind> {
-        Bind::ALL.into_iter().find(|b| b.id() == id)
-    }
-
     /// Il nome per chi legge.
     pub fn label(self) -> &'static str {
         match self {
@@ -516,7 +512,6 @@ mod tests {
         let km = Keymap::default();
         for b in Bind::ALL {
             assert!(!km.keys(b).is_empty(), "{b:?} senza tasti");
-            assert_eq!(Bind::from_id(b.id()), Some(b));
         }
     }
 

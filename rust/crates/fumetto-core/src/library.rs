@@ -104,22 +104,6 @@ pub enum GroupKind {
     Tag,
 }
 
-impl GroupKind {
-    pub const ALL: [GroupKind; 11] = [
-        GroupKind::Collection,
-        GroupKind::ReadingList,
-        GroupKind::Author,
-        GroupKind::Character,
-        GroupKind::Team,
-        GroupKind::Genre,
-        GroupKind::Format,
-        GroupKind::Language,
-        GroupKind::Location,
-        GroupKind::Publisher,
-        GroupKind::Tag,
-    ];
-}
-
 /// Un gruppo di cui fa parte un volume; `order`: il suo posto nella lista.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Group {

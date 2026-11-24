@@ -311,12 +311,6 @@ impl Ui {
             || self.tags.is_some()
     }
 
-    /// Un modulo da scrivere e' aperto (un server, la password di un PDF):
-    /// i tasti sono per lui.
-    pub fn server_open(&self) -> bool {
-        self.server.is_some()
-    }
-
     /// Il modulo per correggere i dati di un volume: i campi con i valori di
     /// adesso (titolo, serie, numero), le correzioni che c'erano, il verso.
     pub fn edit_volume(

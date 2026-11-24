@@ -199,13 +199,13 @@ e per le pull request che toccano il codice.
 
 Una nuova versione, con i link di "Scarica" che la seguono da soli: si alza
 `version` in `rust/Cargo.toml`, e dopo il merge si crea il tag, dal sito di
-GitHub (Releases -> Draft a new release -> tag `v0.4.9`, "create on publish"
+GitHub (Releases -> Draft a new release -> tag `v0.5.0`, "create on publish"
 -> Publish release) oppure con
 
-    git tag v0.4.9
-    git push origin v0.4.9
+    git tag v0.5.0
+    git push origin v0.5.0
 
-Actions fa i pacchetti di tutti i sistemi e li pubblica nella Release `v0.4.9`,
+Actions fa i pacchetti di tutti i sistemi e li pubblica nella Release `v0.5.0`,
 con i nomi senza versione dei link (se il tag non e' la versione di
 Cargo.toml si ferma), e con le note di `.github/note-release.md` se la
 Release non ne ha. Per riscrivere solo le note della versione attuale: Run

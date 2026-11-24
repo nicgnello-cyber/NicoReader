@@ -103,7 +103,7 @@ fn la_password_di_un_pdf() {
     let mut ui = Ui::new();
     let c = ctx(None, &[]);
     ui.ask_password("protetto.pdf".into(), "Protetto".into());
-    assert!(ui.modal() && ui.server_open());
+    assert!(ui.modal() && ui.typing());
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(None), "vuota non si prova");
     assert_eq!(ui.key(Key::Tab, &c), Handled::Yes(None), "un campo solo");
     ui.paste("seg");
@@ -113,11 +113,11 @@ fn la_password_di_un_pdf() {
     let open = |pw: &str| Handled::Yes(Some(Command::OpenWithPassword("protetto.pdf".into(), pw.into())));
     assert_eq!(ui.key(Key::Enter, &c), open("segreto"));
     ui.password_checked(Err("Password sbagliata.".into()));
-    assert!(ui.server_open(), "sbagliata: si riscrive");
+    assert!(ui.typing(), "sbagliata: si riscrive");
     ui.key(Key::Char('x'), &c);
     assert_eq!(ui.key(Key::Enter, &c), open("x"), "la sbagliata si cancella");
     ui.password_checked(Ok(()));
-    assert!(!ui.server_open());
+    assert!(!ui.typing());
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn i_dati_di_un_volume() {
     let existing = VolumeEdit { title: Some("Vecchio".into()), ..VolumeEdit::default() };
     let initial = ["Vecchio".to_owned(), String::new(), String::new()];
     ui.edit_volume("/f/scan_03.cbz".into(), "scan_03.cbz".into(), initial, existing, None);
-    assert!(ui.modal() && ui.server_open());
+    assert!(ui.modal() && ui.typing());
     ui.key(Key::Tab, &c);
     ui.paste("Nebbia sul Porto");
     ui.key(Key::Tab, &c);
@@ -149,7 +149,7 @@ fn i_dati_di_un_volume() {
     };
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::SaveVolume("/f/scan_03.cbz".into(), saved))));
     ui.server_checked(Ok(()));
-    assert!(!ui.server_open());
+    assert!(!ui.typing());
 }
 
 #[test]
@@ -157,7 +157,7 @@ fn il_modulo_del_server() {
     let mut ui = Ui::new();
     let c = ctx(None, &[]);
     assert_eq!(ui.internal(Some(Command::AskServer), &c), None);
-    assert!(ui.modal() && ui.server_open());
+    assert!(ui.modal() && ui.typing());
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(None), "senza indirizzo non si va avanti");
     ui.paste("casa:25600\n");
     ui.key(Key::Tab, &c);
@@ -176,12 +176,12 @@ fn il_modulo_del_server() {
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::AddServer(server))));
     ui.key(Key::Char('x'), &c);
     ui.server_checked(Err("nome o password sbagliati".into()));
-    assert!(ui.server_open(), "se non va, si corregge");
+    assert!(ui.typing(), "se non va, si corregge");
     ui.server_checked(Ok(()));
-    assert!(!ui.server_open());
+    assert!(!ui.typing());
     ui.internal(Some(Command::AskServer), &c);
     assert_eq!(ui.key(Key::Escape, &c), Handled::Yes(None));
-    assert!(!ui.server_open());
+    assert!(!ui.typing());
     assert_eq!(ui.key(Key::Tab, &c), Handled::No, "fuori dal modulo Tab non e' dell'interfaccia");
 }
 

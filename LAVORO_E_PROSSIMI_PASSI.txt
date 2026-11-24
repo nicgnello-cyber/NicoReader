@@ -1,5 +1,5 @@
 NICOREADER (prima: Fumetto) - lettore di fumetti, manga e webtoon
-Stato del progetto al 20 novembre 2026 (versione 0.4.9)
+Stato del progetto al 24 novembre 2026 (versione 0.5.0)
 =====================================================================
 
 Dal 27 settembre il programma si chiama NicoReader e il progetto e'
@@ -922,6 +922,16 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      gia'). Controllato anche che nel repository non ci siano chiavi o
      password: nessuna in tutta la storia; una chiave OPDS d'esempio dall'aria
      vera in una prova e' diventata palesemente finta.
+  4z. [x] Pulizia e versione 0.5.0 (24 novembre). Cercati in tutta la storia
+     del repository riferimenti alle API di Claude, ChatGPT o di altri
+     servizi d'intelligenza artificiale (indirizzi, librerie, variabili,
+     chiavi): nessuno. Cercato cio' che non serve: tolte GroupKind::ALL
+     (mai usata), Ui::server_open (sostituita da typing) e Bind::from_id
+     (usate solo dalle prove); le dipendenze sono tutte usate, e cosi' gli
+     script, le risorse, le licenze e i dati di prova (fumetto-probe e
+     fumetto-strumenti restano: gli scatti di prova e gli attrezzi dei
+     pacchetti). La 0.5 raccoglie i tag (4x) e i loro suggerimenti nella
+     ricerca (4y).
   5. Distribuzione (capitolo 5).
 
   Da decidere tu, quando vuoi:
