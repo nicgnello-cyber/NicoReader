@@ -52,7 +52,7 @@ pub(crate) use style::{
     ACCENT, ACCENT_TEXT, BLACK, HAIR, INK, INK_F, MUTED, MUTED_F, PLATE, TICK, alpha, caps, fade, fit, rgb,
 };
 use tags::TagsForm;
-pub use tags::{TagScope, TagsOf};
+pub use tags::{Reach, TagScope, TagsOf};
 pub use welcome::welcome_covers;
 use welcome::{recent_shown, welcome, welcome_cta_hit, welcome_hit};
 
@@ -474,13 +474,22 @@ impl Ui {
         self.goto = Some(GoTo { typed: String::new(), here, pages, bookmarks: bookmarks.to_vec() });
     }
 
+    /// Ctrl+clic (Cmd+clic su macOS) nella libreria: sceglie o lascia una
+    /// copertina. `false` se li' non c'e' una cella da scegliere.
+    pub fn pick(&mut self, x: f32, y: f32, ctx: &Context) -> bool {
+        match &ctx.shelf {
+            Some(d) if !self.modal() => self.shelf.pick_at(d, ctx.view, ctx.scale, x, y),
+            _ => false,
+        }
+    }
+
     /// Il menu del tasto destro: su una copertina il suo, altrimenti quello
     /// generale.
     pub fn open_menu(&mut self, x: f32, y: f32, ctx: &Context) {
         self.goto = None;
         let rows = match &ctx.shelf {
             Some(d) => match self.shelf.tile_at(d, ctx.view, ctx.scale, x, y) {
-                Some(tile) => Shelf::tile_menu(d, &tile),
+                Some(tile) => self.shelf.tile_menu(d, &tile),
                 None => main_rows(ctx),
             },
             None => main_rows(ctx),

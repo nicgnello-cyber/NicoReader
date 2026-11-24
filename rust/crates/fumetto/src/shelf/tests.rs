@@ -111,7 +111,7 @@ fn esplora(shelf: &mut Shelf, d: &ShelfData, depth: usize) {
     for k in 0..n.min(4) {
         let tile = shelf.layout(d, &tiles).placed.into_iter().nth(k).map(|p| p.tile);
         if let Some(tile) = tile {
-            let _ = Shelf::tile_menu(d, &tile);
+            let _ = shelf.tile_menu(d, &tile);
             if !matches!(tile, Tile::Volume(_)) {
                 let _ = shelf.choose(d, tile);
                 esplora(shelf, d, depth - 1);
@@ -598,14 +598,15 @@ fn la_ricerca_in_una_categoria() {
     // le categorie in italiano o in inglese, al singolare o al plurale
     let parsed = |s: &str| {
         let q = Query::parse(s);
-        (q.scope, q.text)
+        assert_eq!(q.terms.len(), 1, "{s}");
+        (q.terms[0].scope, q.terms[0].text.clone())
     };
     assert_eq!(parsed("Personaggio: Wolverine "), (Scope::Kind(GroupKind::Character), "wolverine".into()));
     assert_eq!(parsed("characters:wol"), (Scope::Kind(GroupKind::Character), "wol".into()));
     assert_eq!(parsed("genere:giallo"), (Scope::Kind(GroupKind::Genre), "giallo".into()));
     assert_eq!(parsed("tag:azione"), (Scope::Tags, "azione".into()));
     // una parola qualsiasi prima dei due punti fa parte del titolo
-    assert_eq!(parsed("Batman: Anno uno"), (Scope::Everywhere, "batman: anno uno".into()));
+    assert_eq!(parsed("Batman:"), (Scope::Everywhere, "batman:".into()));
     let (mut e, st, at) = library();
     e[0].groups.push(Group::new(GroupKind::Character, "Wolverine", None));
     // "Wolverine" anche in un'altra categoria: non risponde a "personaggio:"
@@ -626,4 +627,88 @@ fn la_ricerca_in_una_categoria() {
     // con la categoria e niente dopo: tutti i volumi che ne hanno una
     shelf.search = "personaggi:".into();
     assert_eq!(found(&shelf), [Tile::Volume(0)]);
+}
+
+#[test]
+fn la_ricerca_con_piu_condizioni() {
+    use super::query::{Query, Scope};
+    use fumetto_core::library::Group;
+    let q = Query::parse(r#"personaggio:wolverine autore:"Chris Claremont" -tag:letto "anno uno""#);
+    let terms: Vec<(Scope, &str, bool, bool)> =
+        q.terms.iter().map(|t| (t.scope, t.text.as_str(), t.exact, t.negated)).collect();
+    assert_eq!(
+        terms,
+        [
+            (Scope::Kind(GroupKind::Character), "wolverine", false, false),
+            (Scope::Kind(GroupKind::Author), "chris claremont", true, false),
+            (Scope::Tags, "letto", false, true),
+            (Scope::Everywhere, "anno uno", true, false),
+        ]
+    );
+    let (mut e, st, at) = library();
+    let tag = |kind, name: &str| Group::new(kind, name, None);
+    e[0].groups.extend([tag(GroupKind::Character, "Wolverine"), tag(GroupKind::Author, "Chris Claremont")]);
+    e[1].groups.extend([tag(GroupKind::Character, "Wolverine"), tag(GroupKind::Author, "Chris Claremont")]);
+    e[1].groups.push(tag(GroupKind::Tag, "Letto"));
+    e[2].groups.extend([tag(GroupKind::Character, "Wolverine"), tag(GroupKind::Author, "Chris Claremont Jr")]);
+    let d = data(&e, &st, &at);
+    let found = |search: &str| -> Vec<Tile> {
+        let shelf = Shelf { search: search.into(), ..Shelf::default() };
+        shelf.sections(&d).into_iter().flat_map(|s| s.tiles).collect()
+    };
+    assert_eq!(found("personaggio:wolverine").len(), 3);
+    assert_eq!(found("personaggio:wolverine autore:claremont").len(), 3, "senza virgolette basta contenerlo");
+    assert_eq!(found(r#"personaggio:wolverine autore:"chris claremont""#).len(), 2, "fra virgolette, proprio quello");
+    assert_eq!(found(r#"autore:"chris claremont" -tag:letto"#), [Tile::Volume(0)], "il meno esclude");
+    // la tendina completa l'ultima condizione, fra i volumi delle altre
+    let mut shelf = Shelf { search: "-tag:letto aut".into(), ..Shelf::default() };
+    assert!(shelf.suggestions(&d).is_empty(), "una parola sola: fra due lettere si cerca, ma 'aut' non e' un tag");
+    shelf.search = "tag:letto autore:".into();
+    let names: Vec<String> = shelf.suggestions(&d).into_iter().map(|s| s.name).collect();
+    assert_eq!(names, ["Chris Claremont"], "solo gli autori dei volumi con 'letto'");
+    // scelto, prende il posto di cio' che si scriveva e si continua
+    shelf.open_suggestion(shelf.suggestions(&d).remove(0));
+    assert_eq!(shelf.search, r#"tag:letto author:"Chris Claremont" "#);
+    assert!(shelf.group.is_none() && shelf.suggestions(&d).is_empty(), "finita: la tendina si chiude");
+    assert_eq!(found(&shelf.search), [Tile::Volume(1)]);
+    // ai server solo le parole
+    let shelf = Shelf { search: "anno uno".into(), ..Shelf::default() };
+    assert_eq!(shelf.server_search(), "anno uno");
+    let shelf = Shelf { search: "anno -uno".into(), ..Shelf::default() };
+    assert!(shelf.server_search().is_empty());
+}
+
+#[test]
+fn piu_volumi_scelti_con_ctrl_clic() {
+    use crate::ui::{Row, TagsOf};
+    let (e, st, at) = library();
+    let d = data(&e, &st, &at);
+    let view = (1280.0, 800.0);
+    let mut shelf = Shelf::default();
+    let placed = shelf.layout(&d, &Geo::new(view, 1.0)).placed;
+    let at_tile = |k: usize| (placed[k].x + 10.0, placed[k].y + 10.0);
+    // la pila della serie sceglie tutti i suoi volumi, un volume solo se'
+    let stack = placed.iter().position(|p| matches!(p.tile, Tile::Series { .. })).expect("la pila");
+    let single = placed.iter().position(|p| p.tile == Tile::Volume(0)).expect("Acqua Alta");
+    let (x, y) = at_tile(stack);
+    assert!(shelf.pick_at(&d, view, 1.0, x, y));
+    assert_eq!(shelf.picked(), [e[1].path.clone(), e[2].path.clone()]);
+    let (x, y) = at_tile(single);
+    assert!(shelf.pick_at(&d, view, 1.0, x, y));
+    assert_eq!(shelf.picked().len(), 3);
+    // il menu di una cella scelta comincia con i tag di tutte le scelte
+    let rows = shelf.tile_menu(&d, &placed[single].tile);
+    let all = Command::EditTags(TagsOf::Volumes(shelf.picked().to_vec()));
+    assert!(matches!(&rows[0], Row::Item { cmd, .. } if *cmd == all));
+    // in basso la barra: "Tag…" apre i tag dei volumi scelti, si vede
+    let layers = shelf.layers(&d, view, 1.0, &mut fumetto_render::Estimate);
+    assert!(layers.iter().flat_map(|l| &l.texts).any(|t| t.text.starts_with("3 volumes picked")));
+    let tags = layers.iter().flat_map(|l| &l.texts).find(|t| t.text == "Tags\u{2026}").expect("il tasto");
+    assert_eq!(shelf.click(&d, view, 1.0, tags.x + 20.0, tags.y + 5.0), Handled::Yes(Some(all)));
+    // di nuovo Ctrl+clic: la si lascia; Esc lascia tutto
+    let (x, y) = at_tile(single);
+    shelf.pick_at(&d, view, 1.0, x, y);
+    assert_eq!(shelf.picked().len(), 2);
+    shelf.key(Key::Escape, &d, view, 1.0);
+    assert!(shelf.picked().is_empty());
 }

@@ -47,14 +47,26 @@ const MAX_TAG: usize = 200;
 pub enum TagsOf {
     Volume(PathBuf),
     Series(String),
+    /// I volumi scelti in libreria con Ctrl+clic.
+    Volumes(Vec<PathBuf>),
+}
+
+/// A chi vanno i tag di un ambito.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Reach {
+    /// Il volume solo.
+    Volume,
+    /// Tutti i volumi della serie.
+    Series(String),
+    /// I volumi scelti.
+    Picked,
 }
 
 /// Un ambito: i volumi a cui vanno i tag, e i tag che hanno, con quanti
 /// volumi ce l'hanno.
 #[derive(Clone, Debug)]
 pub struct TagScope {
-    /// La serie, o `None` per il volume solo.
-    pub series: Option<String>,
+    pub reach: Reach,
     pub paths: Vec<PathBuf>,
     pub tags: Vec<(Group, usize)>,
 }
@@ -164,15 +176,21 @@ impl TagsForm {
         let kind = KINDS[self.kind];
         let needle = self.typed.trim().to_lowercase();
         let starts = |g: &Group| g.name.to_lowercase().starts_with(&needle);
+        // mentre si scrive, anche quelli delle altre categorie: dopo, con la
+        // loro categoria accanto ("wolverine" fra i gruppi e' un personaggio)
         let mut v: Vec<(&Group, usize)> = self
             .known
             .iter()
-            .filter(|(g, _)| g.kind == kind && !self.current().has_all(g))
+            .filter(|(g, _)| (g.kind == kind || !needle.is_empty()) && !self.current().has_all(g))
             .filter(|(g, _)| needle.is_empty() || g.name.to_lowercase().contains(&needle))
             .map(|(g, n)| (g, *n))
             .collect();
         v.sort_by(|a, b| {
-            starts(b.0).cmp(&starts(a.0)).then(b.1.cmp(&a.1)).then_with(|| natural_cmp(&a.0.name, &b.0.name))
+            (b.0.kind == kind)
+                .cmp(&(a.0.kind == kind))
+                .then(starts(b.0).cmp(&starts(a.0)))
+                .then(b.1.cmp(&a.1))
+                .then_with(|| natural_cmp(&a.0.name, &b.0.name))
         });
         v.truncate(self.rows.get());
         v
@@ -219,16 +237,17 @@ impl TagsForm {
     /// come e' gia' scritto in libreria, se c'e': "batman" e' "Batman").
     fn add(&mut self) -> Outcome {
         let kind = KINDS[self.kind];
-        let picked = self.pick.and_then(|i| self.suggestions().get(i).map(|(g, _)| g.name.clone()));
-        let name = match picked {
-            Some(name) => name,
+        // un suggerimento scelto porta la sua categoria
+        let picked = self.pick.and_then(|i| self.suggestions().get(i).map(|(g, _)| (g.kind, g.name.clone())));
+        let (kind, name) = match picked {
+            Some(picked) => picked,
             None => {
                 let typed = self.typed.trim();
                 if typed.is_empty() {
                     return Outcome::Stay;
                 }
                 let known = self.known.iter().find(|(g, _)| g.kind == kind && same_name(&g.name, typed));
-                known.map_or_else(|| typed.to_owned(), |(g, _)| g.name.clone())
+                (kind, known.map_or_else(|| typed.to_owned(), |(g, _)| g.name.clone()))
             }
         };
         self.typed.clear();
@@ -297,12 +316,12 @@ impl TagsForm {
         let compact = vh / s < 620.0;
         let top = if compact { 34.0 * s } else { (vh / 2.0 - 300.0 * s).max(40.0 * s) }.round();
         // con due ambiti lo dicono le pastiglie sotto
-        let head = match &self.current().series {
+        let n = volumes(self.current().paths.len());
+        let head = match &self.current().reach {
             _ if self.scopes.len() > 1 => t("Tag", "Tags").to_owned(),
-            None => t("Tag del volume", "Volume tags").to_owned(),
-            Some(_) => {
-                format!("{} \u{00b7} {}", t("Tag della serie", "Series tags"), volumes(self.current().paths.len()))
-            }
+            Reach::Volume => t("Tag del volume", "Volume tags").to_owned(),
+            Reach::Series(_) => format!("{} \u{00b7} {n}", t("Tag della serie", "Series tags")),
+            Reach::Picked => format!("{} \u{00b7} {n}", t("Tag dei volumi scelti", "Tags of the picked volumes")),
         };
         l.texts.push(caps(&head, 11.0 * s, MUTED).on_baseline(x0, top));
         let title = fit(m, Text::new(self.title.as_str(), Face::Serif, 32.0 * s, INK), w);
@@ -358,11 +377,11 @@ impl TagsForm {
         for (i, scope) in self.scopes.iter().enumerate() {
             let on = i == self.scope;
             let hovered = self.hover == Some(Hit::Scope(i));
-            let label = match &scope.series {
-                None => t("Questo volume", "This volume").to_owned(),
-                Some(_) => {
-                    format!("{} \u{00b7} {}", t("Tutta la serie", "The whole series"), volumes(scope.paths.len()))
-                }
+            let n = volumes(scope.paths.len());
+            let label = match &scope.reach {
+                Reach::Volume => t("Questo volume", "This volume").to_owned(),
+                Reach::Series(_) => format!("{} \u{00b7} {n}", t("Tutta la serie", "The whole series")),
+                Reach::Picked => format!("{} \u{00b7} {n}", t("I volumi scelti", "The picked volumes")),
             };
             let color = if on {
                 INK
@@ -459,12 +478,15 @@ impl TagsForm {
                 l.rects.push(Rect::new(x0 - 10.0 * s, y, w + 20.0 * s, row, [1.0, 1.0, 1.0, 0.07]).radius(6.0 * s));
             }
             let name =
-                fit(m, Text::new(g.name.as_str(), Face::Sans, 14.5 * s, if on { INK } else { MUTED }), w - 90.0 * s);
+                fit(m, Text::new(g.name.as_str(), Face::Sans, 14.5 * s, if on { INK } else { MUTED }), w - 190.0 * s);
             l.texts.push(name.on_baseline(x0, y + row * 0.68));
-            let n = Text::new(volumes(*count), Face::Sans, 11.5 * s, fade(MUTED, 0.8))
-                .tabular()
-                .boxed(90.0 * s, Align::Right);
-            l.texts.push(n.on_baseline(x0 + w - 90.0 * s, y + row * 0.68));
+            // di un'altra categoria: lo dice, accanto al numero
+            let n = match g.kind == KINDS[self.kind] {
+                true => volumes(*count),
+                false => format!("{} \u{00b7} {}", kind_label(g.kind, false), volumes(*count)),
+            };
+            let n = Text::new(n, Face::Sans, 11.5 * s, fade(MUTED, 0.8)).tabular().boxed(180.0 * s, Align::Right);
+            l.texts.push(n.on_baseline(x0 + w - 180.0 * s, y + row * 0.68));
             hits.push(([x0 - 10.0 * s, y, w + 20.0 * s, row], Hit::Suggestion(i)));
         }
         // lo spazio di quanti suggerimenti ha la categoria a campo vuoto: mentre
@@ -481,11 +503,13 @@ impl TagsForm {
     ) {
         let scope = self.current();
         let tags = &scope.tags;
-        let head = match (&scope.series, italian()) {
-            (None, true) => format!("Su questo volume \u{00b7} {}", tags.len()),
-            (None, false) => format!("On this volume \u{00b7} {}", tags.len()),
-            (Some(_), true) => format!("Sui volumi della serie \u{00b7} {}", tags.len()),
-            (Some(_), false) => format!("On the volumes of the series \u{00b7} {}", tags.len()),
+        let head = match (&scope.reach, italian()) {
+            (Reach::Volume, true) => format!("Su questo volume \u{00b7} {}", tags.len()),
+            (Reach::Volume, false) => format!("On this volume \u{00b7} {}", tags.len()),
+            (Reach::Series(_), true) => format!("Sui volumi della serie \u{00b7} {}", tags.len()),
+            (Reach::Series(_), false) => format!("On the volumes of the series \u{00b7} {}", tags.len()),
+            (Reach::Picked, true) => format!("Sui volumi scelti \u{00b7} {}", tags.len()),
+            (Reach::Picked, false) => format!("On the picked volumes \u{00b7} {}", tags.len()),
         };
         l.texts.push(caps(&head, 10.0 * s, MUTED).on_baseline(x0, y0));
         l.rects.push(Rect::new(x0, (y0 + 10.0 * s).round(), w, s.round(), alpha(HAIR, 0.7)));

@@ -413,6 +413,9 @@ pub struct App {
     touches: touch::Touches,
     /// I dati dei volumi corretti a mano.
     edits: fumetto_core::edits::Edits,
+    /// I cambi ai tag da annullare con Ctrl+Z, l'ultimo in fondo: come erano
+    /// le correzioni prima, e cosa e' cambiato.
+    tag_undo: Vec<(fumetto_core::edits::Snapshot, tags::TagChange)>,
     /// Gli ultimi letti anche nella jump list di Windows.
     jumplist: JumpList,
     /// La ricerca della libreria fatta anche sui server.
@@ -539,6 +542,7 @@ impl App {
             open_at_end: None,
             touches: touch::Touches::default(),
             edits,
+            tag_undo: Vec::new(),
             jumplist,
             search: search::ServerSearch::default(),
             last_click: None,

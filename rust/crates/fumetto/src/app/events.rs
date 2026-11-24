@@ -225,6 +225,14 @@ impl App {
             return self.capture_key(event, event_loop);
         }
         let command = if cfg!(target_os = "macos") { self.modifiers.super_key() } else { self.modifiers.control_key() };
+        // Ctrl+Z annulla l'ultimo cambio ai tag, anche dal loro modulo
+        if command
+            && !self.modifiers.shift_key()
+            && event.key_without_modifiers() == Key::Character("z".into())
+            && self.undo_tags()
+        {
+            return self.request_redraw();
+        }
         // un modulo o i tag: Ctrl+V incolla, e Ctrl+Alt (AltGr su Windows,
         // per la @ della tastiera italiana) scrive
         if self.ui.typing() && command && !self.modifiers.alt_key() {
@@ -379,6 +387,12 @@ impl App {
             && !press.dragged
         {
             let ctx = input_context!(self);
+            // Ctrl+clic (Cmd su macOS) sceglie piu' volumi in libreria
+            let extend =
+                if cfg!(target_os = "macos") { self.modifiers.super_key() } else { self.modifiers.control_key() };
+            if extend && self.ui.pick(press.x, press.y, &ctx) {
+                return self.request_redraw();
+            }
             match self.ui.click(press.x, press.y, &ctx) {
                 Handled::Yes(cmd) => {
                     self.request_redraw();

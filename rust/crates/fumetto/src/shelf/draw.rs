@@ -27,6 +27,7 @@ impl Shelf {
             self.draw_empty(&mut l, d, &g);
         }
         let mut layers = vec![l, self.bar(d, &g, m)];
+        layers.extend(self.pick_bar(&g, m));
         layers.extend(self.dropdown(d, &g, m));
         layers
     }
@@ -129,6 +130,16 @@ impl Shelf {
             l.rects.push(
                 Rect::new(x - o, y - o, w + 2.0 * o, h + 2.0 * o, ACCENT).radius(r + o).stroke((2.0 * s).round()),
             );
+        }
+        if self.is_picked(d, &p.tile) {
+            // scelta con Ctrl+clic: velata, con il segno in un cerchio rosso
+            l.rects.push(Rect::new(x, y, w, h, [0.0, 0.0, 0.0, 0.35]).radius(r));
+            l.rects.push(Rect::new(x, y, w, h, ACCENT).radius(r).stroke((3.0 * s).round()));
+            let (cx, cy, rr) = (x + w - 18.0 * s, y + 18.0 * s, 11.0 * s);
+            l.rects.push(Rect::new(cx - rr, cy - rr, 2.0 * rr, 2.0 * rr, ACCENT).radius(rr));
+            let ink = [1.0, 1.0, 1.0, 1.0];
+            l.rects.push(Rect::line(cx - 5.0 * s, cy, cx - 1.5 * s, cy + 4.0 * s, 1.1 * s, ink));
+            l.rects.push(Rect::line(cx - 1.5 * s, cy + 4.0 * s, cx + 5.0 * s, cy - 4.0 * s, 1.1 * s, ink));
         }
         if let Tile::Volume(i) = p.tile {
             draw_progress(l, d.status[i], x, (y + h + 7.0 * s).round(), w, s);

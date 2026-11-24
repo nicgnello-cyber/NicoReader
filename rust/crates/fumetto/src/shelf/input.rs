@@ -1,12 +1,13 @@
 //! Tasti, clic, rotella e scorrimento morbido della libreria.
 
 use super::*;
+use crate::ui::TagsOf;
 
 impl Shelf {
     fn hit(&self, d: &ShelfData, view: (f32, f32), s: f32, x: f32, y: f32) -> Option<Hit> {
         let g = Geo::new(view, s);
         // la tendina della ricerca sta sopra le celle
-        if let Some(hit) = self.suggestion_at(d, view, s, x, y) {
+        if let Some(hit) = self.suggestion_at(d, view, s, x, y).or_else(|| self.pick_hit(view, s, x, y)) {
             return Some(hit);
         }
         if y < g.top {
@@ -97,6 +98,11 @@ impl Shelf {
                 }
                 Handled::Yes(None)
             }
+            Some(Hit::PickTags) => Handled::Yes(Some(Command::EditTags(TagsOf::Volumes(self.picked.clone())))),
+            Some(Hit::PickClear) => {
+                self.picked.clear();
+                Handled::Yes(None)
+            }
             Some(Hit::Bar) | None => Handled::Yes(None),
         }
     }
@@ -171,6 +177,8 @@ impl Shelf {
                 if !self.search.is_empty() {
                     self.search.clear();
                     self.reset_view();
+                } else if !self.picked.is_empty() {
+                    self.picked.clear();
                 } else if self.inside(d) {
                     self.back(d);
                 } else if d.reading {

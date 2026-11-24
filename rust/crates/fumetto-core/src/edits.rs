@@ -115,6 +115,17 @@ impl VolumeEdit {
     }
 }
 
+/// Le correzioni di alcuni volumi in un momento: per annullare un cambio.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Snapshot(Vec<(PathBuf, Option<VolumeEdit>)>);
+
+impl Snapshot {
+    /// I volumi della fotografia.
+    pub fn paths(&self) -> impl Iterator<Item = &Path> {
+        self.0.iter().map(|(p, _)| p.as_path())
+    }
+}
+
 pub struct Edits {
     /// `None`: solo in memoria (le prove).
     file: Option<PathBuf>,
@@ -161,6 +172,24 @@ impl Edits {
             if !edit.is_empty() {
                 self.map.insert(key, edit);
             }
+        }
+        self.save()
+    }
+
+    /// Come sono adesso le correzioni di questi volumi: per tornarci.
+    pub fn snapshot(&self, paths: &[PathBuf]) -> Snapshot {
+        Snapshot(paths.iter().map(|p| (p.clone(), self.get(p).cloned())).collect())
+    }
+
+    /// Rimette le correzioni come erano nella fotografia (annulla cio' che e'
+    /// cambiato dopo), e le scrive.
+    pub fn restore(&mut self, snapshot: &Snapshot) -> io::Result<()> {
+        for (path, edit) in &snapshot.0 {
+            let key = Self::key(path);
+            match edit.as_ref().filter(|e| !e.is_empty()) {
+                Some(edit) => self.map.insert(key, edit.clone()),
+                None => self.map.remove(&key),
+            };
         }
         self.save()
     }
@@ -283,6 +312,22 @@ mod tests {
         // tolto da tutti: le correzioni vuote spariscono
         edits.update(&paths, |_, e| e.remove_tag(&tag)).unwrap();
         assert!(paths.iter().all(|p| edits.get(p).is_none()));
+    }
+
+    #[test]
+    fn si_torna_alla_fotografia() {
+        use crate::library::{Group, GroupKind};
+        let mut edits = Edits::in_memory();
+        let paths: Vec<PathBuf> = (1..=2).map(|n| PathBuf::from(format!("/serie/v{n}.cbz"))).collect();
+        let wolverine = Group::new(GroupKind::Character, "Wolverine", None);
+        edits.update(&paths[..1], |_, e| e.add_tag(wolverine.clone(), &[])).unwrap();
+        let before = edits.snapshot(&paths);
+        assert_eq!(before.paths().count(), 2);
+        edits.update(&paths, |_, e| e.add_tag(Group::new(GroupKind::Tag, "Letto", None), &[])).unwrap();
+        edits.update(&paths[..1], |_, e| e.remove_tag(&wolverine)).unwrap();
+        edits.restore(&before).unwrap();
+        assert_eq!(edits.get(&paths[0]).map(|e| e.tags.clone()), Some(vec![wolverine]));
+        assert!(edits.get(&paths[1]).is_none(), "chi non aveva correzioni torna a non averne");
     }
 
     #[test]
