@@ -1,13 +1,16 @@
 //! I moduli da scrivere: aggiungere un server alla libreria (Komga, Kavita:
 //! indirizzo, nome e password; Invio prova il collegamento, il server entra
 //! nella libreria solo se risponde), la password di un PDF protetto, i dati
-//! di un volume corretti a mano.
+//! di un volume corretti a mano, il nome nuovo di un tag.
 
 use std::path::PathBuf;
 
 use super::*;
 use fumetto_core::edits::VolumeEdit;
+use fumetto_core::library::GroupKind;
 use fumetto_core::remote::Server;
+
+use crate::shelf::kind_label;
 
 /// Quanto puo' essere lungo un campo: un indirizzo con la chiave di Kavita
 /// sta largo dentro.
@@ -20,6 +23,8 @@ pub(crate) struct ServerForm {
     pdf: Option<(PathBuf, String)>,
     /// I dati di un volume: titolo, serie e numero nei campi, piu' il verso.
     volume: Option<VolumeData>,
+    /// Un tag da rinominare in tutta la libreria: la categoria, il nome di adesso.
+    rename: Option<(GroupKind, String)>,
     focus: usize,
     /// Si sta provando il collegamento: si aspetta.
     busy: bool,
@@ -52,7 +57,21 @@ pub(super) enum Outcome {
 
 impl ServerForm {
     pub(super) fn new() -> ServerForm {
-        ServerForm { fields: Default::default(), pdf: None, volume: None, focus: 0, busy: false, error: None }
+        ServerForm {
+            fields: Default::default(),
+            pdf: None,
+            volume: None,
+            rename: None,
+            focus: 0,
+            busy: false,
+            error: None,
+        }
+    }
+
+    /// Il nome nuovo di un tag, a partire da quello di adesso.
+    pub(super) fn rename(kind: GroupKind, name: String) -> ServerForm {
+        let fields = [name.clone(), String::new(), String::new()];
+        ServerForm { fields, rename: Some((kind, name)), ..ServerForm::new() }
     }
 
     /// I dati di un volume da correggere, con i valori di adesso nei campi.
@@ -72,7 +91,7 @@ impl ServerForm {
 
     /// Quanti campi da scrivere ha il modulo.
     fn count(&self) -> usize {
-        if self.pdf.is_some() { 1 } else { 3 }
+        if self.pdf.is_some() || self.rename.is_some() { 1 } else { 3 }
     }
 
     /// Quante righe si scelgono con Tab: i campi, e il verso per un volume.
@@ -82,7 +101,7 @@ impl ServerForm {
 
     /// Il campo si scrive a pallini.
     fn masked(&self, i: usize) -> bool {
-        self.volume.is_none() && i == self.count() - 1
+        self.volume.is_none() && self.rename.is_none() && i == self.count() - 1
     }
 
     /// Il verso dopo (o prima): come il file, da sinistra, da destra.
@@ -165,6 +184,19 @@ impl ServerForm {
             self.busy = true;
             return Outcome::Submit(Command::SaveVolume(v.path.clone(), edit));
         }
+        if let Some((kind, old)) = &self.rename {
+            let new = self.fields[0].trim();
+            if new.is_empty() {
+                self.error = Some(t("Manca il nome nuovo.", "The new name is missing.").into());
+                return Outcome::Stay;
+            }
+            if new == old {
+                return Outcome::Close;
+            }
+            self.busy = true;
+            self.error = None;
+            return Outcome::Submit(Command::RenameTag(*kind, old.clone(), new.to_owned()));
+        }
         if let Some((path, _)) = &self.pdf {
             if self.fields[0].is_empty() {
                 return Outcome::Stay;
@@ -243,6 +275,19 @@ impl ServerForm {
 
     /// In testa: che modulo e', il suo titolo, due righe di aiuto.
     fn heading(&self) -> (&'static str, &str, [&'static str; 2]) {
+        if let Some((_, name)) = &self.rename {
+            let help = [
+                t(
+                    "Il nome nuovo vale su tutti i volumi che hanno il tag.",
+                    "The new name applies to every volume with the tag.",
+                ),
+                t(
+                    "Se un tag con quel nome c'\u{e8} gi\u{e0}, i due diventano uno.",
+                    "If a tag with that name already exists, the two become one.",
+                ),
+            ];
+            return (t("Rinomina il tag", "Rename the tag"), name, help);
+        }
         if let Some(v) = &self.volume {
             let help = [
                 t(
@@ -281,7 +326,9 @@ impl ServerForm {
 
     /// I nomi dei campi.
     fn labels(&self) -> Vec<&'static str> {
-        if self.pdf.is_some() {
+        if let Some((kind, _)) = &self.rename {
+            vec![kind_label(*kind, false)]
+        } else if self.pdf.is_some() {
             vec![t("Password", "Password")]
         } else if self.volume.is_some() {
             vec![t("Titolo", "Title"), t("Serie", "Series"), t("Numero", "Number")]
@@ -335,13 +382,22 @@ impl ServerForm {
     fn status(&self) -> (String, [u8; 4]) {
         let (line, color) = match (&self.error, self.busy) {
             (_, true) if self.pdf.is_some() => (t("Apertura\u{2026}", "Opening\u{2026}"), MUTED),
-            (_, true) if self.volume.is_some() => (t("Salvataggio\u{2026}", "Saving\u{2026}"), MUTED),
+            (_, true) if self.volume.is_some() || self.rename.is_some() => {
+                (t("Salvataggio\u{2026}", "Saving\u{2026}"), MUTED)
+            }
             (_, true) => (t("Collegamento in corso\u{2026}", "Connecting\u{2026}"), MUTED),
             (Some(e), _) => return (e.clone(), ACCENT_TEXT),
             (None, _) if self.volume.is_some() => (
                 t(
                     "Tab per il campo dopo   \u{00b7}   \u{2190} \u{2192} per il verso   \u{00b7}   Invio per salvare   \u{00b7}   Esc per lasciar stare",
                     "Tab for the next field   \u{00b7}   \u{2190} \u{2192} for the direction   \u{00b7}   Enter to save   \u{00b7}   Esc to cancel",
+                ),
+                MUTED,
+            ),
+            (None, _) if self.rename.is_some() => (
+                t(
+                    "Invio per rinominare   \u{00b7}   Esc per lasciar stare",
+                    "Enter to rename   \u{00b7}   Esc to cancel",
                 ),
                 MUTED,
             ),

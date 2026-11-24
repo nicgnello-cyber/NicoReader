@@ -121,8 +121,19 @@ che ce l'hanno ("questo personaggio c'e' anche in..."). L'icona degli
 scaffali nella barra della libreria mostra tutti i tag, per categoria; e la
 ricerca trova un volume anche dai suoi tag: mentre si scrive ("azio"), sotto
 si apre una tendina con i tag che rispondono (Azione...), con la categoria e
-quanti volumi li hanno; un clic, o ↓ e Invio, porta fra i loro volumi. Una lista di lettura si apre nel
-suo ordine, anche fra serie diverse.
+quanti volumi li hanno; un clic, o ↓ e Invio, porta fra i loro volumi. Per
+cercare in una categoria sola la si scrive davanti, con i due punti:
+`personaggio:wolverine`, `genere:giallo`, `autore: moebius` (`tag:` cerca in
+tutte). Una lista di lettura si apre nel suo ordine, anche fra serie diverse.
+
+Per un volume di una serie, in cima al pannello dei tag si sceglie fra
+*Questo volume* e *Tutta la serie* (Tab cambia): sulla serie un tag si
+aggiunge o si toglie a tutti i suoi volumi in un colpo, e un tag che ne hanno
+solo alcuni lo dice ("3/12"). Lo stesso dalla libreria: tasto destro sulla
+pila di una serie → Tag della serie…. Nell'elenco dei tag, tasto destro su un
+tag: *Rinomina…* gli cambia nome su tutti i volumi (se un tag con il nome
+nuovo c'e' gia', i due diventano uno), *Togli da tutti i volumi…* chiede
+conferma e lo toglie.
 
 Per leggere da un server Komga o Kavita: tasto destro → Aggiungi un server…
 (o l'icona della cartella nella libreria). Per Komga l'indirizzo del server,

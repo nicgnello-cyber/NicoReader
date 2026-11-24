@@ -37,7 +37,7 @@ impl App {
     /// Quando ricontrollare.
     pub(super) fn search_tick(&mut self, now: Instant) -> Option<Instant> {
         let typed = match self.shelf_shown() && !self.settings.servers.is_empty() {
-            true => self.ui.shelf.search.trim().to_owned(),
+            true => self.ui.shelf.server_search(),
             false => String::new(),
         };
         if typed != self.search.typed {

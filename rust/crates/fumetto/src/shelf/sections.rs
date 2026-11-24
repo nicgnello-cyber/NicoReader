@@ -7,8 +7,8 @@ use super::*;
 impl Shelf {
     /// Le sezioni da mostrare, con filtro, ricerca e serie applicati.
     pub(super) fn sections(&self, d: &ShelfData) -> Vec<Section> {
-        let needle = self.search.to_lowercase();
-        let found = |e: &Entry| matches(e, &needle);
+        let query = Query::parse(&self.search);
+        let found = |e: &Entry| query.matches(e);
         let mut visible = self.visible(d, &found);
         let single = |tiles: Vec<Tile>| vec![Section { title: String::new(), tiles, one_row: false }];
 
@@ -25,18 +25,18 @@ impl Shelf {
             return single(stacks(d, &visible, self.sort));
         }
         if self.groups {
-            return group_sections(d, self.filter, &needle, &|e| matches_text(e, &needle));
+            return group_sections(d, self.filter, &query);
         }
         // per cartelle: la ricerca resta un elenco unico, i filtri valgono dentro
-        if self.folders && needle.is_empty() {
+        if self.folders && query.is_empty() {
             let (here, top) = self.folder_here(d);
             let mut sections: Vec<Section> =
                 reading_row(d, &visible).filter(|_| top && self.filter == Filter::All).into_iter().collect();
             sections.extend(folder_sections(d, &visible, here.as_deref(), self.sort));
             return sections;
         }
-        if self.filter != Filter::All || !needle.is_empty() {
-            return self.found_sections(d, visible, !needle.is_empty());
+        if self.filter != Filter::All || !query.is_empty() {
+            return self.found_sections(d, visible, !query.is_empty());
         }
         let mut sections: Vec<Section> = reading_row(d, &visible).into_iter().collect();
         let n = d.library_len();
@@ -80,11 +80,9 @@ impl Shelf {
     }
 }
 
-/// Il volume corrisponde alla ricerca (gia' in minuscolo): nel titolo, nella
-/// serie o negli autori.
-/// Il volume risponde alla ricerca: titolo, serie, autori, o uno dei suoi
-/// tag (un personaggio, una categoria, un'etichetta).
-fn matches(e: &Entry, needle: &str) -> bool {
+/// Il volume risponde alla ricerca (gia' in minuscolo): titolo, serie,
+/// autori, o uno dei suoi tag (un personaggio, una categoria, un'etichetta).
+pub(super) fn found_in(e: &Entry, needle: &str) -> bool {
     matches_text(e, needle) || e.groups.iter().any(|g| g.name.to_lowercase().contains(needle))
 }
 
@@ -314,38 +312,58 @@ pub(super) fn sort_members(d: &ShelfData, members: &mut [usize], kind: GroupKind
 /// Il nome di un tipo di gruppo, al plurale (titolo di sezione) o al singolare.
 /// Il nome di una categoria di tag, al singolare o al plurale.
 pub(crate) fn kind_label(kind: GroupKind, plural: bool) -> &'static str {
-    let (it, en) = match kind {
-        GroupKind::Collection => (["Raccolta", "Raccolte"], ["Collection", "Collections"]),
-        GroupKind::ReadingList => (["Lista di lettura", "Liste di lettura"], ["Reading list", "Reading lists"]),
-        GroupKind::Author => (["Autore", "Autori"], ["Author", "Authors"]),
-        GroupKind::Character => (["Personaggio", "Personaggi"], ["Character", "Characters"]),
-        GroupKind::Team => (["Gruppo", "Gruppi"], ["Team", "Teams"]),
-        GroupKind::Genre => (["Categoria", "Categorie"], ["Genre", "Genres"]),
-        GroupKind::Format => (["Tipologia", "Tipologie"], ["Type", "Types"]),
-        GroupKind::Language => (["Lingua", "Lingue"], ["Language", "Languages"]),
-        GroupKind::Location => (["Luogo", "Luoghi"], ["Place", "Places"]),
-        GroupKind::Publisher => (["Editore", "Editori"], ["Publisher", "Publishers"]),
-        GroupKind::Tag => (["Etichetta", "Etichette"], ["Label", "Labels"]),
-    };
-    t(it[usize::from(plural)], en[usize::from(plural)])
+    let [it, it_plural, en, en_plural] = kind_names(kind);
+    if plural { t(it_plural, en_plural) } else { t(it, en) }
 }
+
+/// I nomi di una categoria: in italiano (singolare, plurale), in inglese.
+pub(super) fn kind_names(kind: GroupKind) -> [&'static str; 4] {
+    match kind {
+        GroupKind::Collection => ["Raccolta", "Raccolte", "Collection", "Collections"],
+        GroupKind::ReadingList => ["Lista di lettura", "Liste di lettura", "Reading list", "Reading lists"],
+        GroupKind::Author => ["Autore", "Autori", "Author", "Authors"],
+        GroupKind::Character => ["Personaggio", "Personaggi", "Character", "Characters"],
+        GroupKind::Team => ["Gruppo", "Gruppi", "Team", "Teams"],
+        GroupKind::Genre => ["Categoria", "Categorie", "Genre", "Genres"],
+        GroupKind::Format => ["Tipologia", "Tipologie", "Type", "Types"],
+        GroupKind::Language => ["Lingua", "Lingue", "Language", "Languages"],
+        GroupKind::Location => ["Luogo", "Luoghi", "Place", "Places"],
+        GroupKind::Publisher => ["Editore", "Editori", "Publisher", "Publishers"],
+        GroupKind::Tag => ["Etichetta", "Etichette", "Label", "Labels"],
+    }
+}
+
+/// Tutte le categorie, nell'ordine delle sezioni.
+pub(super) const KINDS: [GroupKind; 11] = [
+    GroupKind::Collection,
+    GroupKind::ReadingList,
+    GroupKind::Author,
+    GroupKind::Character,
+    GroupKind::Team,
+    GroupKind::Genre,
+    GroupKind::Format,
+    GroupKind::Language,
+    GroupKind::Location,
+    GroupKind::Publisher,
+    GroupKind::Tag,
+];
 
 pub(super) fn groups_title() -> &'static str {
     t("Tag", "Tags")
 }
 
-pub(super) fn group_sections(
-    d: &ShelfData, filter: Filter, needle: &str, found: &dyn Fn(&Entry) -> bool,
-) -> Vec<Section> {
+pub(super) fn group_sections(d: &ShelfData, filter: Filter, query: &Query) -> Vec<Section> {
     // per tipo (l'ordine di `GroupKind`) e per nome, senza badare alle
-    // maiuscole: "batman" di un volume e "Batman" di un altro sono uno
+    // maiuscole: "batman" di un volume e "Batman" di un altro sono uno.
+    // Ci sono i tag che rispondono alla ricerca e, se non si e' scritta
+    // una categoria, tutti quelli dei volumi che rispondono per titolo
     let mut groups: BTreeMap<(GroupKind, String), (&str, Vec<usize>)> = BTreeMap::new();
     for (i, e) in d.entries[..d.library_len()].iter().enumerate() {
         if !filter.keeps(d.status[i]) {
             continue;
         }
-        let hit = found(e);
-        for g in e.groups.iter().filter(|g| hit || g.name.to_lowercase().contains(needle)) {
+        let hit = query.everywhere() && matches_text(e, &query.text);
+        for g in e.groups.iter().filter(|g| hit || query.takes(g)) {
             let (_, members) = groups.entry((g.kind, g.name.to_lowercase())).or_insert((g.name.as_str(), Vec::new()));
             if members.last() != Some(&i) {
                 members.push(i);

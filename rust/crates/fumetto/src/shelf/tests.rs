@@ -590,3 +590,40 @@ fn la_ricerca_suggerisce_i_tag() {
     assert_eq!(shelf.group, Some((GroupKind::Genre, "Azione".to_owned())));
     assert_eq!(shelf.sections(&d)[0].tiles.len(), 2, "i due volumi di Azione, scritta in due modi");
 }
+
+#[test]
+fn la_ricerca_in_una_categoria() {
+    use super::query::{Query, Scope};
+    use fumetto_core::library::Group;
+    // le categorie in italiano o in inglese, al singolare o al plurale
+    let parsed = |s: &str| {
+        let q = Query::parse(s);
+        (q.scope, q.text)
+    };
+    assert_eq!(parsed("Personaggio: Wolverine "), (Scope::Kind(GroupKind::Character), "wolverine".into()));
+    assert_eq!(parsed("characters:wol"), (Scope::Kind(GroupKind::Character), "wol".into()));
+    assert_eq!(parsed("genere:giallo"), (Scope::Kind(GroupKind::Genre), "giallo".into()));
+    assert_eq!(parsed("tag:azione"), (Scope::Tags, "azione".into()));
+    // una parola qualsiasi prima dei due punti fa parte del titolo
+    assert_eq!(parsed("Batman: Anno uno"), (Scope::Everywhere, "batman: anno uno".into()));
+    let (mut e, st, at) = library();
+    e[0].groups.push(Group::new(GroupKind::Character, "Wolverine", None));
+    // "Wolverine" anche in un'altra categoria: non risponde a "personaggio:"
+    e[1].groups.push(Group::new(GroupKind::Tag, "Wolverine da rileggere", None));
+    let d = data(&e, &st, &at);
+    let found = |shelf: &Shelf| -> Vec<Tile> { shelf.sections(&d).into_iter().flat_map(|s| s.tiles).collect() };
+    let mut shelf = Shelf { search: "personaggio:wolv".into(), ..Shelf::default() };
+    assert_eq!(found(&shelf), [Tile::Volume(0)]);
+    assert!(shelf.server_search().is_empty(), "ai server non si chiede: cercano per titolo");
+    shelf.search = "tag:wolv".into();
+    assert_eq!(found(&shelf).len(), 2, "tag: cerca fra tutte le categorie");
+    // la tendina propone solo i tag della categoria, anche con una lettera
+    shelf.search = "personaggio:w".into();
+    let names: Vec<String> = shelf.suggestions(&d).into_iter().map(|s| s.name).collect();
+    assert_eq!(names, ["Wolverine"]);
+    shelf.search = "wolv".into();
+    assert_eq!(shelf.server_search(), "wolv");
+    // con la categoria e niente dopo: tutti i volumi che ne hanno una
+    shelf.search = "personaggi:".into();
+    assert_eq!(found(&shelf), [Tile::Volume(0)]);
+}

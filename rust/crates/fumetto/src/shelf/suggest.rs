@@ -3,6 +3,7 @@
 //! quelli che cominciano cosi', poi i piu' usati, ognuno con la sua
 //! categoria e quanti volumi lo hanno. Un clic, o le frecce e Invio, porta
 //! fra i volumi di quel tag. I volumi trovati restano sotto, come prima.
+//! Con una categoria davanti ("personaggio:") solo i tag di quella.
 
 use super::draw::BarGeo;
 use super::*;
@@ -35,21 +36,24 @@ impl Shelf {
     /// I tag che rispondono alla ricerca. Nessuno fra i tag (li' la ricerca
     /// filtra gia' i tag) o con meno di due lettere scritte.
     pub(super) fn suggestions(&self, d: &ShelfData) -> Vec<Suggestion> {
-        let needle = self.search.trim().to_lowercase();
-        if self.groups || needle.chars().count() < FROM {
+        let query = Query::parse(&self.search);
+        // con una categoria davanti bastano i due punti: "personaggio:" li mostra tutti
+        let enough = !query.everywhere() || query.text.chars().count() >= FROM;
+        if self.groups || !enough {
             return Vec::new();
         }
+        let needle = &query.text;
         // per categoria e nome, senza badare alle maiuscole
         let mut found: HashMap<(GroupKind, String), Suggestion> = HashMap::new();
         for e in &d.entries[..d.library_len()] {
-            for g in e.groups.iter().filter(|g| g.name.to_lowercase().contains(&needle)) {
+            for g in e.groups.iter().filter(|g| query.takes(g)) {
                 found
                     .entry((g.kind, g.name.to_lowercase()))
                     .or_insert_with(|| Suggestion { kind: g.kind, name: g.name.clone(), count: 0 })
                     .count += 1;
             }
         }
-        let starts = |s: &Suggestion| s.name.to_lowercase().starts_with(&needle);
+        let starts = |s: &Suggestion| s.name.to_lowercase().starts_with(needle.as_str());
         let mut v: Vec<Suggestion> = found.into_values().collect();
         v.sort_by(|a, b| {
             starts(b).cmp(&starts(a)).then(b.count.cmp(&a.count)).then_with(|| natural_cmp(&a.name, &b.name))
