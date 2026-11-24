@@ -108,6 +108,7 @@ mod arrivals;
 mod commands;
 mod draw;
 mod events;
+mod ready;
 mod search;
 mod shelf;
 mod tags;
@@ -118,14 +119,13 @@ mod volume;
 
 use actions::{combo_of, place, ui_key};
 use draw::{always_ready, context, thumbs_data};
+pub use ready::Ready;
+use ready::{Uploader, deliver_ready};
 use shelf::{always, shelf_data};
 use tools::save_page;
 
 /// Quante miniature si tengono sulla scheda video: a 150x225 pesano 135 KB l'una.
 const THUMBS_KEPT: usize = 600;
-
-/// Due clic entro questo tempo, vicini, sono un doppio clic.
-const DOUBLE_CLICK: Duration = Duration::from_millis(450);
 
 /// Memoria per le pagine pronte (sulla scheda video o, prima che arrivi, in
 /// RAM). Alla misura dello schermo una pagina pesa 3 MB: ce ne stanno centinaia.
@@ -139,7 +139,7 @@ const SAVE_EVERY: Duration = Duration::from_secs(1);
 const NEXT_OFFER_HOLD: Duration = Duration::from_secs(8);
 
 pub enum UserEvent {
-    Loaded(Loaded),
+    Loaded(Ready<Loaded>),
     /// La scheda video e' pronta (o non lo sara' mai).
     Gpu(Box<Result<GpuStart, String>>),
     /// macOS: dei volumi aperti dal Finder (in `finder::take`).
@@ -170,13 +170,13 @@ pub enum UserEvent {
     /// La prova del collegamento a un server: quanti volumi ha, o l'errore.
     ServerChecked(Server, Result<usize, String>),
     /// Una copertina pronta.
-    Cover(Cover),
+    Cover(Ready<Cover>),
     /// Una miniatura pronta.
-    Thumb(Loaded),
+    Thumb(Ready<Loaded>),
     /// Una pagina ai suoi pixel, per la lente.
-    LensPage(Loaded),
+    LensPage(Ready<Loaded>),
     /// Una pagina migliorata dall'AI (o non migliorabile).
-    Upscaled(Upscaled),
+    Upscaled(Ready<Upscaled>),
     /// L'ultima Release su GitHub (vedi app/update.rs).
     Update(Release),
     /// Si', apri la pagina della versione nuova.
@@ -232,7 +232,7 @@ struct Gfx {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     gpu: Gpu,
-    renderer: Renderer,
+    renderer: Arc<Renderer>,
     overlay: Overlay,
 }
 
@@ -266,7 +266,7 @@ struct ShownCovers {
 
 /// Una copertina della libreria sulla scheda video.
 struct ShelfCover {
-    image: GpuImage,
+    image: CoverImage,
     /// La misura della cella per cui e' fatta.
     size: (u32, u32),
     /// Da quando c'e': compare sfumando.
@@ -279,6 +279,13 @@ impl ShelfCover {
         let a = (now.saturating_duration_since(self.since).as_secs_f32() / COVER_FADE).min(1.0);
         a * a * (3.0 - 2.0 * a)
     }
+}
+
+/// Dove sta una copertina: sulla scheda video, o (prima che arrivi) in RAM,
+/// per disegnarla dal processore.
+enum CoverImage {
+    Gpu(GpuImage),
+    Cpu(Page),
 }
 
 /// Quanto ci mette una copertina a comparire, in secondi.
@@ -332,6 +339,9 @@ pub struct App {
 
     window: Option<Arc<Window>>,
     gfx: Option<Gfx>,
+    /// Il disegnatore per i thread di lavoro, che caricano le pagine sulla
+    /// scheda video (ready.rs).
+    uploader: Uploader,
     proxy: EventLoopProxy<UserEvent>,
     cpu: Option<CpuView>,
     cpu_pages: HashMap<usize, (Page, Target)>,
@@ -451,17 +461,6 @@ pub struct App {
     script: Option<Script>,
 }
 
-/// Come un thread di lavoro consegna all'app cio' che ha finito: come
-/// l'evento `wrap`.
-fn deliver<T: 'static>(
-    proxy: &EventLoopProxy<UserEvent>, wrap: fn(T) -> UserEvent,
-) -> impl Fn(T) + Send + Sync + use<T> {
-    let proxy = proxy.clone();
-    move |x| {
-        let _ = proxy.send_event(wrap(x));
-    }
-}
-
 /// I file accanto ai progressi: le correzioni ai dati dei volumi, i punti
 /// di lettura visti sui server, i volumi scaricati. La prova automatica,
 /// senza cartella sua (`data`), tiene le correzioni in memoria.
@@ -497,14 +496,15 @@ impl App {
         let edits = open_data(data, &covers_dir);
         let info_cache = info_cache_file(&covers_dir);
         let keymap = Keymap::new(&settings.keys);
-        let thumb_loader = Loader::new(2, deliver(&proxy, UserEvent::Thumb));
-        let lens_loader = Loader::new(2, deliver(&proxy, UserEvent::LensPage));
-        let upscaler = Upscaler::new(esrgan_engine(), deliver(&proxy, UserEvent::Upscaled));
-        let cover_loader = CoverLoader::new(covers_dir, deliver(&proxy, UserEvent::Cover));
+        let uploader = Uploader::default();
+        let thumb_loader = Loader::new(2, deliver_ready(&proxy, &uploader, UserEvent::Thumb));
+        let lens_loader = Loader::new(2, deliver_ready(&proxy, &uploader, UserEvent::LensPage));
+        let upscaler = Upscaler::new(esrgan_engine(), deliver_ready(&proxy, &uploader, UserEvent::Upscaled));
+        let cover_loader = CoverLoader::new(covers_dir, deliver_ready(&proxy, &uploader, UserEvent::Cover));
         // ponytail: variabile solo per le prove, la scelta vera arriva dalle misure
         let threads =
             std::env::var("FUMETTO_THREADS").ok().and_then(|t| t.parse().ok()).unwrap_or_else(Loader::default_threads);
-        let loader = Loader::new(threads, deliver(&proxy, UserEvent::Loaded));
+        let loader = Loader::new(threads, deliver_ready(&proxy, &uploader, UserEvent::Loaded));
         let mut app = App {
             loader,
             book: None,
@@ -515,6 +515,7 @@ impl App {
             marked: None,
             window: None,
             gfx: None,
+            uploader,
             proxy,
             cpu: None,
             cpu_pages: HashMap::new(),

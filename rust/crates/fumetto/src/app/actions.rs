@@ -178,7 +178,7 @@ impl App {
     pub(super) fn double_click(&mut self, x: f32, y: f32) -> Option<Action> {
         let now = Instant::now();
         let double = self.last_click.take().is_some_and(|(t, px, py)| {
-            now - t <= DOUBLE_CLICK && (x - px).abs() + (y - py).abs() < 10.0 * self.scale()
+            now - t <= crate::system::double_click_time() && (x - px).abs() + (y - py).abs() < 10.0 * self.scale()
         });
         if double {
             return Some(Action::ToggleFullscreen);

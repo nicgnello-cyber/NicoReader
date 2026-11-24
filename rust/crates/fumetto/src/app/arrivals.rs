@@ -33,57 +33,57 @@ impl App {
         }
     }
 
-    pub(super) fn cover_arrived(&mut self, c: Cover) {
-        match (&self.gfx, c.page) {
-            (Some(gfx), Ok(page)) => {
-                if let Ok(image) = gfx.renderer.upload(&page) {
-                    // rifatta per una cella di un'altra misura: era gia' a
-                    // schermo, non ricompare da capo
-                    let since = self.covers.get(&c.path).map_or_else(Instant::now, |old| old.since);
-                    self.covers.insert(c.path, ShelfCover { image, size: c.size, since });
-                    self.request_redraw();
-                }
-            }
-            // senza scheda video non si tengono: si richiedono quando c'e'
-            (None, Ok(_)) => self.cover_wanted.clear(),
-            (_, Err(e)) => {
+    pub(super) fn cover_arrived(&mut self, Ready { item: c, image }: Ready<Cover>) {
+        let image = match c.page.as_ref().map(|page| self.on_gpu(image, page)) {
+            Ok(Some(Ok(image))) => CoverImage::Gpu(image),
+            Ok(Some(Err(e))) => return eprintln!("copertina di {}: {e}", c.path.display()),
+            // senza scheda video, dal processore finche' non arriva
+            Ok(None) => match c.page {
+                Ok(page) => CoverImage::Cpu(page),
+                Err(_) => return,
+            },
+            Err(e) => {
                 eprintln!("copertina di {}: {e}", c.path.display());
                 self.covers_failed.insert(c.path);
-                self.request_redraw();
+                return self.request_redraw();
             }
-        }
+        };
+        // rifatta per una cella di un'altra misura: era gia' a schermo, non
+        // ricompare da capo
+        let since = self.covers.get(&c.path).map_or_else(Instant::now, |old| old.since);
+        self.covers.insert(c.path, ShelfCover { image, size: c.size, since });
+        self.request_redraw();
     }
 
-    pub(super) fn thumb_arrived(&mut self, loaded: Loaded) {
+    pub(super) fn thumb_arrived(&mut self, Ready { item: loaded, image }: Ready<Loaded>) {
         if loaded.generation != self.thumb_generation {
             return;
         }
-        match (&self.gfx, loaded.page) {
-            (Some(gfx), Ok(page)) => {
-                if let Ok(image) = gfx.renderer.upload(&page) {
-                    self.thumb_images.insert(loaded.index, (image, loaded.target));
-                    self.request_redraw();
-                }
+        match loaded.page.as_ref().map(|page| self.on_gpu(image, page)) {
+            Ok(Some(Ok(image))) => {
+                self.thumb_images.insert(loaded.index, (image, loaded.target));
+                self.request_redraw();
             }
+            Ok(Some(Err(e))) => eprintln!("miniatura {}: {e}", loaded.index + 1),
+            Err(e) => eprintln!("miniatura {}: {e}", loaded.index + 1),
             // senza scheda video non si tengono: si richiedono quando c'e'
-            (None, Ok(_)) => self.thumb_wanted = (None, Vec::new()),
-            (_, Err(e)) => eprintln!("miniatura {}: {e}", loaded.index + 1),
+            Ok(None) => self.thumb_wanted = (None, Vec::new()),
         }
     }
 
     /// Una pagina ai suoi pixel, per la lente. Pesano: se ne tengono poche,
     /// le piu' vicine alla pagina che si legge.
-    pub(super) fn lens_page_arrived(&mut self, loaded: Loaded) {
+    pub(super) fn lens_page_arrived(&mut self, Ready { item: loaded, image }: Ready<Loaded>) {
         if loaded.generation != self.lens_generation {
             return;
         }
-        let image = match (&self.gfx, loaded.page) {
-            (Some(gfx), Ok(page)) => gfx.renderer.upload(&page),
-            (None, Ok(_)) => {
+        let image = match loaded.page.as_ref().map(|page| self.on_gpu(image, page)) {
+            Ok(Some(image)) => image,
+            Ok(None) => {
                 self.lens_wanted = (None, Vec::new());
                 return;
             }
-            (_, Err(e)) => Err(e.to_string()),
+            Err(e) => Err(e.clone()),
         };
         match image {
             Ok(image) => {
@@ -101,7 +101,7 @@ impl App {
 
     /// Una pagina migliorata dall'AI, se vale ancora per cio' che si guarda;
     /// poi la prossima. Senza una scheda video adatta lo si dice, e si spegne.
-    pub(super) fn upscaled(&mut self, u: Upscaled) {
+    pub(super) fn upscaled(&mut self, Ready { item: u, image }: Ready<Upscaled>) {
         if let Some(e) = u.error {
             if self.settings.upscale {
                 self.toggle_upscale();
@@ -113,17 +113,17 @@ impl App {
         if u.generation != self.generation || !self.settings.upscale {
             return;
         }
-        match (u.page, &self.gfx) {
-            (Some(page), Some(gfx)) if current == Some(u.target) => {
-                if let Ok(image) = gfx.renderer.upload(&page) {
+        match &u.page {
+            Some(page) if current == Some(u.target) => {
+                if let Some(Ok(image)) = self.on_gpu(image, page) {
                     self.shown.insert(u.index, Shown { image, target: u.target, upscaled: true, stale: false });
                     self.request_redraw();
                 }
             }
-            (None, _) => {
+            None => {
                 self.upscale_failed.insert((u.index, u.target));
             }
-            _ => {}
+            Some(_) => {}
         }
         self.request_upscale();
     }

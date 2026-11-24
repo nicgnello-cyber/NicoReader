@@ -8,6 +8,7 @@
 
 pub mod esrgan;
 mod overlay;
+mod soft;
 mod tiling;
 
 use std::collections::HashMap;
@@ -16,6 +17,7 @@ use std::sync::Mutex;
 use fumetto_core::Page;
 
 pub use overlay::{Align, Estimate, Face, Layer, Measure, Overlay, Rect, Scene, Text};
+pub use soft::{Canvas, SoftOverlay};
 pub use tiling::{MARGIN, TILE_ROWS};
 /// La versione di wgpu con cui e' fatto tutto: chi disegna usa questa.
 pub use wgpu;
