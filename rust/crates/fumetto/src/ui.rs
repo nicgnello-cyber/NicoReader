@@ -16,7 +16,7 @@
 //! scelto. Le icone sono tratti sottili disegnati qui, alla scala dello
 //! schermo: niente immagini, niente caratteri di icone.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use fumetto_core::lingua::{italian, t};
@@ -52,6 +52,7 @@ pub(crate) use style::{
     ACCENT, ACCENT_TEXT, BLACK, HAIR, INK, INK_F, MUTED, MUTED_F, PLATE, TICK, alpha, caps, fade, fit, rgb,
 };
 use tags::TagsForm;
+pub use tags::{TagScope, TagsOf};
 pub use welcome::welcome_covers;
 use welcome::{recent_shown, welcome, welcome_cta_hit, welcome_hit};
 
@@ -156,12 +157,17 @@ pub enum Command {
     EditVolume(PathBuf),
     /// Salva i dati corretti di un volume.
     SaveVolume(PathBuf, fumetto_core::edits::VolumeEdit),
-    /// I tag di un volume: aprirli, aggiungerne uno, toglierne uno.
-    EditTags(PathBuf),
-    AddTag(PathBuf, fumetto_core::library::Group),
-    RemoveTag(PathBuf, fumetto_core::library::Group),
+    /// I tag di un volume o di una serie: aprirli; aggiungerne uno o
+    /// toglierlo, su tutti questi volumi.
+    EditTags(TagsOf),
+    AddTag(Vec<PathBuf>, fumetto_core::library::Group),
+    RemoveTag(Vec<PathBuf>, fumetto_core::library::Group),
     /// La libreria, fra i volumi che hanno questo tag.
     ShowGroup(fumetto_core::library::GroupKind, String),
+    /// Un tag in tutta la libreria: il nome nuovo (se c'e' gia', i due si
+    /// uniscono); toglierlo da tutti i volumi, dopo averlo chiesto.
+    RenameTag(fumetto_core::library::GroupKind, String, String),
+    RemoveTagEverywhere(fumetto_core::library::GroupKind, String),
     /// Toglie le correzioni: tornano i dati del file.
     ResetVolume(PathBuf),
     /// Dalle miniature: va alla pagina (da 0) e torna a leggere.
@@ -173,6 +179,8 @@ pub enum Command {
     /// Interni all'interfaccia: aprire una serie, un gruppo o una cartella,
     /// il menu delle cartelle, il modulo per aggiungere un server.
     Series(String),
+    /// Il modulo per il nome nuovo di un tag.
+    AskRenameTag(fumetto_core::library::GroupKind, String),
     Group(fumetto_core::library::GroupKind, String),
     Folder(PathBuf),
     FoldersMenu(f32, f32),
@@ -311,12 +319,6 @@ impl Ui {
             || self.tags.is_some()
     }
 
-    /// Un modulo da scrivere e' aperto (un server, la password di un PDF):
-    /// i tasti sono per lui.
-    pub fn server_open(&self) -> bool {
-        self.server.is_some()
-    }
-
     /// Il modulo per correggere i dati di un volume: i campi con i valori di
     /// adesso (titolo, serie, numero), le correzioni che c'erano, il verso.
     pub fn edit_volume(
@@ -353,25 +355,30 @@ impl Ui {
         }
     }
 
-    /// Apre i tag di un volume: quelli che ha, e quelli della libreria (con
-    /// quanti volumi li hanno) da suggerire.
+    /// Apre i tag di un volume o di una serie: quelli che hanno (`scopes`,
+    /// non vuoto), e quelli della libreria (con quanti volumi li hanno) da
+    /// suggerire.
     pub fn edit_tags(
-        &mut self, path: PathBuf, title: String, tags: Vec<fumetto_core::library::Group>,
-        known: Vec<(fumetto_core::library::Group, usize)>,
+        &mut self, of: TagsOf, title: String, scopes: Vec<TagScope>, known: Vec<(fumetto_core::library::Group, usize)>,
     ) {
+        if scopes.is_empty() {
+            return;
+        }
         self.menu = None;
         self.goto = None;
         self.prefs = None;
-        self.tags = Some(TagsForm::new(path, title, tags, known, self.tag_kind));
+        self.tags = Some(TagsForm::new(of, title, scopes, known, self.tag_kind));
     }
 
-    /// I tag del volume come sono dopo un cambio (se sono ancora aperti su di lui).
-    pub fn tags_changed(
-        &mut self, path: &Path, tags: Vec<fumetto_core::library::Group>,
-        known: Vec<(fumetto_core::library::Group, usize)>,
-    ) {
-        if let Some(f) = self.tags.as_mut().filter(|f| f.path() == path) {
-            f.update(tags, known);
+    /// Di chi sono i tag aperti, se lo sono.
+    pub fn tags_of(&self) -> Option<&TagsOf> {
+        self.tags.as_ref().map(TagsForm::of)
+    }
+
+    /// I tag aperti come sono dopo un cambio.
+    pub fn tags_changed(&mut self, scopes: Vec<TagScope>, known: Vec<(fumetto_core::library::Group, usize)>) {
+        if let Some(f) = &mut self.tags {
+            f.update(scopes, known);
         }
     }
 
@@ -517,6 +524,11 @@ impl Ui {
                 self.goto = None;
                 self.prefs = None;
                 self.server = Some(ServerForm::new());
+                None
+            }
+            Command::AskRenameTag(kind, name) => {
+                self.menu = None;
+                self.server = Some(ServerForm::rename(kind, name));
                 None
             }
             other => Some(other),

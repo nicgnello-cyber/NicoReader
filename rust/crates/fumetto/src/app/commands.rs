@@ -38,10 +38,12 @@ impl App {
                 let tags = self.edits.get(&path).map(fumetto_core::edits::VolumeEdit::only_tags);
                 self.save_volume(&path, tags.unwrap_or_default());
             }
-            Command::EditTags(path) => self.edit_tags(path),
-            Command::AddTag(path, tag) => self.change_tag(&path, tags::TagChange::Add(tag)),
-            Command::RemoveTag(path, tag) => self.change_tag(&path, tags::TagChange::Remove(tag)),
+            Command::EditTags(of) => self.edit_tags(of),
+            Command::AddTag(paths, tag) => _ = self.change_tag(&paths, tags::TagChange::Add(tag)),
+            Command::RemoveTag(paths, tag) => _ = self.change_tag(&paths, tags::TagChange::Remove(tag)),
             Command::ShowGroup(kind, name) => self.show_group(kind, name),
+            Command::RenameTag(kind, old, new) => self.rename_tag(kind, old, new),
+            Command::RemoveTagEverywhere(kind, name) => self.confirm_untag(kind, name),
             // quelli interni li ha gia' fatti l'interfaccia
             Command::Series(_)
             | Command::Group(..)
@@ -49,7 +51,8 @@ impl App {
             | Command::SortMenu(..)
             | Command::Sort(_)
             | Command::FoldersMenu(..)
-            | Command::AskServer => {}
+            | Command::AskServer
+            | Command::AskRenameTag(..) => {}
         }
         self.request_redraw();
     }

@@ -119,8 +119,21 @@ a mano stanno in `correzioni.json`, nella cartella dei dati: il file del
 volume non si tocca. Un clic su un tag porta in libreria fra gli altri volumi
 che ce l'hanno ("questo personaggio c'e' anche in..."). L'icona degli
 scaffali nella barra della libreria mostra tutti i tag, per categoria; e la
-ricerca trova un volume anche dai suoi tag. Una lista di lettura si apre nel
-suo ordine, anche fra serie diverse.
+ricerca trova un volume anche dai suoi tag: mentre si scrive ("azio"), sotto
+si apre una tendina con i tag che rispondono (Azione...), con la categoria e
+quanti volumi li hanno; un clic, o ↓ e Invio, porta fra i loro volumi. Per
+cercare in una categoria sola la si scrive davanti, con i due punti:
+`personaggio:wolverine`, `genere:giallo`, `autore: moebius` (`tag:` cerca in
+tutte). Una lista di lettura si apre nel suo ordine, anche fra serie diverse.
+
+Per un volume di una serie, in cima al pannello dei tag si sceglie fra
+*Questo volume* e *Tutta la serie* (Tab cambia): sulla serie un tag si
+aggiunge o si toglie a tutti i suoi volumi in un colpo, e un tag che ne hanno
+solo alcuni lo dice ("3/12"). Lo stesso dalla libreria: tasto destro sulla
+pila di una serie → Tag della serie…. Nell'elenco dei tag, tasto destro su un
+tag: *Rinomina…* gli cambia nome su tutti i volumi (se un tag con il nome
+nuovo c'e' gia', i due diventano uno), *Togli da tutti i volumi…* chiede
+conferma e lo toglie.
 
 Per leggere da un server Komga o Kavita: tasto destro → Aggiungi un server…
 (o l'icona della cartella nella libreria). Per Komga l'indirizzo del server,
@@ -197,13 +210,13 @@ e per le pull request che toccano il codice.
 
 Una nuova versione, con i link di "Scarica" che la seguono da soli: si alza
 `version` in `rust/Cargo.toml`, e dopo il merge si crea il tag, dal sito di
-GitHub (Releases -> Draft a new release -> tag `v0.4.9`, "create on publish"
+GitHub (Releases -> Draft a new release -> tag `v0.5.0`, "create on publish"
 -> Publish release) oppure con
 
-    git tag v0.4.9
-    git push origin v0.4.9
+    git tag v0.5.0
+    git push origin v0.5.0
 
-Actions fa i pacchetti di tutti i sistemi e li pubblica nella Release `v0.4.9`,
+Actions fa i pacchetti di tutti i sistemi e li pubblica nella Release `v0.5.0`,
 con i nomi senza versione dei link (se il tag non e' la versione di
 Cargo.toml si ferma), e con le note di `.github/note-release.md` se la
 Release non ne ha. Per riscrivere solo le note della versione attuale: Run

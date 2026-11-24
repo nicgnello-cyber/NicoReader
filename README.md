@@ -121,8 +121,21 @@ kept in `correzioni.json`, in the data folder: the volume's file is never
 touched. A click on a tag takes you to the library, among the other volumes
 that have it ("this character is also in..."). The shelves icon in the
 library bar shows all the tags, by kind; and the search finds a volume by its
-tags too. A reading list opens in its own order, even across different
-series.
+tags too: as you type ("acti"), a drop-down lists the matching tags
+(Action...), with their kind and how many volumes have them; a click, or ↓
+and Enter, takes you to their volumes. To search one kind only, put it in
+front with a colon: `character:wolverine`, `genre:crime`, `author: moebius`
+(`tag:` searches every kind). A reading list opens in its own order, even
+across different series.
+
+For a volume that belongs to a series, the tags panel has two choices at
+the top, *This volume* and *The whole series* (Tab switches): on the series
+a tag is added to, or removed from, all its volumes at once, and a tag only
+some of them have says so ("3/12"). The same from the library: right click
+on a series stack → Series tags…. In the list of tags, right click on a tag:
+*Rename…* changes its name on every volume (if a tag with the new name
+already exists, the two become one), *Remove from every volume…* asks first,
+then removes it.
 
 To read from a Komga or Kavita server: right click → Add a server… (or the
 folder icon in the library). For Komga, the server address with your user
@@ -199,13 +212,13 @@ every `v*` tag, and for pull requests that touch the code.
 To publish a new version, with the Download links following it
 automatically: raise `version` in `rust/Cargo.toml`, merge, then create the
 tag, either from the GitHub website (Releases → Draft a new release → tag
-`v0.4.9`, create on publish → Publish release) or with
+`v0.5.0`, create on publish → Publish release) or with
 
-    git tag v0.4.9
-    git push origin v0.4.9
+    git tag v0.5.0
+    git push origin v0.5.0
 
 Actions builds the packages for every system and publishes them in the
-`v0.4.9` Release, under the version-less names the links use (it stops if the
+`v0.5.0` Release, under the version-less names the links use (it stops if the
 tag doesn't match the version in Cargo.toml), with the notes from
 `.github/note-release.md` if the Release has none. To rewrite only the notes
 of the current version: Run workflow with "note" checked.

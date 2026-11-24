@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use fumetto_core::LibrarySort;
-use fumetto_core::library::{self, Entry, GroupKind, Status, by_number};
+use fumetto_core::library::{self, Entry, GroupKind, Status, by_number, same_name};
 use fumetto_core::lingua::{italian, t};
 use fumetto_core::natural_cmp;
 use fumetto_core::remote::{self, Server};
@@ -163,6 +163,8 @@ pub enum Hit {
     Crumb(usize),
     Return,
     Back,
+    /// Un tag della tendina della ricerca.
+    Suggestion(usize),
     Bar,
 }
 
@@ -278,19 +280,25 @@ pub struct Shelf {
     /// sono alzate, da 0 a 1.
     lifts: Vec<(usize, f32)>,
     lifted_at: Option<Instant>,
+    /// Il tag della tendina della ricerca scelto con le frecce.
+    suggested: Option<usize>,
 }
 
 mod draw;
 mod input;
 mod menus;
+mod query;
 mod sections;
+mod suggest;
 #[cfg(test)]
 mod tests;
 
 #[cfg(test)]
 use draw::BarGeo;
 use draw::bar_hit;
+use query::Query;
 pub(crate) use sections::kind_label;
+use sections::{KINDS, kind_names};
 use sections::{folder_name, groups_title, sort_label, sources};
 
 impl Shelf {
@@ -442,6 +450,21 @@ impl Shelf {
     pub fn enter_group(&mut self, kind: GroupKind, name: String) {
         (self.groups, self.group, self.series) = (true, Some((kind, name)), None);
         self.reset_view();
+    }
+
+    /// Il tag in cui si e' ha un nome nuovo (`Some`) o non c'e' piu'
+    /// (`None`): lo si segue, o si torna all'elenco dei tag.
+    pub fn group_renamed(&mut self, kind: GroupKind, old: &str, new: Option<String>) {
+        if !self.group.as_ref().is_some_and(|(k, name)| *k == kind && same_name(name, old)) {
+            return;
+        }
+        match new {
+            Some(new) => self.group = Some((kind, new)),
+            None => {
+                (self.group, self.series) = (None, None);
+                self.reset_view();
+            }
+        }
     }
 
     /// Un passo indietro: dalla serie al gruppo (o alla libreria, o alla sua

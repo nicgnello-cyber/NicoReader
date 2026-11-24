@@ -152,6 +152,8 @@ pub enum UserEvent {
     DialogClosed,
     /// Si', spostalo nel cestino.
     Confirmed(PathBuf),
+    /// Si', togli questo tag da tutti i volumi.
+    UntagConfirmed(library::GroupKind, String),
     /// La scansione della libreria: prima le cartelle, poi i server.
     Scanned(Box<Scan>),
     /// Un volume di un server aperto in sottofondo; `true`: se non si apre,

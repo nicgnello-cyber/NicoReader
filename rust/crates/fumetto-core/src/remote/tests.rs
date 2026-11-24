@@ -123,7 +123,7 @@ fn indirizzi_relativi() {
     assert_eq!(origin("https://Casa.lan:8443/opds?x=1"), "https://Casa.lan:8443");
     assert_eq!(origin("http://casa"), "http://casa");
     assert_eq!(
-        shown("http://casa:5000/api/opds/gqOv6PtKcWdfyyx24b2rsUaQUgydcmMY"),
+        shown("http://casa:5000/api/opds/CHIAVEFINTAPERLAPROVA0000"),
         "http://casa:5000/api/opds/\u{2022}\u{2022}\u{2022}\u{2022}"
     );
     assert_eq!(shown("https://komga.casa-mia-lunghissima.lan"), "https://komga.casa-mia-lunghissima.lan");

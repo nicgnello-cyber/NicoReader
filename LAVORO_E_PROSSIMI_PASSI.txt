@@ -1,5 +1,5 @@
 NICOREADER (prima: Fumetto) - lettore di fumetti, manga e webtoon
-Stato del progetto al 20 novembre 2026 (versione 0.4.9)
+Stato del progetto al 24 novembre 2026 (versione 0.5.0)
 =====================================================================
 
 Dal 27 settembre il programma si chiama NicoReader e il progetto e'
@@ -914,6 +914,48 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      - In libreria: l'icona degli scaffali mostra tutti i tag per categoria
        (senza badare alle maiuscole: "batman" e "Batman" sono uno), e la
        ricerca trova un volume anche dai suoi tag.
+  4y. [x] La ricerca suggerisce i tag (24 novembre): da due lettere scritte,
+     sotto la ricerca una tendina (shelf/suggest.rs) con i tag della
+     libreria che le contengono, prima quelli che cominciano cosi' e i piu'
+     usati, con categoria e numero di volumi; un clic o giu' e Invio portano
+     fra i volumi del tag. Fra i tag non c'e' (li' la ricerca li filtra
+     gia'). Controllato anche che nel repository non ci siano chiavi o
+     password: nessuna in tutta la storia; una chiave OPDS d'esempio dall'aria
+     vera in una prova e' diventata palesemente finta.
+  4z. [x] Pulizia e versione 0.5.0 (24 novembre). Cercati in tutta la storia
+     del repository riferimenti alle API di Claude, ChatGPT o di altri
+     servizi d'intelligenza artificiale (indirizzi, librerie, variabili,
+     chiavi): nessuno. Cercato cio' che non serve: tolte GroupKind::ALL
+     (mai usata), Ui::server_open (sostituita da typing) e Bind::from_id
+     (usate solo dalle prove); le dipendenze sono tutte usate, e cosi' gli
+     script, le risorse, le licenze e i dati di prova (fumetto-probe e
+     fumetto-strumenti restano: gli scatti di prova e gli attrezzi dei
+     pacchetti). La 0.5 raccoglie i tag (4x), i loro suggerimenti nella
+     ricerca (4y) e i tag della serie, la rinomina e la ricerca per
+     categoria (5a).
+  5a. [x] Tag di una serie, in tutta la libreria, per categoria (24 novembre).
+     - Tag della serie: il pannello (ui/tags.rs) ha degli ambiti
+       (TagScope: i volumi e i loro tag con quanti volumi li hanno). Per un
+       volume di una serie che in libreria e' una pila: "Questo volume" e
+       "Tutta la serie" (Tab o un clic); dal menu della pila, la serie sola
+       (TagsOf::Series). Un tag che hanno solo alcuni volumi mostra "3/12"
+       e resta fra i suggerimenti, per darlo a tutti. AddTag e RemoveTag
+       ora portano tutti i percorsi; l'app li salva in un colpo
+       (Edits::update) e toglie solo dai volumi che il tag ce l'hanno (sugli
+       altri non restano "tolti" inutili). Dopo ogni cambio l'app ricalcola
+       gli ambiti da TagsOf.
+     - In tutta la libreria: nell'elenco dei tag, tasto destro su un tag.
+       "Rinomina…" apre il modulo (ui/server.rs, modo rename) e cambia il
+       nome su ogni volume che ha il tag (VolumeEdit::rename_tag: anche se
+       cambiano solo le maiuscole; se il volume ha gia' il nome nuovo i due
+       diventano uno). "Togli da tutti i volumi…" chiede conferma
+       (dialog::confirm_untag) e lo toglie. Chi era dentro quel tag lo
+       segue (Shelf::group_renamed) o torna all'elenco.
+     - Ricerca per categoria (shelf/query.rs): "personaggio:wolverine",
+       "genere:giallo", "characters:wol"; la categoria in italiano o in
+       inglese, al singolare o al plurale; "tag:" in tutte. Con la
+       categoria la tendina propone solo i suoi tag (anche da una lettera),
+       e ai server non si chiede niente (cercano per titolo).
   5. Distribuzione (capitolo 5).
 
   Da decidere tu, quando vuoi:

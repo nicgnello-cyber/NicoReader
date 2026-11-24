@@ -1,7 +1,7 @@
 //! I menu della libreria: il tasto destro su una cella, le cartelle, l'ordine.
 
 use super::*;
-use crate::ui::Row;
+use crate::ui::{Row, TagsOf};
 
 impl Shelf {
     /// Le righe del menu del tasto destro su una cella.
@@ -10,10 +10,20 @@ impl Shelf {
             Tile::Series { name, .. } => vec![
                 Row::Head(t("Serie", "Series")),
                 Row::plain(t("Apri la serie", "Open the series"), Command::Series(name.clone())),
+                Row::plain(
+                    t("Tag della serie\u{2026}", "Series tags\u{2026}"),
+                    Command::EditTags(TagsOf::Series(name.clone())),
+                ),
             ],
             Tile::Group { kind, name, .. } => vec![
                 Row::Head(kind_label(*kind, false)),
                 Row::plain(t("Apri", "Open"), Command::Group(*kind, name.clone())),
+                Row::Sep,
+                Row::plain(t("Rinomina\u{2026}", "Rename\u{2026}"), Command::AskRenameTag(*kind, name.clone())),
+                Row::plain(
+                    t("Togli da tutti i volumi\u{2026}", "Remove from every volume\u{2026}"),
+                    Command::RemoveTagEverywhere(*kind, name.clone()),
+                ),
             ],
             Tile::Folder { path, .. } => folder_menu(path),
             Tile::Volume(i) => volume_menu(d, *i),
@@ -81,7 +91,7 @@ fn volume_menu(d: &ShelfData, i: usize) -> Vec<Row> {
     if d.status[i] != Status::New {
         rows.push(Row::plain(t("Segna come da leggere", "Mark as unread"), Command::MarkRead(path.clone(), false)));
     }
-    rows.push(Row::plain(t("Tag\u{2026}", "Tags\u{2026}"), Command::EditTags(path.clone())));
+    rows.push(Row::plain(t("Tag\u{2026}", "Tags\u{2026}"), Command::EditTags(TagsOf::Volume(path.clone()))));
     rows.push(Row::plain(t("Modifica i dati\u{2026}", "Edit details\u{2026}"), Command::EditVolume(path.clone())));
     if d.edited.get(i) == Some(&true) {
         let label = t("Torna ai dati del file", "Back to the file's details");

@@ -103,7 +103,7 @@ fn la_password_di_un_pdf() {
     let mut ui = Ui::new();
     let c = ctx(None, &[]);
     ui.ask_password("protetto.pdf".into(), "Protetto".into());
-    assert!(ui.modal() && ui.server_open());
+    assert!(ui.modal() && ui.typing());
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(None), "vuota non si prova");
     assert_eq!(ui.key(Key::Tab, &c), Handled::Yes(None), "un campo solo");
     ui.paste("seg");
@@ -113,11 +113,11 @@ fn la_password_di_un_pdf() {
     let open = |pw: &str| Handled::Yes(Some(Command::OpenWithPassword("protetto.pdf".into(), pw.into())));
     assert_eq!(ui.key(Key::Enter, &c), open("segreto"));
     ui.password_checked(Err("Password sbagliata.".into()));
-    assert!(ui.server_open(), "sbagliata: si riscrive");
+    assert!(ui.typing(), "sbagliata: si riscrive");
     ui.key(Key::Char('x'), &c);
     assert_eq!(ui.key(Key::Enter, &c), open("x"), "la sbagliata si cancella");
     ui.password_checked(Ok(()));
-    assert!(!ui.server_open());
+    assert!(!ui.typing());
 }
 
 #[test]
@@ -128,7 +128,7 @@ fn i_dati_di_un_volume() {
     let existing = VolumeEdit { title: Some("Vecchio".into()), ..VolumeEdit::default() };
     let initial = ["Vecchio".to_owned(), String::new(), String::new()];
     ui.edit_volume("/f/scan_03.cbz".into(), "scan_03.cbz".into(), initial, existing, None);
-    assert!(ui.modal() && ui.server_open());
+    assert!(ui.modal() && ui.typing());
     ui.key(Key::Tab, &c);
     ui.paste("Nebbia sul Porto");
     ui.key(Key::Tab, &c);
@@ -149,7 +149,7 @@ fn i_dati_di_un_volume() {
     };
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::SaveVolume("/f/scan_03.cbz".into(), saved))));
     ui.server_checked(Ok(()));
-    assert!(!ui.server_open());
+    assert!(!ui.typing());
 }
 
 #[test]
@@ -157,7 +157,7 @@ fn il_modulo_del_server() {
     let mut ui = Ui::new();
     let c = ctx(None, &[]);
     assert_eq!(ui.internal(Some(Command::AskServer), &c), None);
-    assert!(ui.modal() && ui.server_open());
+    assert!(ui.modal() && ui.typing());
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(None), "senza indirizzo non si va avanti");
     ui.paste("casa:25600\n");
     ui.key(Key::Tab, &c);
@@ -176,12 +176,12 @@ fn il_modulo_del_server() {
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::AddServer(server))));
     ui.key(Key::Char('x'), &c);
     ui.server_checked(Err("nome o password sbagliati".into()));
-    assert!(ui.server_open(), "se non va, si corregge");
+    assert!(ui.typing(), "se non va, si corregge");
     ui.server_checked(Ok(()));
-    assert!(!ui.server_open());
+    assert!(!ui.typing());
     ui.internal(Some(Command::AskServer), &c);
     assert_eq!(ui.key(Key::Escape, &c), Handled::Yes(None));
-    assert!(!ui.server_open());
+    assert!(!ui.typing());
     assert_eq!(ui.key(Key::Tab, &c), Handled::No, "fuori dal modulo Tab non e' dell'interfaccia");
 }
 
@@ -385,14 +385,14 @@ fn i_tag_si_aggiungono_scrivendo() {
         (tag(GroupKind::Genre, "Supereroi"), 30),
     ];
     let mine = vec![tag(GroupKind::Character, "Tempesta")];
-    ui.edit_tags(path.clone(), "X-Men 141".into(), mine, known.clone());
+    ui.edit_tags(TagsOf::Volume(path.clone()), "X-Men 141".into(), one_volume(&path, mine), known.clone());
     assert!(ui.modal() && ui.typing());
     // si parte dai personaggi: "wol" suggerisce Wolverine (il piu' usato) e Wolfsbane
     for ch in "wol".chars() {
         assert_eq!(ui.key(Key::Char(ch), &c), Handled::Yes(None), "le lettere si scrivono, non sono tasti");
     }
     ui.key(Key::Down, &c);
-    let add = |name: &str| Handled::Yes(Some(Command::AddTag(path.clone(), tag(GroupKind::Character, name))));
+    let add = |name: &str| Handled::Yes(Some(Command::AddTag(vec![path.clone()], tag(GroupKind::Character, name))));
     assert_eq!(ui.key(Key::Enter, &c), add("Wolverine"));
     // scritto per intero, con le maiuscole sbagliate: il nome com'e' in libreria
     for ch in "WOLFSBANE".chars() {
@@ -405,7 +405,7 @@ fn i_tag_si_aggiungono_scrivendo() {
         ui.key(Key::Char(ch), &c);
     }
     let club = tag(GroupKind::Team, "Hellfire Club");
-    assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::AddTag(path.clone(), club.clone()))));
+    assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::AddTag(vec![path.clone()], club.clone()))));
     // gia' messo: Invio non lo ripete
     for ch in "hellfire club".chars() {
         ui.key(Key::Char(ch), &c);
@@ -413,15 +413,18 @@ fn i_tag_si_aggiungono_scrivendo() {
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(None));
     // l'app rimanda i tag com'erano salvati
     let now = vec![tag(GroupKind::Character, "Tempesta"), tag(GroupKind::Team, "Hellfire Club")];
-    ui.tags_changed(&path, now, known);
+    ui.tags_changed(one_volume(&path, now), known);
     // Esc chiude, e la prossima volta si riparte dalla categoria scelta
     assert_eq!(ui.key(Key::Escape, &c), Handled::Yes(None));
     assert!(!ui.modal());
-    ui.edit_tags(path.clone(), "X-Men 141".into(), Vec::new(), Vec::new());
+    ui.edit_tags(TagsOf::Volume(path.clone()), "X-Men 141".into(), one_volume(&path, Vec::new()), Vec::new());
     for ch in "X".chars() {
         ui.key(Key::Char(ch), &c);
     }
-    assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::AddTag(path.clone(), tag(GroupKind::Team, "X")))));
+    assert_eq!(
+        ui.key(Key::Enter, &c),
+        Handled::Yes(Some(Command::AddTag(vec![path.clone()], tag(GroupKind::Team, "X"))))
+    );
 }
 
 #[test]
@@ -431,7 +434,12 @@ fn un_clic_su_un_tag_porta_agli_altri_volumi() {
     let c = ctx(Some(book(10)), &[]);
     let path = std::path::PathBuf::from("/f/x-men-141.cbz");
     let wolverine = Group::new(GroupKind::Character, "Wolverine", None);
-    ui.edit_tags(path.clone(), "X-Men 141".into(), vec![wolverine.clone()], Vec::new());
+    ui.edit_tags(
+        TagsOf::Volume(path.clone()),
+        "X-Men 141".into(),
+        one_volume(&path, vec![wolverine.clone()]),
+        Vec::new(),
+    );
     // si disegna: e' il disegno a sapere dove sta ogni cosa
     let scene = ui.scene(&c, Instant::now(), &mut fumetto_render::Estimate);
     let texts: Vec<&str> = scene.layers.iter().flat_map(|l| l.texts.iter().map(|t| t.text.as_str())).collect();
@@ -441,9 +449,85 @@ fn un_clic_su_un_tag_porta_agli_altri_volumi() {
     assert_eq!(ui.click(x, y, &c), Handled::Yes(Some(Command::ShowGroup(GroupKind::Character, "Wolverine".into()))));
     assert!(!ui.modal(), "per andare fra i volumi si chiude");
     // la crocetta lo toglie
-    ui.edit_tags(path.clone(), "X-Men 141".into(), vec![wolverine.clone()], Vec::new());
+    ui.edit_tags(
+        TagsOf::Volume(path.clone()),
+        "X-Men 141".into(),
+        one_volume(&path, vec![wolverine.clone()]),
+        Vec::new(),
+    );
     let scene = ui.scene(&c, Instant::now(), &mut fumetto_render::Estimate);
     let pill = scene.layers.last().unwrap().rects.iter().find(|r| r.radius > 10.0 && r.y > name.y - 40.0).unwrap();
     let (x, y) = (pill.x + pill.w - 6.0, pill.y + pill.h / 2.0);
-    assert_eq!(ui.click(x, y, &c), Handled::Yes(Some(Command::RemoveTag(path, wolverine))));
+    assert_eq!(ui.click(x, y, &c), Handled::Yes(Some(Command::RemoveTag(vec![path], wolverine))));
+}
+
+/// Il volume solo: un ambito, con i suoi tag.
+fn one_volume(path: &std::path::Path, tags: Vec<fumetto_core::library::Group>) -> Vec<TagScope> {
+    vec![TagScope { series: None, paths: vec![path.to_path_buf()], tags: tags.into_iter().map(|g| (g, 1)).collect() }]
+}
+
+#[test]
+fn i_tag_di_tutta_la_serie() {
+    use fumetto_core::library::{Group, GroupKind};
+    let tag = |name: &str| Group::new(GroupKind::Character, name, None);
+    let mut ui = Ui::new();
+    let c = ctx(Some(book(10)), &[]);
+    let paths: Vec<std::path::PathBuf> = (1..=3).map(|n| format!("/f/x-men-{n}.cbz").into()).collect();
+    let volume = TagScope { series: None, paths: vec![paths[0].clone()], tags: vec![(tag("Wolverine"), 1)] };
+    // Wolverine c'e' in due volumi su tre, Tempesta in tutti
+    let series = TagScope {
+        series: Some("X-Men".into()),
+        paths: paths.clone(),
+        tags: vec![(tag("Wolverine"), 2), (tag("Tempesta"), 3)],
+    };
+    let known = vec![(tag("Wolverine"), 2), (tag("Tempesta"), 3)];
+    ui.edit_tags(TagsOf::Volume(paths[0].clone()), "X-Men 1".into(), vec![volume, series], known);
+    let texts = |ui: &mut Ui| -> Vec<String> {
+        let scene = ui.scene(&c, Instant::now(), &mut fumetto_render::Estimate);
+        scene.layers.iter().flat_map(|l| l.texts.iter().map(|t| t.text.clone())).collect()
+    };
+    let shown = texts(&mut ui);
+    assert!(shown.iter().any(|t| t == "This volume"), "i due ambiti si scelgono");
+    assert!(shown.iter().any(|t| t.starts_with("The whole series") && t.ends_with("3 volumes")));
+    assert!(!shown.iter().any(|t| t == "2/3"), "sul volume solo non si contano");
+    // Tab: tutta la serie; un tag che hanno solo alcuni volumi lo dice
+    assert_eq!(ui.key(Key::Tab, &c), Handled::Yes(None));
+    assert!(texts(&mut ui).iter().any(|t| t == "2/3"));
+    // Wolverine si suggerisce ancora (non ce l'hanno tutti), Tempesta no
+    ui.key(Key::Down, &c);
+    assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::AddTag(paths.clone(), tag("Wolverine")))));
+    for ch in "tempesta".chars() {
+        ui.key(Key::Char(ch), &c);
+    }
+    assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(None), "ce l'hanno gia' tutti");
+    // dopo un cambio l'ambito scelto resta
+    let series = TagScope { series: Some("X-Men".into()), paths: paths.clone(), tags: vec![(tag("Tempesta"), 3)] };
+    let volume = TagScope { series: None, paths: vec![paths[0].clone()], tags: Vec::new() };
+    ui.tags_changed(vec![volume, series], Vec::new());
+    assert!(texts(&mut ui).iter().any(|t| t.starts_with("ON THE VOLUMES OF THE SERIES")));
+}
+
+#[test]
+fn un_tag_si_rinomina_in_tutta_la_libreria() {
+    use fumetto_core::library::GroupKind;
+    let mut ui = Ui::new();
+    let c = ctx(None, &[]);
+    assert_eq!(ui.internal(Some(Command::AskRenameTag(GroupKind::Character, "Logan".into())), &c), None);
+    assert!(ui.modal() && ui.typing());
+    // il nome di adesso e' gia' scritto: si corregge
+    for _ in 0.."Logan".len() {
+        ui.key(Key::Backspace, &c);
+    }
+    assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(None), "senza nome non si rinomina");
+    for ch in "Wolverine ".chars() {
+        ui.key(Key::Char(ch), &c);
+    }
+    let renamed = Command::RenameTag(GroupKind::Character, "Logan".into(), "Wolverine".into());
+    assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(renamed)));
+    ui.server_checked(Ok(()));
+    assert!(!ui.modal());
+    // lo stesso nome: si chiude e basta
+    ui.internal(Some(Command::AskRenameTag(GroupKind::Character, "Logan".into())), &c);
+    assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(None));
+    assert!(!ui.modal());
 }

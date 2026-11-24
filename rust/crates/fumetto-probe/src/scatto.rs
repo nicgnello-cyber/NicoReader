@@ -284,6 +284,7 @@ fn reading_shots(studio: &mut Studio) -> Result<(), String> {
     studio.shot("tag", Look::bar(), &unchanged, &|ui, ctx| {
         // un volume con qualche tag, una libreria che ne conosce altri, e
         // "Wol" scritto: i suggerimenti
+        use fumetto::ui::{TagScope, TagsOf};
         use fumetto_core::library::{Group, GroupKind};
         let tag = |kind, name: &str| Group::new(kind, name, None);
         let mine = vec![
@@ -302,7 +303,16 @@ fn reading_shots(studio: &mut Studio) -> Result<(), String> {
             (tag(GroupKind::Character, "Tempesta"), 9),
         ];
         let title = ctx.book.as_ref().map_or_else(String::new, |b| b.title.to_owned());
-        ui.edit_tags("prova.cbz".into(), title, mine, known);
+        // il volume e la sua serie: si possono dare i tag a tutti i volumi
+        let path = std::path::PathBuf::from("prova.cbz");
+        let series = TagScope {
+            series: Some("X-Men".into()),
+            paths: (1..=12).map(|n| format!("x-men-{n}.cbz").into()).collect(),
+            tags: mine.iter().map(|g| (g.clone(), if g.kind == GroupKind::Character { 5 } else { 12 })).collect(),
+        };
+        let volume =
+            TagScope { series: None, paths: vec![path.clone()], tags: mine.into_iter().map(|g| (g, 1)).collect() };
+        ui.edit_tags(TagsOf::Volume(path), title, vec![volume, series], known);
         for c in "Wol".chars() {
             ui.key(Key::Char(c), ctx);
         }

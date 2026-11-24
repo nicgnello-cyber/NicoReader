@@ -74,6 +74,10 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::Chosen(path, to_library) => self.chosen(path, to_library),
             UserEvent::DialogClosed => self.dialog = false,
             UserEvent::Confirmed(path) => self.trash_confirmed(&path),
+            UserEvent::UntagConfirmed(kind, name) => {
+                self.dialog = false;
+                self.untag_everywhere(kind, name);
+            }
             UserEvent::Scanned(scan) => self.scanned(*scan),
             UserEvent::ServerChecked(server, found) => self.server_checked(server, found),
             UserEvent::Opened(path, book, quiet) => self.opened(&path, *book, quiet),

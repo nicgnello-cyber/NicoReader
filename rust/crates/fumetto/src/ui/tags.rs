@@ -5,6 +5,10 @@
 //! Invio lo aggiunge. Un clic su un tag porta in libreria, fra gli altri
 //! volumi che ce l'hanno: "questo personaggio c'e' anche in...".
 //!
+//! Un volume di una serie ha due ambiti: lui solo, o tutta la serie (Tab, o
+//! un clic sopra le categorie); dal menu di una pila, solo la serie. Un tag
+//! che hanno solo alcuni volumi lo dice ("3/12"), e si puo' dare a tutti.
+//!
 //! Il modulo non salva niente: chiede all'app di aggiungere o togliere, e
 //! l'app gli rimanda i tag come sono dopo (`update`).
 
@@ -38,9 +42,39 @@ const SUGGESTIONS: usize = 6;
 /// Quanto puo' essere lungo un tag.
 const MAX_TAG: usize = 200;
 
+/// Di chi sono i tag aperti: da qui l'app li ricalcola dopo ogni cambio.
+#[derive(Clone, Debug, PartialEq)]
+pub enum TagsOf {
+    Volume(PathBuf),
+    Series(String),
+}
+
+/// Un ambito: i volumi a cui vanno i tag, e i tag che hanno, con quanti
+/// volumi ce l'hanno.
+#[derive(Clone, Debug)]
+pub struct TagScope {
+    /// La serie, o `None` per il volume solo.
+    pub series: Option<String>,
+    pub paths: Vec<PathBuf>,
+    pub tags: Vec<(Group, usize)>,
+}
+
+impl TagScope {
+    /// Un tag che hanno tutti i volumi dell'ambito.
+    fn complete(&self, count: usize) -> bool {
+        count >= self.paths.len()
+    }
+
+    fn has_all(&self, g: &Group) -> bool {
+        self.tags.iter().any(|(t, n)| t.same(g) && self.complete(*n))
+    }
+}
+
 /// Cio' che si puo' cliccare.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Hit {
+    /// Un ambito: il volume, la serie.
+    Scope(usize),
     /// Una categoria (indice in `KINDS`).
     Kind(usize),
     Suggestion(usize),
@@ -50,10 +84,12 @@ enum Hit {
 }
 
 pub(crate) struct TagsForm {
-    path: PathBuf,
+    of: TagsOf,
     title: String,
-    /// I tag del volume, con le aggiunte e le tolte di chi legge.
-    tags: Vec<Group>,
+    /// Il volume e la sua serie, o la serie sola; mai vuoto.
+    scopes: Vec<TagScope>,
+    /// L'ambito scelto (indice in `scopes`).
+    scope: usize,
     /// I tag della libreria, con quanti volumi li hanno: i suggerimenti.
     known: Vec<(Group, usize)>,
     /// La categoria scelta (indice in `KINDS`).
@@ -70,13 +106,16 @@ pub(crate) struct TagsForm {
 }
 
 impl TagsForm {
+    /// `scopes` non vuoto: il primo e' quello che si vede all'inizio.
     pub(super) fn new(
-        path: PathBuf, title: String, tags: Vec<Group>, known: Vec<(Group, usize)>, kind: usize,
+        of: TagsOf, title: String, scopes: Vec<TagScope>, known: Vec<(Group, usize)>, kind: usize,
     ) -> TagsForm {
+        debug_assert!(!scopes.is_empty());
         TagsForm {
-            path,
+            of,
             title,
-            tags,
+            scopes,
+            scope: 0,
             known,
             kind: kind.min(KINDS.len() - 1),
             typed: String::new(),
@@ -92,19 +131,35 @@ impl TagsForm {
         self.kind
     }
 
-    pub(super) fn path(&self) -> &std::path::Path {
-        &self.path
+    pub(super) fn of(&self) -> &TagsOf {
+        &self.of
     }
 
-    /// I tag come sono dopo un'aggiunta o una tolta.
-    pub(super) fn update(&mut self, tags: Vec<Group>, known: Vec<(Group, usize)>) {
-        (self.tags, self.known) = (tags, known);
+    /// I tag come sono dopo un cambio; l'ambito scelto resta.
+    pub(super) fn update(&mut self, scopes: Vec<TagScope>, known: Vec<(Group, usize)>) {
+        if scopes.is_empty() {
+            return;
+        }
+        self.scope = self.scope.min(scopes.len() - 1);
+        (self.scopes, self.known) = (scopes, known);
         self.pick = None;
+        self.hover = None;
     }
 
-    /// I tag della libreria della categoria scelta che il volume non ha, che
-    /// contengono cio' che si e' scritto: prima quelli che cominciano cosi',
-    /// poi i piu' usati.
+    fn current(&self) -> &TagScope {
+        &self.scopes[self.scope]
+    }
+
+    fn choose_scope(&mut self, scope: usize) {
+        if scope < self.scopes.len() {
+            self.scope = scope;
+            self.pick = None;
+        }
+    }
+
+    /// I tag della libreria della categoria scelta che non tutti i volumi
+    /// dell'ambito hanno, che contengono cio' che si e' scritto: prima quelli
+    /// che cominciano cosi', poi i piu' usati.
     fn suggestions(&self) -> Vec<(&Group, usize)> {
         let kind = KINDS[self.kind];
         let needle = self.typed.trim().to_lowercase();
@@ -112,7 +167,7 @@ impl TagsForm {
         let mut v: Vec<(&Group, usize)> = self
             .known
             .iter()
-            .filter(|(g, _)| g.kind == kind && !self.tags.iter().any(|t| t.same(g)))
+            .filter(|(g, _)| g.kind == kind && !self.current().has_all(g))
             .filter(|(g, _)| needle.is_empty() || g.name.to_lowercase().contains(&needle))
             .map(|(g, n)| (g, *n))
             .collect();
@@ -129,7 +184,9 @@ impl TagsForm {
             Key::Escape => return Outcome::Close,
             Key::Enter => return self.add(),
             Key::Left => self.choose_kind((self.kind + KINDS.len() - 1) % KINDS.len()),
-            Key::Right | Key::Tab => self.choose_kind((self.kind + 1) % KINDS.len()),
+            Key::Right => self.choose_kind((self.kind + 1) % KINDS.len()),
+            Key::Tab if self.scopes.len() > 1 => self.choose_scope((self.scope + 1) % self.scopes.len()),
+            Key::Tab => self.choose_kind((self.kind + 1) % KINDS.len()),
             Key::Down if n > 0 => self.pick = Some(self.pick.map_or(0, |i| (i + 1).min(n - 1))),
             Key::Up => self.pick = self.pick.and_then(|i| i.checked_sub(1)),
             Key::Backspace => {
@@ -177,12 +234,17 @@ impl TagsForm {
         self.typed.clear();
         self.pick = None;
         let tag = Group::new(kind, name, None);
-        if self.tags.iter().any(|t| t.same(&tag)) {
-            return Outcome::Stay; // c'e' gia'
+        let scope = &mut self.scopes[self.scope];
+        if scope.has_all(&tag) {
+            return Outcome::Stay; // ce l'hanno gia'
         }
         // si vede subito; l'app poi rimanda i tag come sono davvero
-        self.tags.push(tag.clone());
-        Outcome::Submit(Command::AddTag(self.path.clone(), tag))
+        let all = scope.paths.len();
+        match scope.tags.iter_mut().find(|(t, _)| t.same(&tag)) {
+            Some((_, n)) => *n = all,
+            None => scope.tags.push((tag.clone(), all)),
+        }
+        Outcome::Submit(Command::AddTag(scope.paths.clone(), tag))
     }
 
     fn hit(&self, x: f32, y: f32) -> Option<Hit> {
@@ -200,19 +262,21 @@ impl TagsForm {
 
     pub(super) fn click(&mut self, x: f32, y: f32) -> Outcome {
         match self.hit(x, y) {
+            Some(Hit::Scope(i)) => self.choose_scope(i),
             Some(Hit::Kind(k)) => self.choose_kind(k),
             Some(Hit::Suggestion(i)) => {
                 self.pick = Some(i);
                 return self.add();
             }
-            Some(Hit::Show(i)) if i < self.tags.len() => {
-                let g = &self.tags[i];
+            Some(Hit::Show(i)) if i < self.current().tags.len() => {
+                let g = &self.current().tags[i].0;
                 return Outcome::Submit(Command::ShowGroup(g.kind, g.name.clone()));
             }
-            Some(Hit::Remove(i)) if i < self.tags.len() => {
-                let tag = self.tags.remove(i);
+            Some(Hit::Remove(i)) if i < self.current().tags.len() => {
+                let scope = &mut self.scopes[self.scope];
+                let (tag, _) = scope.tags.remove(i);
                 self.hover = None;
-                return Outcome::Submit(Command::RemoveTag(self.path.clone(), tag));
+                return Outcome::Submit(Command::RemoveTag(scope.paths.clone(), tag));
             }
             Some(Hit::Show(_) | Hit::Remove(_)) | None => {}
         }
@@ -232,7 +296,15 @@ impl TagsForm {
         // in una finestra bassa, piu' raccolto: senza la riga d'aiuto
         let compact = vh / s < 620.0;
         let top = if compact { 34.0 * s } else { (vh / 2.0 - 300.0 * s).max(40.0 * s) }.round();
-        l.texts.push(caps(t("Tag del volume", "Volume tags"), 11.0 * s, MUTED).on_baseline(x0, top));
+        // con due ambiti lo dicono le pastiglie sotto
+        let head = match &self.current().series {
+            _ if self.scopes.len() > 1 => t("Tag", "Tags").to_owned(),
+            None => t("Tag del volume", "Volume tags").to_owned(),
+            Some(_) => {
+                format!("{} \u{00b7} {}", t("Tag della serie", "Series tags"), volumes(self.current().paths.len()))
+            }
+        };
+        l.texts.push(caps(&head, 11.0 * s, MUTED).on_baseline(x0, top));
         let title = fit(m, Text::new(self.title.as_str(), Face::Serif, 32.0 * s, INK), w);
         l.texts.push(title.on_baseline(x0, top + 40.0 * s));
         if !compact {
@@ -242,7 +314,10 @@ impl TagsForm {
             );
             l.texts.push(fit(m, Text::new(help, Face::Sans, 13.0 * s, MUTED), w).on_baseline(x0, top + 66.0 * s));
         }
-        let kinds_y = top + if compact { 62.0 } else { 92.0 } * s;
+        let mut kinds_y = top + if compact { 62.0 } else { 92.0 } * s;
+        if self.scopes.len() > 1 {
+            kinds_y = self.draw_scopes(&mut l, &mut hits, (x0, w, kinds_y), s, m) + 18.0 * s;
+        }
         let y = self.draw_kinds(&mut l, &mut hits, (x0, w, kinds_y), s, m);
         let field_y = y + 64.0 * s;
         // i suggerimenti che ci stanno lasciando posto ad almeno due righe di
@@ -253,14 +328,63 @@ impl TagsForm {
         self.draw_field(&mut l, (x0, w, field_y), s, m);
         let y = self.draw_suggestions(&mut l, &mut hits, (x0, w, field_y + 22.0 * s), s, m);
         self.draw_tags(&mut l, &mut hits, (x0, w, y + 30.0 * s), vh - 64.0 * s, s, m);
-        let keys = t(
-            "\u{2190} \u{2192} la categoria   \u{00b7}   \u{2191} \u{2193} i suggerimenti   \u{00b7}   Invio aggiunge   \u{00b7}   un clic su un tag mostra gli altri volumi   \u{00b7}   Esc chiude",
-            "\u{2190} \u{2192} category   \u{00b7}   \u{2191} \u{2193} suggestions   \u{00b7}   Enter adds   \u{00b7}   click a tag to see the other volumes   \u{00b7}   Esc closes",
-        );
+        let keys = match (self.scopes.len() > 1, italian()) {
+            (true, true) => {
+                "Tab volume o serie   \u{00b7}   \u{2190} \u{2192} la categoria   \u{00b7}   \u{2191} \u{2193} i suggerimenti   \u{00b7}   Invio aggiunge   \u{00b7}   Esc chiude"
+            }
+            (true, false) => {
+                "Tab volume or series   \u{00b7}   \u{2190} \u{2192} category   \u{00b7}   \u{2191} \u{2193} suggestions   \u{00b7}   Enter adds   \u{00b7}   Esc closes"
+            }
+            (false, true) => {
+                "\u{2190} \u{2192} la categoria   \u{00b7}   \u{2191} \u{2193} i suggerimenti   \u{00b7}   Invio aggiunge   \u{00b7}   un clic su un tag mostra gli altri volumi   \u{00b7}   Esc chiude"
+            }
+            (false, false) => {
+                "\u{2190} \u{2192} category   \u{00b7}   \u{2191} \u{2193} suggestions   \u{00b7}   Enter adds   \u{00b7}   click a tag to see the other volumes   \u{00b7}   Esc closes"
+            }
+        };
         let keys = fit(m, Text::new(keys, Face::Sans, 12.0 * s, fade(MUTED, 0.8)), vw - 48.0 * s);
         l.texts.push(keys.boxed(vw - 48.0 * s, Align::Center).on_baseline(24.0 * s, vh - 28.0 * s));
         *self.hits.borrow_mut() = hits;
         l
+    }
+
+    /// I due ambiti, come le categorie ma piu' grandi: "Questo volume",
+    /// "Tutta la serie · 12 volumi". Restituisce dove finiscono.
+    fn draw_scopes(
+        &self, l: &mut Layer, hits: &mut Vec<([f32; 4], Hit)>, (x0, w, y): (f32, f32, f32), s: f32, m: &mut dyn Measure,
+    ) -> f32 {
+        let (h, pad, gap) = ((34.0 * s).round(), 16.0 * s, 10.0 * s);
+        let mut x = x0;
+        for (i, scope) in self.scopes.iter().enumerate() {
+            let on = i == self.scope;
+            let hovered = self.hover == Some(Hit::Scope(i));
+            let label = match &scope.series {
+                None => t("Questo volume", "This volume").to_owned(),
+                Some(_) => {
+                    format!("{} \u{00b7} {}", t("Tutta la serie", "The whole series"), volumes(scope.paths.len()))
+                }
+            };
+            let color = if on {
+                INK
+            } else if hovered {
+                fade(INK, 0.9)
+            } else {
+                MUTED
+            };
+            let text = fit(m, Text::new(label, Face::Sans, 13.5 * s, color), w / 2.0 - 2.0 * pad);
+            let cw = (m.width(&text) + 2.0 * pad).round();
+            let fill = if on { [1.0, 1.0, 1.0, 0.12] } else { [1.0, 1.0, 1.0, if hovered { 0.06 } else { 0.0 }] };
+            l.rects.push(Rect::new(x, y, cw, h, fill).radius(h / 2.0));
+            if on {
+                l.rects.push(Rect::new(x, y, cw, h, alpha(ACCENT, 0.9)).radius(h / 2.0).stroke(s.round().max(1.0)));
+            } else {
+                l.rects.push(Rect::new(x, y, cw, h, alpha(HAIR, 0.9)).radius(h / 2.0).stroke(s.round().max(1.0)));
+            }
+            l.texts.push(text.on_baseline(x + pad, y + h / 2.0 + 4.5 * s));
+            hits.push(([x, y, cw, h], Hit::Scope(i)));
+            x += cw + gap;
+        }
+        y + h
     }
 
     /// Le categorie, come pastiglie che vanno a capo; quella scelta accesa.
@@ -337,18 +461,15 @@ impl TagsForm {
             let name =
                 fit(m, Text::new(g.name.as_str(), Face::Sans, 14.5 * s, if on { INK } else { MUTED }), w - 90.0 * s);
             l.texts.push(name.on_baseline(x0, y + row * 0.68));
-            let n = if italian() {
-                format!("{count} {}", if *count == 1 { "volume" } else { "volumi" })
-            } else {
-                format!("{count} volume{}", if *count == 1 { "" } else { "s" })
-            };
-            let n = Text::new(n, Face::Sans, 11.5 * s, fade(MUTED, 0.8)).tabular().boxed(90.0 * s, Align::Right);
+            let n = Text::new(volumes(*count), Face::Sans, 11.5 * s, fade(MUTED, 0.8))
+                .tabular()
+                .boxed(90.0 * s, Align::Right);
             l.texts.push(n.on_baseline(x0 + w - 90.0 * s, y + row * 0.68));
             hits.push(([x0 - 10.0 * s, y, w + 20.0 * s, row], Hit::Suggestion(i)));
         }
         // lo spazio di quanti suggerimenti ha la categoria a campo vuoto: mentre
         // si scrive diventano meno, e i tag del volume sotto non saltano
-        let all = self.known.iter().filter(|(g, _)| g.kind == KINDS[self.kind] && !self.tags.iter().any(|t| t.same(g)));
+        let all = self.known.iter().filter(|(g, _)| g.kind == KINDS[self.kind] && !self.current().has_all(g));
         y0 + all.count().clamp(1, self.rows.get().max(1)) as f32 * row
     }
 
@@ -358,14 +479,17 @@ impl TagsForm {
         &self, l: &mut Layer, hits: &mut Vec<([f32; 4], Hit)>, (x0, w, y0): (f32, f32, f32), bottom: f32, s: f32,
         m: &mut dyn Measure,
     ) {
-        let head = if italian() {
-            format!("Su questo volume \u{00b7} {}", self.tags.len())
-        } else {
-            format!("On this volume \u{00b7} {}", self.tags.len())
+        let scope = self.current();
+        let tags = &scope.tags;
+        let head = match (&scope.series, italian()) {
+            (None, true) => format!("Su questo volume \u{00b7} {}", tags.len()),
+            (None, false) => format!("On this volume \u{00b7} {}", tags.len()),
+            (Some(_), true) => format!("Sui volumi della serie \u{00b7} {}", tags.len()),
+            (Some(_), false) => format!("On the volumes of the series \u{00b7} {}", tags.len()),
         };
         l.texts.push(caps(&head, 10.0 * s, MUTED).on_baseline(x0, y0));
         l.rects.push(Rect::new(x0, (y0 + 10.0 * s).round(), w, s.round(), alpha(HAIR, 0.7)));
-        if self.tags.is_empty() {
+        if tags.is_empty() {
             let none = t("Nessun tag, per ora.", "No tags yet.");
             l.texts.push(Text::new(none, Face::Sans, 13.5 * s, MUTED).on_baseline(x0, y0 + 40.0 * s));
             return;
@@ -374,7 +498,7 @@ impl TagsForm {
         let mut y = y0 + 24.0 * s;
         let mut hidden = 0;
         for kind in KINDS {
-            let mine: Vec<usize> = (0..self.tags.len()).filter(|&i| self.tags[i].kind == kind).collect();
+            let mine: Vec<usize> = (0..tags.len()).filter(|&i| tags[i].0.kind == kind).collect();
             if mine.is_empty() {
                 continue;
             }
@@ -388,9 +512,16 @@ impl TagsForm {
             for i in mine {
                 let (shown, close) = (Hit::Show(i), Hit::Remove(i));
                 let name_color = if self.hover == Some(shown) { INK } else { fade(INK, 0.9) };
-                let name = fit(m, Text::new(self.tags[i].name.as_str(), Face::Sans, 13.5 * s, name_color), w * 0.6);
+                let (tag, count) = &tags[i];
+                let name = fit(m, Text::new(tag.name.as_str(), Face::Sans, 13.5 * s, name_color), w * 0.6);
+                // su quanti volumi dell'ambito, se non tutti
+                let part = (!scope.complete(*count)).then(|| {
+                    let n = format!("{count}/{}", scope.paths.len());
+                    Text::new(n, Face::Sans, 11.0 * s, fade(MUTED, 0.9)).tabular()
+                });
+                let pw = part.as_ref().map_or(0.0, |p| m.width(p) + 7.0 * s);
                 let (nw, xw) = (m.width(&name), (22.0 * s).round());
-                let cw = (12.0 * s + nw + 6.0 * s + xw).round();
+                let cw = (12.0 * s + nw + pw + 6.0 * s + xw).round();
                 if x + cw > x0 + w && x > x0 + label_w {
                     (x, y) = (x0 + label_w, y + h + gap);
                     if y + h > bottom {
@@ -402,6 +533,9 @@ impl TagsForm {
                 let fill = [1.0, 1.0, 1.0, if hovered { 0.08 } else { 0.04 }];
                 l.rects.push(Rect::new(x, y, cw, h, fill).radius(h / 2.0));
                 l.texts.push(name.on_baseline(x + 12.0 * s, y + h / 2.0 + 4.5 * s));
+                if let Some(part) = part {
+                    l.texts.push(part.on_baseline(x + 12.0 * s + nw + 7.0 * s, y + h / 2.0 + 4.0 * s));
+                }
                 let xx = x + cw - xw;
                 let x_color = if self.hover == Some(close) { INK_F } else { MUTED_F };
                 draw_icon(l, Icon::Close, (xx + xw / 2.0 - 3.0 * s).round(), (y + h / 2.0).round(), s * 0.6, x_color);
@@ -415,5 +549,14 @@ impl TagsForm {
             let more = if italian() { format!("e altri {hidden}") } else { format!("and {hidden} more") };
             l.texts.push(Text::new(more, Face::Sans, 12.5 * s, MUTED).on_baseline(x0 + label_w, y + 14.0 * s));
         }
+    }
+}
+
+/// "12 volumi", "1 volume".
+fn volumes(n: usize) -> String {
+    match (n == 1, italian()) {
+        (true, _) => "1 volume".to_owned(),
+        (false, true) => format!("{n} volumi"),
+        (false, false) => format!("{n} volumes"),
     }
 }

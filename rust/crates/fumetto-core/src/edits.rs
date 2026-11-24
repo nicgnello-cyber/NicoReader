@@ -71,6 +71,23 @@ impl VolumeEdit {
         }
     }
 
+    /// Cambia nome a un tag (`has`: i tag della scheda): il vecchio sparisce,
+    /// il nuovo prende il suo posto con il nome come e' scritto, anche se
+    /// cambiano solo le maiuscole. Se il volume ha gia' il nuovo, i due
+    /// diventano uno.
+    pub fn rename_tag(&mut self, old: &Group, new: Group, has: &[Group]) {
+        self.tags.retain(|g| !g.same(old) && !g.same(&new));
+        if has.iter().any(|g| g.same(old)) && !self.untags.iter().any(|u| u.same(old)) {
+            self.untags.push(Group { order: None, ..old.clone() });
+        }
+        if has.iter().any(|g| g.same(&new) && g.name == new.name) {
+            // la scheda lo ha gia' scritto cosi': basta non toglierlo
+            self.untags.retain(|u| !u.same(&new));
+        } else {
+            self.tags.push(new);
+        }
+    }
+
     /// I tag di un volume con queste correzioni: quelli della scheda meno i
     /// tolti, piu' gli aggiunti.
     pub fn apply_tags(&self, groups: &mut Vec<Group>) {
@@ -129,6 +146,21 @@ impl Edits {
             self.map.remove(&Self::key(path));
         } else {
             self.map.insert(Self::key(path), edit);
+        }
+        self.save()
+    }
+
+    /// Cambia le correzioni di piu' volumi (una serie, tutti quelli con un
+    /// tag) e scrive il file una volta sola. `change` riceve il volume e la
+    /// sua correzione (vuota se non ne aveva).
+    pub fn update(&mut self, paths: &[PathBuf], mut change: impl FnMut(&Path, &mut VolumeEdit)) -> io::Result<()> {
+        for path in paths {
+            let key = Self::key(path);
+            let mut edit = self.map.remove(&key).unwrap_or_default();
+            change(path, &mut edit);
+            if !edit.is_empty() {
+                self.map.insert(key, edit);
+            }
         }
         self.save()
     }
@@ -238,5 +270,51 @@ mod tests {
         assert!(!edit.has_details(), "solo tag, nessun dato corretto");
         let json = serde_json::to_string(&VolumeEdit { title: Some("X".into()), ..VolumeEdit::default() }).unwrap();
         assert!(!json.contains("tags"), "senza tag il file non cambia: {json}");
+    }
+
+    #[test]
+    fn piu_volumi_in_un_colpo() {
+        use crate::library::{Group, GroupKind};
+        let mut edits = Edits::in_memory();
+        let paths: Vec<PathBuf> = (1..=3).map(|n| PathBuf::from(format!("/serie/v{n}.cbz"))).collect();
+        let tag = Group::new(GroupKind::Character, "Wolverine", None);
+        edits.update(&paths, |_, e| e.add_tag(tag.clone(), &[])).unwrap();
+        assert!(paths.iter().all(|p| edits.get(p).is_some_and(|e| e.tags == [tag.clone()])));
+        // tolto da tutti: le correzioni vuote spariscono
+        edits.update(&paths, |_, e| e.remove_tag(&tag)).unwrap();
+        assert!(paths.iter().all(|p| edits.get(p).is_none()));
+    }
+
+    #[test]
+    fn rinominare_e_unire_un_tag() {
+        use crate::library::{Group, GroupKind};
+        let g = |name: &str| Group::new(GroupKind::Character, name, None);
+        let shown = |edit: &VolumeEdit, has: &[Group]| {
+            let mut tags = has.to_vec();
+            edit.apply_tags(&mut tags);
+            tags.into_iter().map(|t| t.name).collect::<Vec<_>>()
+        };
+        // dalla scheda a un nome nuovo
+        let has = [g("Logan")];
+        let mut edit = VolumeEdit::default();
+        edit.rename_tag(&g("Logan"), g("Wolverine"), &has);
+        assert_eq!(shown(&edit, &has), ["Wolverine"]);
+        // cambiano solo le maiuscole
+        let has = [g("wolverine")];
+        let mut edit = VolumeEdit::default();
+        edit.rename_tag(&g("wolverine"), g("Wolverine"), &has);
+        assert_eq!(shown(&edit, &has), ["Wolverine"]);
+        // il volume ha gia' il nuovo: ne resta uno, e la correzione sparisce
+        let has = [g("Wolverine")];
+        let mut edit = VolumeEdit::default();
+        edit.add_tag(g("Logan"), &has);
+        edit.rename_tag(&g("Logan"), g("Wolverine"), &has);
+        assert_eq!(shown(&edit, &has), ["Wolverine"]);
+        assert!(edit.is_empty());
+        // aggiunto a mano: si rinomina senza ricordare tolti
+        let mut edit = VolumeEdit::default();
+        edit.add_tag(g("Logan"), &[]);
+        edit.rename_tag(&g("Logan"), g("Wolverine"), &[]);
+        assert_eq!((edit.tags.len(), edit.untags.len()), (1, 0));
     }
 }

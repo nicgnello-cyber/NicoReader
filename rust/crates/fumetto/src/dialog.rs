@@ -172,6 +172,42 @@ pub fn confirm_trash(window: &Window, path: std::path::PathBuf, proxy: EventLoop
     );
 }
 
+/// Chiede se togliere un tag da tutti i volumi che lo hanno; se si', torna
+/// `UntagConfirmed`.
+pub fn confirm_untag(
+    window: &Window, kind: fumetto_core::library::GroupKind, name: String, volumes: usize,
+    proxy: EventLoopProxy<UserEvent>,
+) {
+    let text = match (volumes == 1, fumetto_core::lingua::italian()) {
+        (true, true) => format!("Togliere il tag «{name}» dal volume che lo ha?"),
+        (false, true) => format!("Togliere il tag «{name}» da tutti i {volumes} volumi che lo hanno?"),
+        (true, false) => format!("Remove the tag \u{201c}{name}\u{201d} from the volume that has it?"),
+        (false, false) => format!("Remove the tag \u{201c}{name}\u{201d} from all {volumes} volumes that have it?"),
+    };
+    let more = fumetto_core::lingua::t(
+        "I file non si toccano: si pu\u{f2} sempre rimettere a mano.",
+        "The files aren't touched: it can always be added back by hand.",
+    );
+    let asked = AsyncMessageDialog::new()
+        .set_parent(window)
+        .set_level(MessageLevel::Warning)
+        .set_title("NicoReader")
+        .set_description(format!("{text}\n\n{more}"))
+        .set_buttons(MessageButtons::YesNo)
+        .show();
+    run(
+        asked,
+        move |r| {
+            if r == rfd::MessageDialogResult::Yes {
+                UserEvent::UntagConfirmed(kind, name)
+            } else {
+                UserEvent::DialogClosed
+            }
+        },
+        proxy,
+    );
+}
+
 /// Il testo per un volume che non si apre.
 pub fn cant_open(path: &Path, e: &fumetto_core::Error) -> String {
     let name = if fumetto_core::remote::is_remote(path) {
