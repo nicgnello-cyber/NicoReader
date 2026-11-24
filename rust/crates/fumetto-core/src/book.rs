@@ -19,6 +19,9 @@ use crate::natural::natural_cmp;
 use crate::pdf::PdfDoc;
 use crate::remote::{self, Volume};
 
+mod unpacked;
+use unpacked::Unpacked;
+
 const IMAGE_EXT: &[&str] = &["jpg", "jpeg", "jpe", "jfif", "png", "gif", "bmp", "webp", "tif", "tiff", "avif", "jxl"];
 
 pub fn is_image(name: &str) -> bool {
@@ -100,10 +103,8 @@ enum Store {
     Rar(PathBuf),
     /// RAR solido e 7z (quasi sempre solido): saltare costerebbe la
     /// decompressione di tutto cio' che precede, quindi si legge tutto una
-    /// volta sola all'apertura.
-    // ponytail: tiene l'archivio intero in RAM; per i solidi molto grandi
-    // andrebbe una cartella temporanea
-    Memory(HashMap<String, Vec<u8>>),
+    /// volta sola all'apertura; in memoria, o su disco se e' molto grande.
+    Unpacked(Unpacked),
     /// TAR: non compresso, ogni pagina e' un tratto del file. Si legge da li'.
     Tar(PathBuf, HashMap<String, (u64, u64)>),
     Pdf(PdfDoc),
@@ -186,7 +187,7 @@ impl Book {
         }
         let info = match &store {
             // RAR solidi e 7z: la scheda e' gia' in memoria con le pagine
-            Store::Memory(files) => files.iter().find(|(n, _)| is_comic_info(n)).and_then(|(_, b)| ComicInfo::parse(b)),
+            Store::Unpacked(files) => files.comic_info(),
             Store::Pdf(_) => None,
             _ => read_info(path),
         };
@@ -277,7 +278,7 @@ impl Book {
                 let mut zip = zip.lock().unwrap_or_else(|e| e.into_inner());
                 zip.by_name(name).ok()?.take(max as u64).read_to_end(&mut out).ok()?;
             }
-            Store::Memory(files) => out.extend_from_slice(&files[name][..files[name].len().min(max)]),
+            Store::Unpacked(files) => out = files.head(name, max).ok()?,
             Store::Tar(..) | Store::Rar(_) | Store::Remote(..) => {
                 // il TAR legge solo il suo tratto; il RAR non sa fermarsi a meta'
                 out = self.read(index).ok()?;
@@ -322,7 +323,7 @@ impl Book {
                 Ok(out)
             }
             Store::Rar(path) => rar_read(path, name),
-            Store::Memory(files) => Ok(files[name].clone()),
+            Store::Unpacked(files) => Ok(files.read(name)?),
             Store::Remote(volume, last) => {
                 if let Some((i, bytes)) = &*last.lock().unwrap_or_else(|e| e.into_inner())
                     && *i == index
@@ -419,20 +420,18 @@ fn open_zip(path: &Path) -> Result<(Vec<String>, Store), Error> {
 fn open_7z(path: &Path) -> Result<(Vec<String>, Store), Error> {
     let err = |e: sevenz_rust2::Error| Error::Archive(e.to_string());
     let mut archive = sevenz_rust2::ArchiveReader::open(path, sevenz_rust2::Password::empty()).map_err(err)?;
-    let mut files = HashMap::new();
+    let mut files = Unpacked::new();
     // un archivio troncato si ferma all'errore: le pagine lette fin li' restano
     let _ = archive.for_each_entries(|entry, reader| {
         let wanted = is_image(entry.name()) || (is_comic_info(entry.name()) && entry.size() <= comicinfo::MAX_BYTES);
         if !entry.is_directory() && wanted {
             let mut bytes = Vec::with_capacity(entry.size() as usize);
             reader.read_to_end(&mut bytes)?;
-            files.insert(entry.name().to_owned(), bytes);
+            files.add(entry.name().to_owned(), bytes);
         }
         Ok(true)
     });
-    let mut names: Vec<String> = files.keys().filter(|n| is_image(n)).cloned().collect();
-    sort(&mut names);
-    Ok((names, Store::Memory(files)))
+    Ok((page_names(&files), Store::Unpacked(files)))
 }
 
 fn open_tar(path: &Path) -> Result<(Vec<String>, Store), Error> {
@@ -476,7 +475,7 @@ fn open_rar(path: &Path) -> Result<(Vec<String>, Store), Error> {
         return Ok((names, Store::Rar(path.to_owned())));
     }
     drop(listing);
-    let mut files = HashMap::new();
+    let mut files = Unpacked::new();
     let mut cursor = unrar::Archive::new(path).open_for_processing().map_err(rar_err)?;
     while let Ok(Some(header)) = cursor.read_header() {
         let name = header.entry().filename.to_string_lossy().into_owned();
@@ -484,7 +483,7 @@ fn open_rar(path: &Path) -> Result<(Vec<String>, Store), Error> {
         cursor = if header.entry().is_file() && (is_image(&name) || info) {
             match header.read() {
                 Ok((bytes, next)) => {
-                    files.insert(name, bytes);
+                    files.add(name, bytes);
                     next
                 }
                 Err(_) => break,
@@ -496,9 +495,14 @@ fn open_rar(path: &Path) -> Result<(Vec<String>, Store), Error> {
             }
         };
     }
-    let mut names: Vec<String> = files.keys().filter(|n| is_image(n)).cloned().collect();
+    Ok((page_names(&files), Store::Unpacked(files)))
+}
+
+/// Le pagine decompresse, in ordine di lettura.
+fn page_names(files: &Unpacked) -> Vec<String> {
+    let mut names: Vec<String> = files.names().filter(|n| is_image(n)).map(str::to_owned).collect();
     sort(&mut names);
-    Ok((names, Store::Memory(files)))
+    names
 }
 
 /// La ComicInfo.xml di un volume senza aprirlo tutto: nelle cartelle accanto

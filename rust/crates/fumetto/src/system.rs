@@ -1,7 +1,30 @@
-//! Cio' che si chiede al sistema: mostrare un file nella sua cartella, e
-//! spostarlo nel cestino (mai cancellarlo: dal cestino si recupera).
+//! Cio' che si chiede al sistema: mostrare un file nella sua cartella,
+//! spostarlo nel cestino (mai cancellarlo: dal cestino si recupera), il tempo
+//! del doppio clic.
 
 use std::path::Path;
+use std::time::Duration;
+
+/// Il tempo del doppio clic scelto nel sistema (Windows, macOS); altrove, o
+/// se il valore e' strano, 450 ms.
+pub fn double_click_time() -> Duration {
+    const DEFAULT: Duration = Duration::from_millis(450);
+    #[cfg(windows)]
+    // SAFETY: nessun argomento, legge un'impostazione dell'utente
+    let chosen = Duration::from_millis(u64::from(unsafe {
+        windows_sys::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime()
+    }));
+    #[cfg(target_os = "macos")]
+    // SAFETY: +[NSEvent doubleClickInterval] non ha argomenti e torna un
+    // NSTimeInterval (secondi, f64); si puo' chiamare da qualsiasi thread
+    let chosen = Duration::try_from_secs_f64(unsafe { objc2::msg_send![objc2::class!(NSEvent), doubleClickInterval] })
+        .unwrap_or(DEFAULT);
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let chosen = DEFAULT;
+    // Windows accetta da 200 a 5000 ms (il massimo dell'impostazione); sotto
+    // i 100 ms il doppio clic non riuscirebbe a nessuno
+    if (Duration::from_millis(100)..=Duration::from_secs(5)).contains(&chosen) { chosen } else { DEFAULT }
+}
 
 /// Apre il gestore dei file sulla cartella del volume, con il volume scelto.
 pub fn reveal(path: &Path) -> Result<(), String> {

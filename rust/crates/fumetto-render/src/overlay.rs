@@ -249,11 +249,7 @@ impl Overlay {
     /// `format`: quello del bersaglio, *non* sRGB come per le pagine.
     pub fn new(gpu: &Gpu, format: wgpu::TextureFormat) -> Overlay {
         let device = gpu.device.clone();
-        let mut db = fontdb::Database::new();
-        for bytes in [SERIF, SANS] {
-            db.load_font_source(fontdb::Source::Binary(Arc::new(bytes)));
-        }
-        let fonts = FontSystem::new_with_locale_and_db("it-IT".into(), db);
+        let fonts = font_system();
         let cache = Cache::new(&device);
         let viewport = Viewport::new(&device, &cache);
         // "Web": i colori restano valori sRGB e si mescolano cosi', come nei
@@ -347,32 +343,8 @@ impl Overlay {
         })
     }
 
-    /// Impagina un testo; al massimo `max_lines` righe (`None`: tutte).
     fn shape(&mut self, t: &Text, max_lines: Option<usize>) -> Buffer {
-        let line = (t.size * 1.2).ceil();
-        let mut b = Buffer::new(&mut self.fonts, Metrics::new(t.size, line));
-        b.set_size(t.width, max_lines.map(|n| line * n as f32));
-        let family = match t.face {
-            Face::Serif => "Instrument Serif",
-            Face::Sans => "Instrument Sans",
-        };
-        let mut attrs = Attrs::new().family(Family::Name(family)).style(Style::Normal).weight(Weight(t.weight));
-        if t.tracking != 0.0 {
-            attrs = attrs.letter_spacing(t.tracking);
-        }
-        if t.tabular {
-            let mut f = FontFeatures::new();
-            f.enable(FeatureTag::new(b"tnum"));
-            attrs = attrs.font_features(f);
-        }
-        let align = match t.align {
-            Align::Left => TextAlign::Left,
-            Align::Center => TextAlign::Center,
-            Align::Right => TextAlign::Right,
-        };
-        b.set_text(&t.text, &attrs, Shaping::Advanced, Some(align));
-        b.shape_until_scroll(&mut self.fonts, false);
-        b
+        shape(&mut self.fonts, t, max_lines)
     }
 
     /// Disegna la scena sopra cio' che il bersaglio contiene gia'.
@@ -460,13 +432,60 @@ impl Overlay {
     }
 }
 
+/// I due caratteri dell'interfaccia, e nient'altro.
+pub(crate) fn font_system() -> FontSystem {
+    let mut db = fontdb::Database::new();
+    for bytes in [SERIF, SANS] {
+        db.load_font_source(fontdb::Source::Binary(Arc::new(bytes)));
+    }
+    FontSystem::new_with_locale_and_db("it-IT".into(), db)
+}
+
+/// Impagina un testo; al massimo `max_lines` righe (`None`: tutte).
+pub(crate) fn shape(fonts: &mut FontSystem, t: &Text, max_lines: Option<usize>) -> Buffer {
+    let line = (t.size * 1.2).ceil();
+    let mut b = Buffer::new(fonts, Metrics::new(t.size, line));
+    b.set_size(t.width, max_lines.map(|n| line * n as f32));
+    let family = match t.face {
+        Face::Serif => "Instrument Serif",
+        Face::Sans => "Instrument Sans",
+    };
+    let mut attrs = Attrs::new().family(Family::Name(family)).style(Style::Normal).weight(Weight(t.weight));
+    if t.tracking != 0.0 {
+        attrs = attrs.letter_spacing(t.tracking);
+    }
+    if t.tabular {
+        let mut f = FontFeatures::new();
+        f.enable(FeatureTag::new(b"tnum"));
+        attrs = attrs.font_features(f);
+    }
+    let align = match t.align {
+        Align::Left => TextAlign::Left,
+        Align::Center => TextAlign::Center,
+        Align::Right => TextAlign::Right,
+    };
+    b.set_text(&t.text, &attrs, Shaping::Advanced, Some(align));
+    b.shape_until_scroll(fonts, false);
+    b
+}
+
+/// Larghezza della riga, senza andare a capo.
+pub(crate) fn line_width(fonts: &mut FontSystem, t: &Text) -> f32 {
+    let free = Text { width: None, ..t.clone() };
+    shape(fonts, &free, Some(1)).layout_runs().map(|r| r.line_w).fold(0.0, f32::max)
+}
+
+/// Quante righe, andando a capo nella larghezza della scatola.
+pub(crate) fn line_count(fonts: &mut FontSystem, t: &Text) -> usize {
+    shape(fonts, t, None).layout_runs().count()
+}
+
 impl Measure for Overlay {
     fn width(&mut self, t: &Text) -> f32 {
-        let free = Text { width: None, ..t.clone() };
-        self.shape(&free, Some(1)).layout_runs().map(|r| r.line_w).fold(0.0, f32::max)
+        line_width(&mut self.fonts, t)
     }
 
     fn lines(&mut self, t: &Text) -> usize {
-        self.shape(t, None).layout_runs().count()
+        line_count(&mut self.fonts, t)
     }
 }

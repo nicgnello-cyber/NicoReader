@@ -64,7 +64,7 @@ impl ApplicationHandler<UserEvent> for App {
 
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
-            UserEvent::Loaded(loaded) => self.arrived(loaded),
+            UserEvent::Loaded(ready) => self.arrived(ready),
             #[cfg(target_os = "macos")]
             UserEvent::Finder => self.open_from_finder(),
             UserEvent::Gpu(start) => match *start {
@@ -82,10 +82,10 @@ impl ApplicationHandler<UserEvent> for App {
             UserEvent::ServerChecked(server, found) => self.server_checked(server, found),
             UserEvent::Opened(path, book, quiet) => self.opened(&path, *book, quiet),
             UserEvent::Downloaded(path, result) => self.downloaded(&path, result),
-            UserEvent::Cover(c) => self.cover_arrived(c),
-            UserEvent::Thumb(loaded) => self.thumb_arrived(loaded),
-            UserEvent::LensPage(loaded) => self.lens_page_arrived(loaded),
-            UserEvent::Upscaled(u) => self.upscaled(u),
+            UserEvent::Cover(ready) => self.cover_arrived(ready),
+            UserEvent::Thumb(ready) => self.thumb_arrived(ready),
+            UserEvent::LensPage(ready) => self.lens_page_arrived(ready),
+            UserEvent::Upscaled(ready) => self.upscaled(ready),
             UserEvent::Update(release) => self.update_arrived(release),
             UserEvent::OpenUpdate(url) => self.open_release_page(&url),
             UserEvent::InstallUpdate(release) => self.install_update(release),

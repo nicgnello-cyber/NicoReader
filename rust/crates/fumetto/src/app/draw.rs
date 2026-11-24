@@ -23,7 +23,7 @@ impl App {
         }
     }
 
-    pub(super) fn arrived(&mut self, loaded: Loaded) {
+    pub(super) fn arrived(&mut self, Ready { item: loaded, image }: Ready<Loaded>) {
         if loaded.generation != self.generation {
             return; // un ritardatario del volume precedente
         }
@@ -56,7 +56,7 @@ impl App {
         // la misura va con la pagina che resta a schermo: dopo una rotazione,
         // finche' non arriva quella girata, valgono entrambe quelle di prima
         reader.known(loaded.index, loaded.native);
-        self.keep(loaded.index, page, loaded.target);
+        self.keep(loaded.index, page, image, loaded.target);
         self.request_upscale();
         // arrivata una pagina a schermo, la lettura anticipata puo' allargarsi
         // alle successive
@@ -66,16 +66,15 @@ impl App {
         }
     }
 
-    /// Una pagina pronta va sulla scheda video; se non c'e' ancora, resta in
-    /// memoria e la si disegna dal processore.
-    fn keep(&mut self, index: usize, page: Page, target: Target) {
-        match &self.gfx {
-            Some(gfx) => match gfx.renderer.upload(&page) {
-                Ok(image) => {
-                    self.shown.insert(index, Shown { image, target, upscaled: false, stale: false });
-                }
-                Err(e) => eprintln!("pagina {}: {e}", index + 1),
-            },
+    /// Una pagina pronta va sulla scheda video (se non ce l'ha gia' messa il
+    /// thread di lavoro); se non c'e' ancora, resta in memoria e la si
+    /// disegna dal processore.
+    fn keep(&mut self, index: usize, page: Page, image: Option<GpuImage>, target: Target) {
+        match self.on_gpu(image, &page) {
+            Some(Ok(image)) => {
+                self.shown.insert(index, Shown { image, target, upscaled: false, stale: false });
+            }
+            Some(Err(e)) => eprintln!("pagina {}: {e}", index + 1),
             None => {
                 self.cpu_pages.insert(index, (page, target));
             }
@@ -140,7 +139,7 @@ impl App {
             None,
             look!(self),
         );
-        let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut Estimate));
+        let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut self.cpu, &mut Estimate));
         let Some(presented) = self.present_with(&items, &[], lens, &scene) else { return };
         if let Some(reader) = &mut self.reader {
             reader.drawn(&Prepared { shown: &self.shown, cpu: &self.cpu_pages });
@@ -179,7 +178,7 @@ impl App {
             None,
             look!(self),
         );
-        let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut Estimate));
+        let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut self.cpu, &mut Estimate));
         let slots = ui::welcome_covers(&ctx);
         // qui non c'e' una targa: la copertina compare dal nero
         let shown = self.show_covers(&slots, now, |a| a);
@@ -244,7 +243,7 @@ impl App {
             None,
             look!(self),
         );
-        let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut Estimate));
+        let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut self.cpu, &mut Estimate));
         // dopo la scena, che fa avanzare le celle che si alzano
         let Some(d) = &ctx.shelf else { return };
         let slots = self.ui.shelf.cover_slots(d, view, scale);
@@ -331,7 +330,7 @@ impl App {
             Some(d),
             look!(self),
         );
-        let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut Estimate));
+        let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut self.cpu, &mut Estimate));
         // le miniature lontane si lasciano andare
         if self.thumb_images.len() > THUMBS_KEPT {
             let keep: HashSet<usize> = slots.iter().map(|s| s.0).collect();
@@ -352,11 +351,11 @@ impl App {
         scene: &Scene,
     ) -> Option<Instant> {
         let presented = match self.gfx {
-            // ponytail: l'interfaccia, le copertine e la lente le disegna solo
-            // la scheda video; nei primi 600 ms, dal processore, si vedono solo
-            // le pagine (con le regolazioni, che la' costano una tabella)
+            // nei primi istanti, dal processore: pagine (con le regolazioni,
+            // che la' costano una tabella), copertine e interfaccia; le
+            // miniature e la lente aspettano la scheda video
             Some(_) => self.present_gpu(items, covers, lens, scene),
-            None => self.present_cpu(items),
+            None => self.present_cpu(items, covers, scene),
         }?;
         if let Some(w) = &self.window
             && w.is_visible() == Some(false)
@@ -386,7 +385,8 @@ impl App {
             .chain(covers.iter().filter_map(|(what, x, y, w, h)| {
                 Some(match what {
                     Extra::Cover { path, radius, opacity } => {
-                        Placement::new(&self.covers.get(path)?.image, *x, *y, *w, *h).rounded(*radius).faded(*opacity)
+                        let CoverImage::Gpu(image) = &self.covers.get(path)?.image else { return None };
+                        Placement::new(image, *x, *y, *w, *h).rounded(*radius).faded(*opacity)
                     }
                     Extra::Thumb(i) => Placement::new(&self.thumb_images.get(i)?.0, *x, *y, *w, *h),
                 })
@@ -448,24 +448,24 @@ impl App {
     }
 
     /// Disegna copiando dal processore, finche' la scheda video non c'e'.
-    fn present_cpu(&mut self, items: &[Item]) -> Option<Instant> {
+    fn present_cpu(
+        &mut self, items: &[Item], covers: &[(Extra, f32, f32, f32, f32)], scene: &Scene,
+    ) -> Option<Instant> {
         let size = self.view_size();
         let cpu = self.cpu.as_mut()?;
-        let list: Vec<cpu_view::Item> = items
-            .iter()
-            .filter_map(|it| {
-                self.cpu_pages.get(&it.page).map(|(page, _)| cpu_view::Item {
-                    page,
-                    x: it.x,
-                    y: it.y,
-                    w: it.w,
-                    h: it.h,
-                })
-            })
-            .collect();
+        let pages = items.iter().filter_map(|it| {
+            self.cpu_pages.get(&it.page).map(|(p, _)| cpu_view::Item::page(p, it.x, it.y, it.w, it.h))
+        });
+        let covers = covers.iter().filter_map(|(what, x, y, w, h)| {
+            let Extra::Cover { path, radius, opacity } = what else { return None };
+            let CoverImage::Cpu(page) = &self.covers.get(path)?.image else { return None };
+            let page = cpu_view::Item::page(page, *x, *y, *w, *h);
+            Some(cpu_view::Item { radius: *radius, opacity: *opacity, adjusted: false, ..page })
+        });
+        let list: Vec<cpu_view::Item> = pages.chain(covers).collect();
         let adjust = Adjust::from_steps(self.settings.brightness, self.settings.contrast, self.settings.gamma);
         let table = (!adjust.is_none()).then(|| adjust.table());
-        if let Err(e) = cpu.draw(size, &list, table.as_ref()) {
+        if let Err(e) = cpu.draw(size, &list, table.as_ref(), scene) {
             eprintln!("finestra: {e}");
             return None;
         }
@@ -523,10 +523,26 @@ impl App {
         if format != gpu_start::LIKELY_FORMAT {
             overlay = Overlay::new(&gpu, format);
         }
+        // da qui i thread di lavoro caricano da se' le pagine che preparano
+        let renderer = Arc::new(renderer);
+        let _ = self.uploader.set(renderer.clone());
         self.gfx = Some(Gfx { window, surface, config, gpu, renderer, overlay });
         for (index, (page, target)) in std::mem::take(&mut self.cpu_pages) {
-            self.keep(index, page, target);
+            self.keep(index, page, None, target);
         }
+        // e le copertine; una che non si carica si richiede
+        let gfx = self.gfx.as_ref().expect("appena messa");
+        self.covers.retain(|_, cover| match &cover.image {
+            CoverImage::Cpu(page) => match gfx.renderer.upload(page) {
+                Ok(image) => {
+                    cover.image = CoverImage::Gpu(image);
+                    true
+                }
+                Err(_) => false,
+            },
+            CoverImage::Gpu(_) => true,
+        });
+        self.cover_wanted.clear();
         self.stats.gpu_ms = Some(self.stats.now_ms());
         Ok(())
     }
@@ -614,12 +630,16 @@ pub(super) fn always_ready(_: usize) -> bool {
     true
 }
 
-/// Chi misura i testi: i caratteri veri, o una stima finche' la scheda
-/// video non c'e' (tanto, fino ad allora, l'interfaccia non si disegna).
-fn measure<'a>(gfx: &'a mut Option<Gfx>, estimate: &'a mut Estimate) -> &'a mut dyn Measure {
-    match gfx {
-        Some(g) => &mut g.overlay,
-        None => estimate,
+/// Chi misura i testi: i caratteri veri, della scheda video o (prima che
+/// arrivi) del processore, con la stessa impaginazione; una stima solo se
+/// non c'e' nessuno dei due.
+fn measure<'a>(
+    gfx: &'a mut Option<Gfx>, cpu: &'a mut Option<CpuView>, estimate: &'a mut Estimate,
+) -> &'a mut dyn Measure {
+    match (gfx, cpu) {
+        (Some(g), _) => &mut g.overlay,
+        (None, Some(c)) => &mut c.soft,
+        (None, None) => estimate,
     }
 }
 
