@@ -956,6 +956,26 @@ Il capitolo 7 ne tiene la memoria e i numeri.
        inglese, al singolare o al plurale; "tag:" in tutte. Con la
        categoria la tendina propone solo i suoi tag (anche da una lettera),
        e ai server non si chiede niente (cercano per titolo).
+  5b. [x] Riorganizzazione e tag, ancora (24 novembre).
+     - Codice: le miniature e le pagine della lente hanno lo stesso codice
+       (app/side.rs, SidePages: preparatore, immagini, richiesta); le
+       copertine stanno fuori da App (app/covers.rs, Covers); il modulo da
+       scrivere (ui/form.rs, era server.rs) ha uno scopo (Purpose) al posto
+       di tre Option; Lib::owned/entry e find_entry al posto delle ricerche
+       ripetute.
+     - Ricerca (shelf/query.rs): piu' condizioni insieme, tutte da
+       soddisfare; virgolette per piu' parole (e per il nome esatto di un
+       tag); il meno esclude. La tendina completa l'ultima condizione fra i
+       volumi delle altre, e scelta la sostituisce (con una condizione sola
+       porta fra i volumi del tag, come prima). Ai server solo le parole.
+     - Assegnazione: Ctrl+clic (Cmd su macOS) sceglie volumi e pile in
+       libreria (shelf/pick.rs), con la barra "N volumi scelti · Tag… · ×"
+       e la voce nel menu; il pannello ha l'ambito Reach::Picked
+       (TagsOf::Volumes). Nel pannello, scrivendo, i suggerimenti vengono
+       anche dalle altre categorie e un suggerimento scelto porta la sua.
+     - Annulla: ogni cambio ai tag fa una fotografia delle correzioni dei
+       suoi volumi (Edits::snapshot/restore); Ctrl+Z torna indietro, fino a
+       30 cambi. Gli avvisi lo ricordano.
   5. Distribuzione (capitolo 5).
 
   Da decidere tu, quando vuoi:

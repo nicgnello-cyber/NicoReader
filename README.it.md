@@ -135,6 +135,20 @@ tag: *Rinomina…* gli cambia nome su tutti i volumi (se un tag con il nome
 nuovo c'e' gia', i due diventano uno), *Togli da tutti i volumi…* chiede
 conferma e lo toglie.
 
+La ricerca mette insieme piu' condizioni, che devono valere tutte:
+`personaggio:wolverine autore:"chris claremont" -tag:letto` trova i volumi
+con Wolverine, di Chris Claremont, che non hai ancora segnato "letto". Fra
+virgolette ci sono piu' parole insieme, e il nome di un tag dev'essere
+proprio quello; il meno davanti esclude. La tendina completa l'ultima
+condizione fra i volumi che rispondono alle altre.
+
+Per dare dei tag a piu' volumi insieme: **Ctrl+clic** (Cmd+clic su macOS)
+sulle copertine le sceglie (una pila sceglie tutta la serie); in basso una
+barra dice quanti sono, e *Tag…* apre il pannello per tutti. Nel pannello,
+mentre scrivi, si suggeriscono anche i tag delle altre categorie, con la
+loro categoria accanto. Ogni cambio ai tag (aggiunto, tolto, rinominato,
+tolto da tutti) si annulla con **Ctrl+Z** (Cmd+Z), uno dopo l'altro.
+
 Per leggere da un server Komga o Kavita: tasto destro → Aggiungi un server…
 (o l'icona della cartella nella libreria). Per Komga l'indirizzo del server,
 con nome e password; per Kavita il link OPDS che c'è nelle impostazioni

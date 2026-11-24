@@ -137,6 +137,20 @@ on a series stack → Series tags…. In the list of tags, right click on a tag:
 already exists, the two become one), *Remove from every volume…* asks first,
 then removes it.
 
+The search combines several conditions, which must all hold:
+`character:wolverine author:"chris claremont" -tag:read` finds the volumes
+with Wolverine, by Chris Claremont, that you haven't marked "read" yet.
+Quotes keep several words together, and a tag's name must be exactly that;
+a minus excludes. The drop-down completes the last condition among the
+volumes that match the others.
+
+To tag several volumes at once: **Ctrl+click** (Cmd+click on macOS) picks
+covers (a stack picks the whole series); a bar at the bottom says how many,
+and *Tags…* opens the panel for all of them. In the panel, as you type, tags
+of the other kinds are suggested too, with their kind beside them. Every tag
+change (added, removed, renamed, removed from every volume) is undone with
+**Ctrl+Z** (Cmd+Z), one after the other.
+
 To read from a Komga or Kavita server: right click → Add a server… (or the
 folder icon in the library). For Komga, the server address with your user
 name and password; for Kavita, the OPDS link from your user settings (it

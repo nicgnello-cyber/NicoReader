@@ -106,11 +106,13 @@ struct NextOffer {
 mod actions;
 mod arrivals;
 mod commands;
+mod covers;
 mod draw;
 mod events;
 mod ready;
 mod search;
 mod shelf;
+mod side;
 mod tags;
 mod tools;
 mod touch;
@@ -118,10 +120,12 @@ mod update;
 mod volume;
 
 use actions::{combo_of, place, ui_key};
+use covers::{CoverImage, Covers};
 use draw::{always_ready, context, thumbs_data};
 pub use ready::Ready;
-use ready::{Uploader, deliver_ready};
+use ready::{Uploader, deliver_ready, on_gpu};
 use shelf::{always, shelf_data};
+use side::SidePages;
 use tools::save_page;
 
 /// Quante miniature si tengono sulla scheda video: a 150x225 pesano 135 KB l'una.
@@ -227,6 +231,29 @@ struct Lib {
     scanning: bool,
 }
 
+impl Lib {
+    /// I volumi della libreria, senza quelli trovati cercando sui server.
+    fn owned(&self) -> &[Entry] {
+        &self.entries[..self.found_from.min(self.entries.len())]
+    }
+
+    /// La voce di un volume, con le correzioni a mano.
+    fn entry(&self, path: &Path) -> Option<&Entry> {
+        find_entry(&self.entries, path)
+    }
+
+    /// La voce di un volume come l'ha trovata la scansione.
+    fn raw_entry(&self, path: &Path) -> Option<&Entry> {
+        find_entry(&self.raw, path)
+    }
+}
+
+/// La voce di un volume fra queste, per percorso.
+fn find_entry<'a>(entries: &'a [Entry], path: &Path) -> Option<&'a Entry> {
+    let here = fumetto_core::absolute(path);
+    entries.iter().find(|e| fumetto_core::absolute(&e.path) == here)
+}
+
 struct Gfx {
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -257,39 +284,6 @@ enum Extra {
     },
     Thumb(usize),
 }
-
-/// Le copertine da disegnare, e se qualcuna sta ancora comparendo.
-struct ShownCovers {
-    extras: Vec<(Extra, f32, f32, f32, f32)>,
-    fading: bool,
-}
-
-/// Una copertina della libreria sulla scheda video.
-struct ShelfCover {
-    image: CoverImage,
-    /// La misura della cella per cui e' fatta.
-    size: (u32, u32),
-    /// Da quando c'e': compare sfumando.
-    since: Instant,
-}
-
-impl ShelfCover {
-    /// Quanto si vede, mentre compare.
-    fn shown(&self, now: Instant) -> f32 {
-        let a = (now.saturating_duration_since(self.since).as_secs_f32() / COVER_FADE).min(1.0);
-        a * a * (3.0 - 2.0 * a)
-    }
-}
-
-/// Dove sta una copertina: sulla scheda video, o (prima che arrivi) in RAM,
-/// per disegnarla dal processore.
-enum CoverImage {
-    Gpu(GpuImage),
-    Cpu(Page),
-}
-
-/// Quanto ci mette una copertina a comparire, in secondi.
-const COVER_FADE: f32 = 0.22;
 
 /// Le pagine pronte, dovunque siano: sulla scheda video, o in RAM prima che
 /// la scheda video arrivi (dopo, la RAM si svuota e resta solo l'una).
@@ -391,21 +385,12 @@ pub struct App {
     lib: Lib,
     /// Le schede ComicInfo.xml gia' lette, accanto alla cache delle copertine.
     info_cache: PathBuf,
-    /// Le copertine sulla scheda video, alla misura delle celle.
-    covers: HashMap<PathBuf, ShelfCover>,
-    /// Quelle che non si riesce a fare: non si richiedono di nuovo.
-    covers_failed: std::collections::HashSet<PathBuf>,
-    cover_loader: CoverLoader,
-    /// L'ultima richiesta al preparatore, per non ripeterla a ogni fotogramma.
-    cover_wanted: Vec<(PathBuf, (u32, u32))>,
+    /// Le copertine della libreria e della schermata iniziale.
+    covers: Covers,
 
     /// Le miniature delle pagine sono a schermo (T).
     thumbs_open: bool,
-    thumb_loader: Loader,
-    thumb_generation: u64,
-    thumb_images: HashMap<usize, (GpuImage, Target)>,
-    /// L'ultima richiesta di miniature, per non ripeterla a ogni fotogramma.
-    thumb_wanted: (Option<Target>, Vec<usize>),
+    thumbs: SidePages,
 
     upscaler: Upscaler,
     /// Le pagine chieste all'ingranditore, e quelle che non ha potuto fare.
@@ -428,6 +413,9 @@ pub struct App {
     touches: touch::Touches,
     /// I dati dei volumi corretti a mano.
     edits: fumetto_core::edits::Edits,
+    /// I cambi ai tag da annullare con Ctrl+Z, l'ultimo in fondo: come erano
+    /// le correzioni prima, e cosa e' cambiato.
+    tag_undo: Vec<(fumetto_core::edits::Snapshot, tags::TagChange)>,
     /// Gli ultimi letti anche nella jump list di Windows.
     jumplist: JumpList,
     /// La ricerca della libreria fatta anche sui server.
@@ -452,10 +440,7 @@ pub struct App {
     cursor_hidden: bool,
     /// Le pagine sotto la lente ai loro pixel veri: la lente mostra quelli,
     /// non la pagina rimpicciolita e poi ingrandita.
-    lens_loader: Loader,
-    lens_generation: u64,
-    lens_images: HashMap<usize, (GpuImage, Target)>,
-    lens_wanted: (Option<Target>, Vec<usize>),
+    lens_pages: SidePages,
 
     pub stats: Stats,
     script: Option<Script>,
@@ -543,15 +528,9 @@ impl App {
             library_open: false,
             lib: Lib::default(),
             info_cache,
-            covers: HashMap::new(),
-            covers_failed: Default::default(),
-            cover_loader,
-            cover_wanted: Vec::new(),
+            covers: Covers::new(cover_loader),
             thumbs_open: false,
-            thumb_loader,
-            thumb_generation: 0,
-            thumb_images: HashMap::new(),
-            thumb_wanted: (None, Vec::new()),
+            thumbs: SidePages::new("miniatura", thumb_loader),
             upscaler,
             upscale_wanted: Vec::new(),
             upscale_failed: HashSet::new(),
@@ -563,6 +542,7 @@ impl App {
             open_at_end: None,
             touches: touch::Touches::default(),
             edits,
+            tag_undo: Vec::new(),
             jumplist,
             search: search::ServerSearch::default(),
             last_click: None,
@@ -573,10 +553,7 @@ impl App {
             settings_saved_at: Instant::now(),
             lens: false,
             cursor_hidden: false,
-            lens_loader,
-            lens_generation: 0,
-            lens_images: HashMap::new(),
-            lens_wanted: (None, Vec::new()),
+            lens_pages: SidePages::new("lente, pagina", lens_loader),
             stats: Stats::new(started),
             script,
         };

@@ -3,7 +3,9 @@
 //! quelli che cominciano cosi', poi i piu' usati, ognuno con la sua
 //! categoria e quanti volumi lo hanno. Un clic, o le frecce e Invio, porta
 //! fra i volumi di quel tag. I volumi trovati restano sotto, come prima.
-//! Con una categoria davanti ("personaggio:") solo i tag di quella.
+//! Con una categoria davanti ("personaggio:") solo i tag di quella. Con piu'
+//! condizioni ("personaggio:wolverine aut") si completa l'ultima, fra i
+//! volumi che rispondono alle altre: gli autori dei volumi con Wolverine.
 
 use super::draw::BarGeo;
 use super::*;
@@ -33,20 +35,24 @@ pub(super) struct DropGeo {
 }
 
 impl Shelf {
-    /// I tag che rispondono alla ricerca. Nessuno fra i tag (li' la ricerca
-    /// filtra gia' i tag) o con meno di due lettere scritte.
+    /// I tag che completano la condizione che si sta scrivendo. Nessuno fra
+    /// i tag (li' la ricerca filtra gia' i tag) o con meno di due lettere
+    /// scritte.
     pub(super) fn suggestions(&self, d: &ShelfData) -> Vec<Suggestion> {
-        let query = Query::parse(&self.search);
+        let mut query = Query::parse(&self.search);
+        let Some(term) = query.typing().cloned() else { return Vec::new() };
         // con una categoria davanti bastano i due punti: "personaggio:" li mostra tutti
-        let enough = !query.everywhere() || query.text.chars().count() >= FROM;
+        let enough = term.scope != Scope::Everywhere || term.text.chars().count() >= FROM;
         if self.groups || !enough {
             return Vec::new();
         }
-        let needle = &query.text;
+        // fra i volumi che rispondono alle altre condizioni
+        query.terms.pop();
+        let needle = &term.text;
         // per categoria e nome, senza badare alle maiuscole
         let mut found: HashMap<(GroupKind, String), Suggestion> = HashMap::new();
-        for e in &d.entries[..d.library_len()] {
-            for g in e.groups.iter().filter(|g| query.takes(g)) {
+        for e in d.entries[..d.library_len()].iter().filter(|e| query.matches(e)) {
+            for g in e.groups.iter().filter(|g| term.takes(g)) {
                 found
                     .entry((g.kind, g.name.to_lowercase()))
                     .or_insert_with(|| Suggestion { kind: g.kind, name: g.name.clone(), count: 0 })
@@ -62,11 +68,23 @@ impl Shelf {
         v
     }
 
-    /// Porta fra i volumi del tag suggerito: la ricerca ha fatto il suo.
+    /// Il tag suggerito: con una condizione sola porta fra i suoi volumi (la
+    /// ricerca ha fatto il suo); con piu' condizioni prende il posto di
+    /// quella che si scriveva, e si continua a cercare.
     pub(super) fn open_suggestion(&mut self, s: Suggestion) {
-        self.search.clear();
         self.suggested = None;
-        self.enter_group(s.kind, s.name);
+        let query = Query::parse(&self.search);
+        match query.typing() {
+            Some(term) if query.terms.len() > 1 => {
+                let condition = term.with_tag(s.kind, &s.name);
+                self.search = format!("{}{condition} ", &self.search[..term.start]);
+                self.reset_view();
+            }
+            _ => {
+                self.search.clear();
+                self.enter_group(s.kind, s.name);
+            }
+        }
     }
 
     /// La tendina, se ci sono suggerimenti.

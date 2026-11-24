@@ -68,10 +68,7 @@ impl App {
             self.library_open = false;
             self.ui.reset();
             self.ui.thumbs.open(reader.here());
-            if self.thumb_images.is_empty() {
-                self.thumb_generation = self.thumb_loader.set_book(self.book.clone());
-                self.thumb_wanted = (None, Vec::new());
-            }
+            self.thumbs.start(&self.book);
         }
         self.changed();
     }
@@ -175,9 +172,8 @@ impl App {
             return;
         }
         self.lens = !self.lens;
-        if self.lens && self.lens_images.is_empty() {
-            self.lens_generation = self.lens_loader.set_book(self.book.clone());
-            self.lens_wanted = (None, Vec::new());
+        if self.lens {
+            self.lens_pages.start(&self.book);
         }
         let note = if self.lens {
             t("Lente: la rotella cambia l'ingrandimento", "Magnifier: the wheel changes the magnification")
@@ -208,13 +204,8 @@ impl App {
         // ai pixel veri: la pagina intera, senza rimpicciolirla (fino ai limiti
         // di una texture), ma rifilata e girata come quella a schermo
         let target = Target { fit: Fit::Contain { width: 8192, height: 1 << 16 }, ..reader.target() };
-        let wanted: Vec<usize> =
-            under.iter().map(|it| it.page).filter(|p| self.lens_images.get(p).is_none_or(|l| l.1 != target)).collect();
-        if (Some(target), &wanted) != (self.lens_wanted.0, &self.lens_wanted.1) {
-            self.lens_loader.set_target(target);
-            self.lens_loader.request(&wanted);
-            self.lens_wanted = (Some(target), wanted);
-        }
+        let wanted = self.lens_pages.missing(under.iter().map(|it| it.page), target);
+        self.lens_pages.request(target, wanted);
         Some(((cx, cy, r), under))
     }
 }

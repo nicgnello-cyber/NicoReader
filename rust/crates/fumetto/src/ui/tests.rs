@@ -148,7 +148,7 @@ fn i_dati_di_un_volume() {
         ..VolumeEdit::default()
     };
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::SaveVolume("/f/scan_03.cbz".into(), saved))));
-    ui.server_checked(Ok(()));
+    ui.form_done(Ok(()));
     assert!(!ui.typing());
 }
 
@@ -175,9 +175,9 @@ fn il_modulo_del_server() {
     };
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::AddServer(server))));
     ui.key(Key::Char('x'), &c);
-    ui.server_checked(Err("nome o password sbagliati".into()));
+    ui.form_done(Err("nome o password sbagliati".into()));
     assert!(ui.typing(), "se non va, si corregge");
-    ui.server_checked(Ok(()));
+    ui.form_done(Ok(()));
     assert!(!ui.typing());
     ui.internal(Some(Command::AskServer), &c);
     assert_eq!(ui.key(Key::Escape, &c), Handled::Yes(None));
@@ -463,7 +463,11 @@ fn un_clic_su_un_tag_porta_agli_altri_volumi() {
 
 /// Il volume solo: un ambito, con i suoi tag.
 fn one_volume(path: &std::path::Path, tags: Vec<fumetto_core::library::Group>) -> Vec<TagScope> {
-    vec![TagScope { series: None, paths: vec![path.to_path_buf()], tags: tags.into_iter().map(|g| (g, 1)).collect() }]
+    vec![TagScope {
+        reach: Reach::Volume,
+        paths: vec![path.to_path_buf()],
+        tags: tags.into_iter().map(|g| (g, 1)).collect(),
+    }]
 }
 
 #[test]
@@ -473,10 +477,10 @@ fn i_tag_di_tutta_la_serie() {
     let mut ui = Ui::new();
     let c = ctx(Some(book(10)), &[]);
     let paths: Vec<std::path::PathBuf> = (1..=3).map(|n| format!("/f/x-men-{n}.cbz").into()).collect();
-    let volume = TagScope { series: None, paths: vec![paths[0].clone()], tags: vec![(tag("Wolverine"), 1)] };
+    let volume = TagScope { reach: Reach::Volume, paths: vec![paths[0].clone()], tags: vec![(tag("Wolverine"), 1)] };
     // Wolverine c'e' in due volumi su tre, Tempesta in tutti
     let series = TagScope {
-        series: Some("X-Men".into()),
+        reach: Reach::Series("X-Men".into()),
         paths: paths.clone(),
         tags: vec![(tag("Wolverine"), 2), (tag("Tempesta"), 3)],
     };
@@ -501,8 +505,9 @@ fn i_tag_di_tutta_la_serie() {
     }
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(None), "ce l'hanno gia' tutti");
     // dopo un cambio l'ambito scelto resta
-    let series = TagScope { series: Some("X-Men".into()), paths: paths.clone(), tags: vec![(tag("Tempesta"), 3)] };
-    let volume = TagScope { series: None, paths: vec![paths[0].clone()], tags: Vec::new() };
+    let series =
+        TagScope { reach: Reach::Series("X-Men".into()), paths: paths.clone(), tags: vec![(tag("Tempesta"), 3)] };
+    let volume = TagScope { reach: Reach::Volume, paths: vec![paths[0].clone()], tags: Vec::new() };
     ui.tags_changed(vec![volume, series], Vec::new());
     assert!(texts(&mut ui).iter().any(|t| t.starts_with("ON THE VOLUMES OF THE SERIES")));
 }
@@ -524,10 +529,32 @@ fn un_tag_si_rinomina_in_tutta_la_libreria() {
     }
     let renamed = Command::RenameTag(GroupKind::Character, "Logan".into(), "Wolverine".into());
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(renamed)));
-    ui.server_checked(Ok(()));
+    ui.form_done(Ok(()));
     assert!(!ui.modal());
     // lo stesso nome: si chiude e basta
     ui.internal(Some(Command::AskRenameTag(GroupKind::Character, "Logan".into())), &c);
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(None));
     assert!(!ui.modal());
+}
+
+#[test]
+fn i_suggerimenti_anche_dalle_altre_categorie() {
+    use fumetto_core::library::{Group, GroupKind};
+    let mut ui = Ui::new();
+    let c = ctx(Some(book(10)), &[]);
+    let path = std::path::PathBuf::from("/f/x-men-141.cbz");
+    let known =
+        vec![(Group::new(GroupKind::Team, "X-Men", None), 30), (Group::new(GroupKind::Character, "Xavier", None), 8)];
+    ui.edit_tags(TagsOf::Volume(path.clone()), "X-Men 141".into(), one_volume(&path, Vec::new()), known);
+    // si parte dai personaggi: "x" propone Xavier e poi X-Men, con la sua categoria
+    ui.key(Key::Char('x'), &c);
+    let scene = ui.scene(&c, Instant::now(), &mut fumetto_render::Estimate);
+    let texts: Vec<&str> = scene.layers.iter().flat_map(|l| l.texts.iter().map(|t| t.text.as_str())).collect();
+    assert!(texts.contains(&"Xavier") && texts.contains(&"X-Men"));
+    assert!(texts.iter().any(|t| t.starts_with("Team")), "l'altra categoria si dice: {texts:?}");
+    // scelto, entra con la sua categoria, non con quella del campo
+    ui.key(Key::Down, &c);
+    ui.key(Key::Down, &c);
+    let team = Group::new(GroupKind::Team, "X-Men", None);
+    assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::AddTag(vec![path], team))));
 }

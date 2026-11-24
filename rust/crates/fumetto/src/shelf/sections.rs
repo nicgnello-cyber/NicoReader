@@ -88,7 +88,7 @@ pub(super) fn found_in(e: &Entry, needle: &str) -> bool {
 
 /// Titolo, serie o autori rispondono alla ricerca (fra i tag, i tag del
 /// volume si guardano a uno a uno: non devono portarsi dietro gli altri).
-fn matches_text(e: &Entry, needle: &str) -> bool {
+pub(super) fn matches_text(e: &Entry, needle: &str) -> bool {
     let has = |text: &str| text.to_lowercase().contains(needle);
     needle.is_empty() || has(&e.title) || e.series.as_deref().is_some_and(has) || e.authors.as_deref().is_some_and(has)
 }
@@ -362,8 +362,10 @@ pub(super) fn group_sections(d: &ShelfData, filter: Filter, query: &Query) -> Ve
         if !filter.keeps(d.status[i]) {
             continue;
         }
-        let hit = query.everywhere() && matches_text(e, &query.text);
-        for g in e.groups.iter().filter(|g| hit || query.takes(g)) {
+        if !query.matches(e) {
+            continue;
+        }
+        for g in e.groups.iter().filter(|g| query.shows_group(e, g)) {
             let (_, members) = groups.entry((g.kind, g.name.to_lowercase())).or_insert((g.name.as_str(), Vec::new()));
             if members.last() != Some(&i) {
                 members.push(i);

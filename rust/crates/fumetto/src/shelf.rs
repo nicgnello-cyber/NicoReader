@@ -165,6 +165,9 @@ pub enum Hit {
     Back,
     /// Un tag della tendina della ricerca.
     Suggestion(usize),
+    /// La barra dei volumi scelti: "Tag…", la crocetta.
+    PickTags,
+    PickClear,
     Bar,
 }
 
@@ -282,11 +285,14 @@ pub struct Shelf {
     lifted_at: Option<Instant>,
     /// Il tag della tendina della ricerca scelto con le frecce.
     suggested: Option<usize>,
+    /// I volumi scelti con Ctrl+clic, per dar loro dei tag insieme.
+    picked: Vec<PathBuf>,
 }
 
 mod draw;
 mod input;
 mod menus;
+mod pick;
 mod query;
 mod sections;
 mod suggest;
@@ -296,7 +302,7 @@ mod tests;
 #[cfg(test)]
 use draw::BarGeo;
 use draw::bar_hit;
-use query::Query;
+use query::{Query, Scope};
 pub(crate) use sections::kind_label;
 use sections::{KINDS, kind_names};
 use sections::{folder_name, groups_title, sort_label, sources};

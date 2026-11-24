@@ -40,7 +40,7 @@ impl App {
             }
             Command::EditTags(of) => self.edit_tags(of),
             Command::AddTag(paths, tag) => _ = self.change_tag(&paths, tags::TagChange::Add(tag)),
-            Command::RemoveTag(paths, tag) => _ = self.change_tag(&paths, tags::TagChange::Remove(tag)),
+            Command::RemoveTag(paths, tag) => self.tag_removed(&paths, tag),
             Command::ShowGroup(kind, name) => self.show_group(kind, name),
             Command::RenameTag(kind, old, new) => self.rename_tag(kind, old, new),
             Command::RemoveTagEverywhere(kind, name) => self.confirm_untag(kind, name),

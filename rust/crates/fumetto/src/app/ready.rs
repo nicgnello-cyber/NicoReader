@@ -58,13 +58,21 @@ pub(super) fn deliver_ready<T: WithPage>(
     }
 }
 
+/// La pagina sulla scheda video: quella caricata dal thread di lavoro, o
+/// caricata adesso (arrivata prima della scheda video, o non riuscita).
+/// `None` se la scheda video non c'e' ancora.
+pub(super) fn on_gpu(
+    renderer: Option<&Renderer>, image: Option<GpuImage>, page: &Page,
+) -> Option<Result<GpuImage, String>> {
+    match image {
+        Some(image) => Some(Ok(image)),
+        None => renderer.map(|r| r.upload(page)),
+    }
+}
+
 impl App {
-    /// La pagina sulla scheda video: quella caricata dal thread di lavoro, o
-    /// caricata adesso (arrivata prima della scheda video, o non riuscita).
-    pub(super) fn on_gpu(&self, image: Option<GpuImage>, page: &Page) -> Option<Result<GpuImage, String>> {
-        match image {
-            Some(image) => Some(Ok(image)),
-            None => self.gfx.as_ref().map(|gfx| gfx.renderer.upload(page)),
-        }
+    /// Il disegnatore, se la scheda video c'e'.
+    pub(super) fn renderer(&self) -> Option<&Renderer> {
+        self.gfx.as_ref().map(|g| &*g.renderer)
     }
 }

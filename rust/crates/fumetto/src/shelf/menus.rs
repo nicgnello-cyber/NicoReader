@@ -4,8 +4,21 @@ use super::*;
 use crate::ui::{Row, TagsOf};
 
 impl Shelf {
-    /// Le righe del menu del tasto destro su una cella.
-    pub(crate) fn tile_menu(d: &ShelfData, tile: &Tile) -> Vec<Row> {
+    /// Le righe del menu del tasto destro su una cella. Su una cella scelta
+    /// con altre (Ctrl+clic), prima i tag di tutte le scelte.
+    pub(crate) fn tile_menu(&self, d: &ShelfData, tile: &Tile) -> Vec<Row> {
+        let mut rows = Vec::new();
+        if self.picked.len() > 1 && self.is_picked(d, tile) {
+            let label = t("Tag dei volumi scelti\u{2026}", "Tags of the picked volumes\u{2026}");
+            rows.push(Row::plain(label, Command::EditTags(TagsOf::Volumes(self.picked.clone()))));
+            rows.push(Row::Sep);
+        }
+        rows.extend(Self::own_menu(d, tile));
+        rows
+    }
+
+    /// Le righe proprie della cella.
+    fn own_menu(d: &ShelfData, tile: &Tile) -> Vec<Row> {
         match tile {
             Tile::Series { name, .. } => vec![
                 Row::Head(t("Serie", "Series")),
