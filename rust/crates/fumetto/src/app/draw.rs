@@ -70,7 +70,7 @@ impl App {
     /// thread di lavoro); se non c'e' ancora, resta in memoria e la si
     /// disegna dal processore.
     fn keep(&mut self, index: usize, page: Page, image: Option<GpuImage>, target: Target) {
-        match self.on_gpu(image, &page) {
+        match on_gpu(self.renderer(), image, &page) {
             Some(Ok(image)) => {
                 self.shown.insert(index, Shown { image, target, upscaled: false, stale: false });
             }
@@ -181,7 +181,7 @@ impl App {
         let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut self.cpu, &mut Estimate));
         let slots = ui::welcome_covers(&ctx);
         // qui non c'e' una targa: la copertina compare dal nero
-        let shown = self.show_covers(&slots, now, |a| a);
+        let shown = self.covers.show(&slots, now, |a| a);
         self.present(&[], &shown.extras, &scene);
         if shown.fading {
             self.request_redraw();
@@ -230,7 +230,7 @@ impl App {
         let view = (vw as f32, vh as f32);
         let scale = self.scale();
         let covers = &self.covers;
-        let cover_shown = |p: &Path| covers.get(p).map_or(0.0, |c| c.shown(now));
+        let cover_shown = |p: &Path| covers.shown(p, now);
         let d = shelf_data(&self.lib, &self.settings.library, &cover_shown, self.book.is_some(), self.search.waiting());
         let ctx = context(
             self.window.as_deref(),
@@ -248,45 +248,11 @@ impl App {
         let Some(d) = &ctx.shelf else { return };
         let slots = self.ui.shelf.cover_slots(d, view, scale);
         // la targa della cella sfuma sopra la copertina: questa si vede tutta
-        let shown = self.show_covers(&slots, now, |_| 1.0);
-        // le copertine lontane si lasciano andare: a 170x255 pesano 170 KB l'una
-        if self.covers.len() > 400 {
-            let keep: std::collections::HashSet<&PathBuf> = slots.iter().map(|s| &s.path).collect();
-            self.covers.retain(|p, _| keep.contains(p));
-        }
+        let shown = self.covers.show(&slots, now, |_| 1.0);
         self.present(&[], &shown.extras, &scene);
         if shown.fading {
             self.request_redraw();
         }
-    }
-
-    /// Chiede le copertine che mancano (o sono di un'altra misura) e dice
-    /// come disegnare quelle a schermo; `opacity`: quanto si vede una
-    /// copertina mentre compare.
-    fn show_covers(&mut self, slots: &[CoverSlot], now: Instant, opacity: impl Fn(f32) -> f32) -> ShownCovers {
-        let px = |v: f32| v.round().max(1.0) as u32;
-        let covers = &self.covers;
-        let wanted: Vec<(PathBuf, (u32, u32))> = slots
-            .iter()
-            .map(|s| (s.path.clone(), (px(s.w), px(s.h))))
-            .filter(|(p, size)| !self.covers_failed.contains(p) && covers.get(p).is_none_or(|c| c.size != *size))
-            .collect();
-        if wanted != self.cover_wanted {
-            self.cover_loader.request(wanted.clone());
-            self.cover_wanted = wanted;
-        }
-        let mut fading = false;
-        let extras = slots
-            .iter()
-            .filter(|s| s.on_screen)
-            .filter_map(|s| {
-                let a = covers.get(&s.path)?.shown(now);
-                fading |= a < 1.0;
-                let cover = Extra::Cover { path: s.path.clone(), radius: s.radius, opacity: opacity(a) };
-                Some((cover, s.x, s.y, s.w, s.h))
-            })
-            .collect();
-        ShownCovers { extras, fading }
     }
 
     /// Le miniature: ogni pagina nella sua cella, alla misura della cella.
@@ -294,20 +260,14 @@ impl App {
         let (vw, vh) = self.view_size();
         let view = (vw as f32, vh as f32);
         let scale = self.scale();
-        let images = &self.thumb_images;
+        let images = &self.thumbs.images;
         let ready = |i: usize| images.contains_key(&i);
         let Some(d) = thumbs_data(&self.book, self.reader.as_ref(), &ready, self.settings.thumb_size) else { return };
         let (cw, ch) = Thumbs::cell_size(&d, view, scale);
         let base = self.reader.as_ref().map_or(Target::plain(Fit::Width(1)), |r| r.target());
         let target = Target { fit: Fit::Contain { width: cw, height: ch }, ..base };
         let slots = self.ui.thumbs.slots(&d, view, scale);
-        let wanted: Vec<usize> =
-            slots.iter().map(|s| s.0).filter(|i| images.get(i).is_none_or(|t| t.1 != target)).collect();
-        if (Some(target), &wanted) != (self.thumb_wanted.0, &self.thumb_wanted.1) {
-            self.thumb_loader.set_target(target);
-            self.thumb_loader.request(&wanted);
-            self.thumb_wanted = (Some(target), wanted);
-        }
+        let wanted = self.thumbs.missing(slots.iter().map(|s| s.0), target);
         // ogni miniatura sta nella sua cella, centrata, con la sua forma
         let shown: Vec<(Extra, f32, f32, f32, f32)> = slots
             .iter()
@@ -331,10 +291,11 @@ impl App {
             look!(self),
         );
         let scene = self.ui.scene(&ctx, now, measure(&mut self.gfx, &mut self.cpu, &mut Estimate));
+        self.thumbs.request(target, wanted);
         // le miniature lontane si lasciano andare
-        if self.thumb_images.len() > THUMBS_KEPT {
+        if self.thumbs.images.len() > THUMBS_KEPT {
             let keep: HashSet<usize> = slots.iter().map(|s| s.0).collect();
-            self.thumb_images.retain(|i, _| keep.contains(i));
+            self.thumbs.images.retain(|i, _| keep.contains(i));
         }
         self.present(&[], &shown, &scene);
     }
@@ -385,16 +346,16 @@ impl App {
             .chain(covers.iter().filter_map(|(what, x, y, w, h)| {
                 Some(match what {
                     Extra::Cover { path, radius, opacity } => {
-                        let CoverImage::Gpu(image) = &self.covers.get(path)?.image else { return None };
+                        let CoverImage::Gpu(image) = self.covers.image(path)? else { return None };
                         Placement::new(image, *x, *y, *w, *h).rounded(*radius).faded(*opacity)
                     }
-                    Extra::Thumb(i) => Placement::new(&self.thumb_images.get(i)?.0, *x, *y, *w, *h),
+                    Extra::Thumb(i) => Placement::new(&self.thumbs.images.get(i)?.0, *x, *y, *w, *h),
                 })
             }))
             .collect();
         let lens_placements = lens
             .as_ref()
-            .map_or(Vec::new(), |(_, under)| lens_placements(under, &self.lens_images, &self.shown, target));
+            .map_or(Vec::new(), |(_, under)| lens_placements(under, &self.lens_pages.images, &self.shown, target));
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = gfx.gpu.device.create_command_encoder(&Default::default());
         gfx.renderer.draw(&mut encoder, &view, gfx.config.format, size, &placements, Pass { adjust, ..Pass::PLAIN });
@@ -458,7 +419,7 @@ impl App {
         });
         let covers = covers.iter().filter_map(|(what, x, y, w, h)| {
             let Extra::Cover { path, radius, opacity } = what else { return None };
-            let CoverImage::Cpu(page) = &self.covers.get(path)?.image else { return None };
+            let CoverImage::Cpu(page) = self.covers.image(path)? else { return None };
             let page = cpu_view::Item::page(page, *x, *y, *w, *h);
             Some(cpu_view::Item { radius: *radius, opacity: *opacity, adjusted: false, ..page })
         });
@@ -530,19 +491,9 @@ impl App {
         for (index, (page, target)) in std::mem::take(&mut self.cpu_pages) {
             self.keep(index, page, None, target);
         }
-        // e le copertine; una che non si carica si richiede
-        let gfx = self.gfx.as_ref().expect("appena messa");
-        self.covers.retain(|_, cover| match &cover.image {
-            CoverImage::Cpu(page) => match gfx.renderer.upload(page) {
-                Ok(image) => {
-                    cover.image = CoverImage::Gpu(image);
-                    true
-                }
-                Err(_) => false,
-            },
-            CoverImage::Gpu(_) => true,
-        });
-        self.cover_wanted.clear();
+        // e le copertine
+        let renderer = self.gfx.as_ref().map(|g| g.renderer.clone()).expect("appena messa");
+        self.covers.upload_all(&renderer);
         self.stats.gpu_ms = Some(self.stats.now_ms());
         Ok(())
     }

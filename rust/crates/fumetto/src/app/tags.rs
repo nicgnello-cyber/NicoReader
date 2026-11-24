@@ -69,12 +69,12 @@ impl App {
     pub(super) fn rename_tag(&mut self, kind: GroupKind, old: String, new: String) {
         let (old, new) = (Group::new(kind, old, None), Group::new(kind, new.trim(), None));
         let paths = self.tagged(&old);
-        let merged = !old.same(&new) && self.library().any(|e| e.groups.iter().any(|g| g.same(&new)));
+        let merged = !old.same(&new) && self.lib.owned().iter().any(|e| e.groups.iter().any(|g| g.same(&new)));
         if !self.change_tag(&paths, TagChange::Rename(old.clone(), new.clone())) {
             let error = t("Impossibile salvare il nome nuovo.", "Can't save the new name.");
-            return self.ui.server_checked(Err(error.into()));
+            return self.ui.form_done(Err(error.into()));
         }
-        self.ui.server_checked(Ok(()));
+        self.ui.form_done(Ok(()));
         // chi era dentro il tag ci resta, con il nome nuovo
         self.ui.shelf.group_renamed(kind, &old.name, Some(new.name.clone()));
         let text = match (merged, italian()) {
@@ -119,7 +119,7 @@ impl App {
 
     /// I volumi della libreria che hanno questo tag.
     fn tagged(&self, tag: &Group) -> Vec<PathBuf> {
-        self.library().filter(|e| e.groups.iter().any(|g| g.same(tag))).map(|e| e.path.clone()).collect()
+        self.lib.owned().iter().filter(|e| e.groups.iter().any(|g| g.same(tag))).map(|e| e.path.clone()).collect()
     }
 
     /// La libreria, fra i volumi che hanno questo tag.
@@ -145,12 +145,11 @@ impl App {
 
     /// Il nome del volume in testa al modulo.
     fn tags_title(&self, path: &Path) -> String {
-        let here = fumetto_core::absolute(path);
-        if let Some(e) = self.lib.entries.iter().find(|e| fumetto_core::absolute(&e.path) == here) {
+        if let Some(e) = self.lib.entry(path) {
             return e.title.clone();
         }
         match &self.book {
-            Some(b) if fumetto_core::absolute(&b.path) == here => b.title.clone(),
+            Some(b) if fumetto_core::absolute(&b.path) == fumetto_core::absolute(path) => b.title.clone(),
             _ => fumetto_core::title_of(path),
         }
     }
@@ -164,13 +163,12 @@ impl App {
                 let paths = vec![path.clone()];
                 let tags = self.volume_tags(path).into_iter().map(|g| (g, 1)).collect();
                 scopes.push(TagScope { series: None, paths, tags });
-                let here = fumetto_core::absolute(path);
-                self.library().find(|e| fumetto_core::absolute(&e.path) == here).and_then(|e| e.series.clone())
+                find_entry(self.lib.owned(), path).and_then(|e| e.series.clone())
             }
             TagsOf::Series(name) => Some(name.clone()),
         };
         if let Some(name) = series {
-            let members: Vec<&Entry> = self.library().filter(|e| e.series.as_ref() == Some(&name)).collect();
+            let members: Vec<&Entry> = self.lib.owned().iter().filter(|e| e.series.as_ref() == Some(&name)).collect();
             // un volume solo non fa una serie: basta il primo ambito
             if members.len() >= 2 || (members.len() == 1 && scopes.is_empty()) {
                 let paths = members.iter().map(|e| e.path.clone()).collect();
@@ -179,11 +177,6 @@ impl App {
             }
         }
         scopes
-    }
-
-    /// I volumi della libreria (non quelli trovati sui server).
-    fn library(&self) -> impl Iterator<Item = &Entry> {
-        self.lib.entries[..self.lib.found_from.min(self.lib.entries.len())].iter()
     }
 
     /// I tag del volume adesso: i suoi, con quelli aggiunti e tolti a mano.
@@ -197,7 +190,7 @@ impl App {
 
     /// Tutti i tag della libreria, con quanti volumi li hanno: i suggerimenti.
     fn known_tags(&self) -> Vec<(Group, usize)> {
-        count_tags(self.library().flat_map(|e| &e.groups))
+        count_tags(self.lib.owned().iter().flat_map(|e| &e.groups))
     }
 }
 
@@ -205,12 +198,13 @@ impl App {
 /// trovati la scansione; per un volume fuori dalla libreria, dalla scheda del
 /// volume aperto.
 fn file_tags(lib: &Lib, book: Option<&Book>, path: &Path) -> Vec<Group> {
-    let here = fumetto_core::absolute(path);
-    if let Some(e) = lib.raw.iter().find(|e| fumetto_core::absolute(&e.path) == here) {
+    if let Some(e) = lib.raw_entry(path) {
         return e.groups.clone();
     }
     match book {
-        Some(b) if fumetto_core::absolute(&b.path) == here => b.info.as_ref().map(groups_of).unwrap_or_default(),
+        Some(b) if fumetto_core::absolute(&b.path) == fumetto_core::absolute(path) => {
+            b.info.as_ref().map(groups_of).unwrap_or_default()
+        }
         _ => Vec::new(),
     }
 }

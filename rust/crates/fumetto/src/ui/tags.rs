@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use fumetto_core::library::{Group, GroupKind, same_name};
 use fumetto_core::natural_cmp;
 
-use super::server::Outcome;
+use super::form::Outcome;
 use super::*;
 use crate::shelf::kind_label;
 

@@ -148,7 +148,7 @@ fn i_dati_di_un_volume() {
         ..VolumeEdit::default()
     };
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::SaveVolume("/f/scan_03.cbz".into(), saved))));
-    ui.server_checked(Ok(()));
+    ui.form_done(Ok(()));
     assert!(!ui.typing());
 }
 
@@ -175,9 +175,9 @@ fn il_modulo_del_server() {
     };
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::AddServer(server))));
     ui.key(Key::Char('x'), &c);
-    ui.server_checked(Err("nome o password sbagliati".into()));
+    ui.form_done(Err("nome o password sbagliati".into()));
     assert!(ui.typing(), "se non va, si corregge");
-    ui.server_checked(Ok(()));
+    ui.form_done(Ok(()));
     assert!(!ui.typing());
     ui.internal(Some(Command::AskServer), &c);
     assert_eq!(ui.key(Key::Escape, &c), Handled::Yes(None));
@@ -524,7 +524,7 @@ fn un_tag_si_rinomina_in_tutta_la_libreria() {
     }
     let renamed = Command::RenameTag(GroupKind::Character, "Logan".into(), "Wolverine".into());
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(renamed)));
-    ui.server_checked(Ok(()));
+    ui.form_done(Ok(()));
     assert!(!ui.modal());
     // lo stesso nome: si chiude e basta
     ui.internal(Some(Command::AskRenameTag(GroupKind::Character, "Logan".into())), &c);

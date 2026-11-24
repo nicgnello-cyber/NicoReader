@@ -187,7 +187,7 @@ impl App {
         });
         match found {
             Ok(n) => {
-                self.ui.server_checked(Ok(()));
+                self.ui.form_done(Ok(()));
                 self.settings.servers.retain(|s| s.url != server.url);
                 self.settings.servers.push(server);
                 remote::set_servers(&self.settings.servers);
@@ -201,7 +201,7 @@ impl App {
                 };
                 self.ui.toast(note, Instant::now());
             }
-            Err(e) => self.ui.server_checked(Err(e)),
+            Err(e) => self.ui.form_done(Err(e)),
         }
         self.changed();
     }
@@ -221,9 +221,7 @@ impl App {
 
     /// Apre il modulo per correggere i dati di un volume.
     pub(super) fn edit_volume(&mut self, path: PathBuf) {
-        let here = fumetto_core::absolute(&path);
-        let entry = self.lib.entries.iter().find(|e| fumetto_core::absolute(&e.path) == here);
-        let (title, series, number) = match entry {
+        let (title, series, number) = match self.lib.entry(&path) {
             Some(e) => (e.title.clone(), e.series.clone().unwrap_or_default(), e.number),
             None => (fumetto_core::title_of(&path), String::new(), None),
         };
@@ -245,7 +243,7 @@ impl App {
         let rtl = edit.right_to_left;
         match self.edits.set(path, edit) {
             Ok(()) => {
-                self.ui.server_checked(Ok(()));
+                self.ui.form_done(Ok(()));
                 self.apply_edits();
                 self.refresh_shelf();
                 // il volume aperto: il verso scelto vale subito; tolto, torna quello del file
@@ -262,7 +260,7 @@ impl App {
                 };
                 self.ui.toast(note, Instant::now());
             }
-            Err(e) => self.ui.server_checked(Err(e.to_string())),
+            Err(e) => self.ui.form_done(Err(e.to_string())),
         }
         self.changed();
     }

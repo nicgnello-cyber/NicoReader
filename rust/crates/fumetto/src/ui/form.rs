@@ -16,20 +16,37 @@ use crate::shelf::kind_label;
 /// sta largo dentro.
 const MAX_FIELD: usize = 2000;
 
-pub(crate) struct ServerForm {
-    /// Indirizzo, nome, password; per un PDF solo la password.
+pub(crate) struct Form {
+    purpose: Purpose,
+    /// I campi scritti: quanti ne usa lo scopo (`Purpose::fields`).
     fields: [String; 3],
-    /// La password di un PDF: il volume e il suo titolo.
-    pdf: Option<(PathBuf, String)>,
-    /// I dati di un volume: titolo, serie e numero nei campi, piu' il verso.
-    volume: Option<VolumeData>,
-    /// Un tag da rinominare in tutta la libreria: la categoria, il nome di adesso.
-    rename: Option<(GroupKind, String)>,
     focus: usize,
-    /// Si sta provando il collegamento: si aspetta.
+    /// Si sta provando il collegamento (o salvando): si aspetta.
     busy: bool,
     /// Cosa e' andato storto l'ultima volta.
     error: Option<String>,
+}
+
+/// A che serve il modulo.
+enum Purpose {
+    /// Un server: indirizzo, nome, password.
+    Server,
+    /// La password di un PDF: il volume e il suo titolo.
+    Pdf(PathBuf, String),
+    /// I dati di un volume: titolo, serie e numero nei campi, piu' il verso.
+    Volume(VolumeData),
+    /// Un tag da rinominare in tutta la libreria: la categoria, il nome di adesso.
+    Rename(GroupKind, String),
+}
+
+impl Purpose {
+    /// Quanti campi da scrivere.
+    fn fields(&self) -> usize {
+        match self {
+            Purpose::Pdf(..) | Purpose::Rename(..) => 1,
+            Purpose::Server | Purpose::Volume(_) => 3,
+        }
+    }
 }
 
 /// Il volume di cui si correggono i dati.
@@ -55,58 +72,55 @@ pub(super) enum Outcome {
     Submit(Command),
 }
 
-impl ServerForm {
-    pub(super) fn new() -> ServerForm {
-        ServerForm {
-            fields: Default::default(),
-            pdf: None,
-            volume: None,
-            rename: None,
-            focus: 0,
-            busy: false,
-            error: None,
-        }
+impl Form {
+    fn with(purpose: Purpose, fields: [String; 3]) -> Form {
+        Form { purpose, fields, focus: 0, busy: false, error: None }
+    }
+
+    /// Un server da aggiungere alla libreria.
+    pub(super) fn server() -> Form {
+        Form::with(Purpose::Server, Default::default())
     }
 
     /// Il nome nuovo di un tag, a partire da quello di adesso.
-    pub(super) fn rename(kind: GroupKind, name: String) -> ServerForm {
-        let fields = [name.clone(), String::new(), String::new()];
-        ServerForm { fields, rename: Some((kind, name)), ..ServerForm::new() }
+    pub(super) fn rename(kind: GroupKind, name: String) -> Form {
+        Form::with(Purpose::Rename(kind, name.clone()), [name, String::new(), String::new()])
     }
 
     /// I dati di un volume da correggere, con i valori di adesso nei campi.
-    pub(super) fn volume(data: VolumeData) -> ServerForm {
-        ServerForm { fields: data.initial.clone(), volume: Some(data), ..ServerForm::new() }
+    pub(super) fn volume(data: VolumeData) -> Form {
+        let fields = data.initial.clone();
+        Form::with(Purpose::Volume(data), fields)
     }
 
     /// La password per aprire un PDF protetto.
-    pub(super) fn pdf(path: PathBuf, title: String) -> ServerForm {
-        ServerForm { pdf: Some((path, title)), ..ServerForm::new() }
+    pub(super) fn pdf(path: PathBuf, title: String) -> Form {
+        Form::with(Purpose::Pdf(path, title), Default::default())
     }
 
-    /// E' la richiesta della password di un PDF (non un server).
+    /// E' la richiesta della password di un PDF.
     pub(super) fn is_pdf(&self) -> bool {
-        self.pdf.is_some()
+        matches!(self.purpose, Purpose::Pdf(..))
     }
 
     /// Quanti campi da scrivere ha il modulo.
     fn count(&self) -> usize {
-        if self.pdf.is_some() || self.rename.is_some() { 1 } else { 3 }
+        self.purpose.fields()
     }
 
     /// Quante righe si scelgono con Tab: i campi, e il verso per un volume.
     fn rows(&self) -> usize {
-        self.count() + usize::from(self.volume.is_some())
+        self.count() + usize::from(matches!(self.purpose, Purpose::Volume(_)))
     }
 
-    /// Il campo si scrive a pallini.
+    /// Il campo si scrive a pallini: le password.
     fn masked(&self, i: usize) -> bool {
-        self.volume.is_none() && self.rename.is_none() && i == self.count() - 1
+        matches!(self.purpose, Purpose::Server | Purpose::Pdf(..)) && i == self.count() - 1
     }
 
     /// Il verso dopo (o prima): come il file, da sinistra, da destra.
     fn turn_direction(&mut self, forward: bool) {
-        let Some(v) = &mut self.volume else { return };
+        let Purpose::Volume(v) = &mut self.purpose else { return };
         const ORDER: [Option<bool>; 3] = [None, Some(false), Some(true)];
         let k = ORDER.iter().position(|d| *d == v.right_to_left).unwrap_or(0);
         v.right_to_left = ORDER[(k + if forward { 1 } else { 2 }) % 3];
@@ -158,65 +172,74 @@ impl ServerForm {
     }
 
     fn submit(&mut self) -> Outcome {
-        if let Some(v) = &self.volume {
-            let [title, series, number] = &self.fields;
-            let number = number.trim();
-            let parsed = if number.is_empty() { Some(None) } else { number.parse::<u32>().ok().map(Some) };
-            let Some(parsed) = parsed else {
-                self.error =
-                    Some(t("Il numero dev'essere un numero intero.", "The number must be a whole number.").into());
-                self.focus = 2;
-                return Outcome::Stay;
-            };
-            // si cambia solo cio' che si e' toccato: il resto resta com'era
-            let mut edit = v.existing.clone();
-            if *title != v.initial[0] {
-                // il titolo vuoto: torna quello del file
-                edit.title = Some(title.trim().to_owned()).filter(|t| !t.is_empty());
+        let submitted = match &self.purpose {
+            Purpose::Volume(v) => self.save_volume(v),
+            Purpose::Rename(kind, old) => {
+                let new = self.fields[0].trim();
+                if new.is_empty() {
+                    Err(t("Manca il nome nuovo.", "The new name is missing."))
+                } else if new == old {
+                    return Outcome::Close;
+                } else {
+                    Ok(Command::RenameTag(*kind, old.clone(), new.to_owned()))
+                }
             }
-            if *series != v.initial[1] {
-                edit.series = Some(series.trim().to_owned());
+            Purpose::Pdf(path, _) => {
+                if self.fields[0].is_empty() {
+                    return Outcome::Stay;
+                }
+                Ok(Command::OpenWithPassword(path.clone(), self.fields[0].clone()))
             }
-            if self.fields[2] != v.initial[2] {
-                edit.number = Some(parsed);
+            Purpose::Server => {
+                let url = self.fields[0].trim();
+                if url.is_empty() {
+                    self.focus = 0;
+                    Err(t("Manca l'indirizzo del server.", "The server address is missing."))
+                } else {
+                    // "casa:25600" vale "http://casa:25600"
+                    let url = if url.contains("://") { url.to_owned() } else { format!("http://{url}") };
+                    let (user, password) = (self.fields[1].trim().to_owned(), self.fields[2].clone());
+                    Ok(Command::AddServer(Server { url, user, password }))
+                }
             }
-            edit.right_to_left = v.right_to_left;
-            self.busy = true;
-            return Outcome::Submit(Command::SaveVolume(v.path.clone(), edit));
+        };
+        match submitted {
+            Ok(command) => {
+                self.busy = true;
+                self.error = None;
+                Outcome::Submit(command)
+            }
+            Err(error) => {
+                self.error = Some(error.into());
+                // il numero sbagliato di un volume: ci si torna
+                if matches!(self.purpose, Purpose::Volume(_)) {
+                    self.focus = 2;
+                }
+                Outcome::Stay
+            }
         }
-        if let Some((kind, old)) = &self.rename {
-            let new = self.fields[0].trim();
-            if new.is_empty() {
-                self.error = Some(t("Manca il nome nuovo.", "The new name is missing.").into());
-                return Outcome::Stay;
-            }
-            if new == old {
-                return Outcome::Close;
-            }
-            self.busy = true;
-            self.error = None;
-            return Outcome::Submit(Command::RenameTag(*kind, old.clone(), new.to_owned()));
+    }
+
+    /// Le correzioni ai dati del volume: si cambia solo cio' che si e'
+    /// toccato, il resto resta com'era.
+    fn save_volume(&self, v: &VolumeData) -> Result<Command, &'static str> {
+        let [title, series, number] = &self.fields;
+        let number = number.trim();
+        let parsed = if number.is_empty() { Some(None) } else { number.parse::<u32>().ok().map(Some) };
+        let parsed = parsed.ok_or(t("Il numero dev'essere un numero intero.", "The number must be a whole number."))?;
+        let mut edit = v.existing.clone();
+        if *title != v.initial[0] {
+            // il titolo vuoto: torna quello del file
+            edit.title = Some(title.trim().to_owned()).filter(|t| !t.is_empty());
         }
-        if let Some((path, _)) = &self.pdf {
-            if self.fields[0].is_empty() {
-                return Outcome::Stay;
-            }
-            self.busy = true;
-            self.error = None;
-            return Outcome::Submit(Command::OpenWithPassword(path.clone(), self.fields[0].clone()));
+        if *series != v.initial[1] {
+            edit.series = Some(series.trim().to_owned());
         }
-        let url = self.fields[0].trim();
-        if url.is_empty() {
-            self.error = Some(t("Manca l'indirizzo del server.", "The server address is missing.").into());
-            self.focus = 0;
-            return Outcome::Stay;
+        if self.fields[2] != v.initial[2] {
+            edit.number = Some(parsed);
         }
-        // "casa:25600" vale "http://casa:25600"
-        let url = if url.contains("://") { url.to_owned() } else { format!("http://{url}") };
-        self.busy = true;
-        self.error = None;
-        let server = Server { url, user: self.fields[1].trim().to_owned(), password: self.fields[2].clone() };
-        Outcome::Submit(Command::AddServer(server))
+        edit.right_to_left = v.right_to_left;
+        Ok(Command::SaveVolume(v.path.clone(), edit))
     }
 
     /// La prova del collegamento e' andata male: si dice perche', e si puo'
@@ -225,7 +248,7 @@ impl ServerForm {
         self.busy = false;
         self.error = Some(error);
         // la password sbagliata si riscrive da capo
-        if self.pdf.is_some() {
+        if self.is_pdf() {
             self.fields[0].clear();
         }
     }
@@ -264,7 +287,7 @@ impl ServerForm {
         for ((i, &y), label) in ys[..self.count()].iter().enumerate().zip(self.labels()) {
             self.draw_field(&mut l, (x0, w, y), label, i, s, m);
         }
-        if let Some(v) = &self.volume {
+        if let Purpose::Volume(v) = &self.purpose {
             self.draw_direction(&mut l, (x0, w, ys[DIRECTION]), v.right_to_left, s);
         }
         let (line, color) = self.status();
@@ -275,65 +298,70 @@ impl ServerForm {
 
     /// In testa: che modulo e', il suo titolo, due righe di aiuto.
     fn heading(&self) -> (&'static str, &str, [&'static str; 2]) {
-        if let Some((_, name)) = &self.rename {
-            let help = [
-                t(
-                    "Il nome nuovo vale su tutti i volumi che hanno il tag.",
-                    "The new name applies to every volume with the tag.",
-                ),
-                t(
-                    "Se un tag con quel nome c'\u{e8} gi\u{e0}, i due diventano uno.",
-                    "If a tag with that name already exists, the two become one.",
-                ),
-            ];
-            return (t("Rinomina il tag", "Rename the tag"), name, help);
-        }
-        if let Some(v) = &self.volume {
-            let help = [
-                t(
-                    "Si correggono per NicoReader: il file resta com'\u{e8}.",
-                    "They're corrected for NicoReader: the file stays as it is.",
-                ),
-                t(
-                    "Senza serie \u{e8} un volume unico; il titolo vuoto torna quello del file.",
-                    "No series makes it a standalone volume; an empty title goes back to the file's.",
-                ),
-            ];
-            return (t("Dati del volume", "Volume details"), &v.name, help);
-        }
-        if let Some((_, title)) = &self.pdf {
-            let help = [
-                t("Per aprirlo serve la sua password.", "It needs its password to open."),
-                t(
-                    "Su Windows e macOS resta nel portachiavi; su Linux si chiede a ogni avvio.",
-                    "Windows and macOS keep it in the keychain; on Linux it is asked at each launch.",
-                ),
-            ];
-            return (t("PDF protetto", "Protected PDF"), title, help);
-        }
-        let help = [
-            t(
-                "Komga: l'indirizzo del server (http://casa:25600), con nome e password.",
-                "Komga: the server address (http://home:25600), with user name and password.",
+        match &self.purpose {
+            Purpose::Rename(_, name) => (
+                t("Rinomina il tag", "Rename the tag"),
+                name,
+                [
+                    t(
+                        "Il nome nuovo vale su tutti i volumi che hanno il tag.",
+                        "The new name applies to every volume with the tag.",
+                    ),
+                    t(
+                        "Se un tag con quel nome c'\u{e8} gi\u{e0}, i due diventano uno.",
+                        "If a tag with that name already exists, the two become one.",
+                    ),
+                ],
             ),
-            t(
-                "Kavita: il link OPDS che c'\u{e8} nelle impostazioni dell'utente; nome e password non servono.",
-                "Kavita: the OPDS link from the user settings; no user name or password needed.",
+            Purpose::Volume(v) => (
+                t("Dati del volume", "Volume details"),
+                &v.name,
+                [
+                    t(
+                        "Si correggono per NicoReader: il file resta com'\u{e8}.",
+                        "They're corrected for NicoReader: the file stays as it is.",
+                    ),
+                    t(
+                        "Senza serie \u{e8} un volume unico; il titolo vuoto torna quello del file.",
+                        "No series makes it a standalone volume; an empty title goes back to the file's.",
+                    ),
+                ],
             ),
-        ];
-        (t("Aggiungi un server", "Add a server"), "Komga, Kavita", help)
+            Purpose::Pdf(_, title) => (
+                t("PDF protetto", "Protected PDF"),
+                title,
+                [
+                    t("Per aprirlo serve la sua password.", "It needs its password to open."),
+                    t(
+                        "Su Windows e macOS resta nel portachiavi; su Linux si chiede a ogni avvio.",
+                        "Windows and macOS keep it in the keychain; on Linux it is asked at each launch.",
+                    ),
+                ],
+            ),
+            Purpose::Server => (
+                t("Aggiungi un server", "Add a server"),
+                "Komga, Kavita",
+                [
+                    t(
+                        "Komga: l'indirizzo del server (http://casa:25600), con nome e password.",
+                        "Komga: the server address (http://home:25600), with user name and password.",
+                    ),
+                    t(
+                        "Kavita: il link OPDS che c'\u{e8} nelle impostazioni dell'utente; nome e password non servono.",
+                        "Kavita: the OPDS link from the user settings; no user name or password needed.",
+                    ),
+                ],
+            ),
+        }
     }
 
     /// I nomi dei campi.
     fn labels(&self) -> Vec<&'static str> {
-        if let Some((kind, _)) = &self.rename {
-            vec![kind_label(*kind, false)]
-        } else if self.pdf.is_some() {
-            vec![t("Password", "Password")]
-        } else if self.volume.is_some() {
-            vec![t("Titolo", "Title"), t("Serie", "Series"), t("Numero", "Number")]
-        } else {
-            vec![t("Indirizzo", "Address"), t("Nome", "User name"), t("Password", "Password")]
+        match &self.purpose {
+            Purpose::Rename(kind, _) => vec![kind_label(*kind, false)],
+            Purpose::Pdf(..) => vec![t("Password", "Password")],
+            Purpose::Volume(_) => vec![t("Titolo", "Title"), t("Serie", "Series"), t("Numero", "Number")],
+            Purpose::Server => vec![t("Indirizzo", "Address"), t("Nome", "User name"), t("Password", "Password")],
         }
     }
 
@@ -380,40 +408,30 @@ impl ServerForm {
 
     /// La riga in fondo: cosa si sta facendo, l'errore, o i tasti.
     fn status(&self) -> (String, [u8; 4]) {
-        let (line, color) = match (&self.error, self.busy) {
-            (_, true) if self.pdf.is_some() => (t("Apertura\u{2026}", "Opening\u{2026}"), MUTED),
-            (_, true) if self.volume.is_some() || self.rename.is_some() => {
-                (t("Salvataggio\u{2026}", "Saving\u{2026}"), MUTED)
+        if let Some(e) = self.error.as_ref().filter(|_| !self.busy) {
+            return (e.clone(), ACCENT_TEXT);
+        }
+        let line = match (&self.purpose, self.busy) {
+            (Purpose::Pdf(..), true) => t("Apertura\u{2026}", "Opening\u{2026}"),
+            (Purpose::Volume(_) | Purpose::Rename(..), true) => t("Salvataggio\u{2026}", "Saving\u{2026}"),
+            (Purpose::Server, true) => t("Collegamento in corso\u{2026}", "Connecting\u{2026}"),
+            (Purpose::Volume(_), false) => t(
+                "Tab per il campo dopo   \u{00b7}   \u{2190} \u{2192} per il verso   \u{00b7}   Invio per salvare   \u{00b7}   Esc per lasciar stare",
+                "Tab for the next field   \u{00b7}   \u{2190} \u{2192} for the direction   \u{00b7}   Enter to save   \u{00b7}   Esc to cancel",
+            ),
+            (Purpose::Rename(..), false) => t(
+                "Invio per rinominare   \u{00b7}   Esc per lasciar stare",
+                "Enter to rename   \u{00b7}   Esc to cancel",
+            ),
+            (Purpose::Pdf(..), false) => {
+                t("Invio per aprire   \u{00b7}   Esc per lasciar stare", "Enter to open   \u{00b7}   Esc to cancel")
             }
-            (_, true) => (t("Collegamento in corso\u{2026}", "Connecting\u{2026}"), MUTED),
-            (Some(e), _) => return (e.clone(), ACCENT_TEXT),
-            (None, _) if self.volume.is_some() => (
-                t(
-                    "Tab per il campo dopo   \u{00b7}   \u{2190} \u{2192} per il verso   \u{00b7}   Invio per salvare   \u{00b7}   Esc per lasciar stare",
-                    "Tab for the next field   \u{00b7}   \u{2190} \u{2192} for the direction   \u{00b7}   Enter to save   \u{00b7}   Esc to cancel",
-                ),
-                MUTED,
-            ),
-            (None, _) if self.rename.is_some() => (
-                t(
-                    "Invio per rinominare   \u{00b7}   Esc per lasciar stare",
-                    "Enter to rename   \u{00b7}   Esc to cancel",
-                ),
-                MUTED,
-            ),
-            (None, _) if self.pdf.is_some() => (
-                t("Invio per aprire   \u{00b7}   Esc per lasciar stare", "Enter to open   \u{00b7}   Esc to cancel"),
-                MUTED,
-            ),
-            (None, _) => (
-                t(
-                    "Tab per il campo dopo   \u{00b7}   Invio per aggiungere   \u{00b7}   Esc per lasciar stare",
-                    "Tab for the next field   \u{00b7}   Enter to add   \u{00b7}   Esc to cancel",
-                ),
-                MUTED,
+            (Purpose::Server, false) => t(
+                "Tab per il campo dopo   \u{00b7}   Invio per aggiungere   \u{00b7}   Esc per lasciar stare",
+                "Tab for the next field   \u{00b7}   Enter to add   \u{00b7}   Esc to cancel",
             ),
         };
-        (line.to_owned(), color)
+        (line.to_owned(), MUTED)
     }
 }
 

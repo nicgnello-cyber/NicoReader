@@ -22,16 +22,12 @@ impl App {
     /// miniature, pagine migliorate, presentazione.
     fn forget_volume(&mut self) {
         self.thumbs_open = false;
-        self.thumb_images.clear();
-        self.thumb_generation = self.thumb_loader.set_book(None);
-        self.thumb_wanted = (None, Vec::new());
+        self.thumbs.set_book(None);
         self.upscale_wanted.clear();
         self.upscale_failed.clear();
         self.upscaler.request(Vec::new());
         self.slideshow = None;
-        self.lens_images.clear();
-        self.lens_generation = self.lens_loader.set_book(None);
-        self.lens_wanted = (None, Vec::new());
+        self.lens_pages.set_book(None);
     }
 
     /// Gli ultimi letti, dal piu' recente: quelli che ci sono ancora, e non
@@ -222,8 +218,7 @@ impl App {
         };
         let entries = &self.lib.entries;
         let titled = |path: PathBuf| {
-            let here = fumetto_core::absolute(&path);
-            let title = match entries.iter().find(|e| fumetto_core::absolute(&e.path) == here) {
+            let title = match find_entry(entries, &path) {
                 Some(e) => match &e.series {
                     Some(s) if !e.title.to_lowercase().contains(&s.to_lowercase()) => format!("{s}: {}", e.title),
                     _ => e.title.clone(),

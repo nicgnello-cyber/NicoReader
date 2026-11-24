@@ -79,7 +79,7 @@ impl Ui {
     }
 
     pub fn click(&mut self, x: f32, y: f32, ctx: &Context) -> Handled {
-        if let Some(f) = &mut self.server {
+        if let Some(f) = &mut self.form {
             // fuori dai campi non si chiude: si perderebbe cio' che si e' scritto
             f.click(ctx, x, y);
             return Handled::Yes(None);
@@ -163,11 +163,11 @@ impl Ui {
     }
 
     pub fn key(&mut self, key: Key, ctx: &Context) -> Handled {
-        if let Some(f) = &mut self.server {
+        if let Some(f) = &mut self.form {
             return Handled::Yes(match f.key(key) {
                 Outcome::Stay => None,
                 Outcome::Close => {
-                    self.server = None;
+                    self.form = None;
                     None
                 }
                 Outcome::Submit(cmd) => Some(cmd),

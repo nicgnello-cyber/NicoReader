@@ -30,11 +30,11 @@ use crate::thumbs::{Thumbs, ThumbsData};
 
 // i pezzi dell'interfaccia; lo stato (Ui) resta qui
 mod bar;
+mod form;
 mod input;
 mod menu;
 mod motion;
 mod panels;
-mod server;
 mod style;
 mod tags;
 #[cfg(test)]
@@ -43,11 +43,11 @@ mod welcome;
 
 use bar::{Hover, hud, hud_hit};
 pub(crate) use bar::{Icon, draw_icon, tooltip};
+use form::{Form, Outcome};
 pub(crate) use menu::Row;
 use menu::{Menu, main_rows};
 use motion::{Motion, Part, appear, veil};
 use panels::{caption, goto, lens_ring, ruler, to_u8, toast_only};
-use server::{Outcome, ServerForm};
 pub(crate) use style::{
     ACCENT, ACCENT_TEXT, BLACK, HAIR, INK, INK_F, MUTED, MUTED_F, PLATE, TICK, alpha, caps, fade, fit, rgb,
 };
@@ -285,8 +285,9 @@ pub struct Ui {
     toast: Option<(String, Show)>,
     goto: Option<GoTo>,
     menu: Option<Menu>,
-    /// Il modulo per aggiungere un server, se e' aperto.
-    server: Option<ServerForm>,
+    /// Il modulo da scrivere, se e' aperto: un server, una password, i dati
+    /// di un volume, il nome nuovo di un tag.
+    form: Option<Form>,
     pointer: (f32, f32),
     /// Nella galleria vuota: l'ultimo letto scelto con le frecce.
     selected: Option<usize>,
@@ -312,11 +313,7 @@ impl Ui {
 
     /// Una finestra dell'interfaccia e' aperta: tasti e clic vanno a lei.
     pub fn modal(&self) -> bool {
-        self.goto.is_some()
-            || self.menu.is_some()
-            || self.prefs.is_some()
-            || self.server.is_some()
-            || self.tags.is_some()
+        self.goto.is_some() || self.menu.is_some() || self.prefs.is_some() || self.form.is_some() || self.tags.is_some()
     }
 
     /// Il modulo per correggere i dati di un volume: i campi con i valori di
@@ -328,7 +325,7 @@ impl Ui {
         self.menu = None;
         self.goto = None;
         self.prefs = None;
-        self.server = Some(ServerForm::volume(server::VolumeData { path, name, initial, existing, right_to_left }));
+        self.form = Some(Form::volume(form::VolumeData { path, name, initial, existing, right_to_left }));
     }
 
     /// Chiede la password di un PDF protetto, per aprirlo.
@@ -336,19 +333,19 @@ impl Ui {
         self.menu = None;
         self.goto = None;
         self.prefs = None;
-        self.server = Some(ServerForm::pdf(path, title));
+        self.form = Some(Form::pdf(path, title));
     }
 
     /// Com'e' andata la password: giusta, il modulo si chiude; sbagliata, lo dice.
     pub fn password_checked(&mut self, result: Result<(), String>) {
-        if self.server.as_ref().is_some_and(ServerForm::is_pdf) {
-            self.server_checked(result);
+        if self.form.as_ref().is_some_and(Form::is_pdf) {
+            self.form_done(result);
         }
     }
 
     /// Testo incollato (Ctrl+V), nel campo scelto del modulo o dei tag.
     pub fn paste(&mut self, text: &str) {
-        if let Some(f) = &mut self.server {
+        if let Some(f) = &mut self.form {
             f.type_text(text);
         } else if let Some(f) = &mut self.tags {
             f.type_text(text);
@@ -392,16 +389,16 @@ impl Ui {
     /// Si sta scrivendo: in un modulo (un server, una password, i dati di
     /// un volume) o nei tag. I tasti con Ctrl sono per il testo.
     pub fn typing(&self) -> bool {
-        self.server.is_some() || self.tags.is_some()
+        self.form.is_some() || self.tags.is_some()
     }
 
-    /// Com'e' andata la prova del collegamento: se bene il modulo si chiude,
-    /// se no dice perche'.
-    pub fn server_checked(&mut self, result: Result<(), String>) {
+    /// Com'e' andato cio' che il modulo ha chiesto (il collegamento, il
+    /// salvataggio): se bene si chiude, se no dice perche'.
+    pub fn form_done(&mut self, result: Result<(), String>) {
         match result {
-            Ok(()) => self.server = None,
+            Ok(()) => self.form = None,
             Err(e) => {
-                if let Some(f) = &mut self.server {
+                if let Some(f) = &mut self.form {
                     f.failed(e);
                 }
             }
@@ -433,7 +430,7 @@ impl Ui {
     /// Il tasto del mouse premuto: nelle impostazioni puo' cominciare a
     /// trascinare una regolazione.
     pub fn press(&mut self, x: f32, y: f32, ctx: &Context) -> Option<Command> {
-        if self.menu.is_some() || self.goto.is_some() || self.server.is_some() || self.tags.is_some() {
+        if self.menu.is_some() || self.goto.is_some() || self.form.is_some() || self.tags.is_some() {
             return None;
         }
         self.prefs.as_mut()?.press(ctx.settings, ctx.keys, ctx.view, ctx.scale, x, y)
@@ -523,12 +520,12 @@ impl Ui {
                 self.menu = None;
                 self.goto = None;
                 self.prefs = None;
-                self.server = Some(ServerForm::new());
+                self.form = Some(Form::server());
                 None
             }
             Command::AskRenameTag(kind, name) => {
                 self.menu = None;
-                self.server = Some(ServerForm::rename(kind, name));
+                self.form = Some(Form::rename(kind, name));
                 None
             }
             other => Some(other),
@@ -616,7 +613,7 @@ impl Ui {
                 scene.layers.push(l);
             }
         }
-        if let Some(f) = &self.server {
+        if let Some(f) = &self.form {
             scene.layers.push(f.layer(ctx, m));
         }
         if let Some(f) = &self.tags {
