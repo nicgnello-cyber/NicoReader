@@ -5,6 +5,10 @@ use super::*;
 impl Shelf {
     fn hit(&self, d: &ShelfData, view: (f32, f32), s: f32, x: f32, y: f32) -> Option<Hit> {
         let g = Geo::new(view, s);
+        // la tendina della ricerca sta sopra le celle
+        if let Some(hit) = self.suggestion_at(d, view, s, x, y) {
+            return Some(hit);
+        }
         if y < g.top {
             return Some(bar_hit(d, self, view, s, x).unwrap_or(Hit::Bar));
         }
@@ -87,6 +91,12 @@ impl Shelf {
                 self.back(d);
                 Handled::Yes(None)
             }
+            Some(Hit::Suggestion(i)) => {
+                if let Some(sug) = self.suggestions(d).into_iter().nth(i) {
+                    self.open_suggestion(sug);
+                }
+                Handled::Yes(None)
+            }
             Some(Hit::Bar) | None => Handled::Yes(None),
         }
     }
@@ -118,6 +128,29 @@ impl Shelf {
         let g = Geo::new(view, s);
         let lay = self.layout(d, &g);
         let n = lay.placed.len();
+        // con la tendina dei tag aperta, su e giu' e Invio sono suoi
+        let tags = self.suggestions(d).len();
+        match key {
+            Key::Down if tags > 0 => {
+                self.suggested = Some(self.suggested.map_or(0, |i| (i + 1).min(tags - 1)));
+                return Handled::Yes(None);
+            }
+            Key::Up if self.suggested.is_some() => {
+                self.suggested = self.suggested.and_then(|i| i.checked_sub(1));
+                return Handled::Yes(None);
+            }
+            Key::Enter if self.suggested.is_some_and(|i| i < tags) => {
+                let picked = self.suggested.and_then(|i| self.suggestions(d).into_iter().nth(i));
+                if let Some(sug) = picked {
+                    self.open_suggestion(sug);
+                }
+                return Handled::Yes(None);
+            }
+            _ => {}
+        }
+        if matches!(key, Key::Char(_) | Key::Digit(_) | Key::Backspace | Key::Escape) {
+            self.suggested = None;
+        }
         match key {
             Key::Right => self.selected = nearest(&lay.placed, self.selected, Dir::Right),
             Key::Left => self.selected = nearest(&lay.placed, self.selected, Dir::Left),

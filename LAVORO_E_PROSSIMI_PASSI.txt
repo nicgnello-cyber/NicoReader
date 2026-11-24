@@ -914,6 +914,14 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      - In libreria: l'icona degli scaffali mostra tutti i tag per categoria
        (senza badare alle maiuscole: "batman" e "Batman" sono uno), e la
        ricerca trova un volume anche dai suoi tag.
+  4y. [x] La ricerca suggerisce i tag (24 novembre): da due lettere scritte,
+     sotto la ricerca una tendina (shelf/suggest.rs) con i tag della
+     libreria che le contengono, prima quelli che cominciano cosi' e i piu'
+     usati, con categoria e numero di volumi; un clic o giu' e Invio portano
+     fra i volumi del tag. Fra i tag non c'e' (li' la ricerca li filtra
+     gia'). Controllato anche che nel repository non ci siano chiavi o
+     password: nessuna in tutta la storia; una chiave OPDS d'esempio dall'aria
+     vera in una prova e' diventata palesemente finta.
   5. Distribuzione (capitolo 5).
 
   Da decidere tu, quando vuoi:

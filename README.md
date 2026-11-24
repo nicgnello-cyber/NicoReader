@@ -121,7 +121,9 @@ kept in `correzioni.json`, in the data folder: the volume's file is never
 touched. A click on a tag takes you to the library, among the other volumes
 that have it ("this character is also in..."). The shelves icon in the
 library bar shows all the tags, by kind; and the search finds a volume by its
-tags too. A reading list opens in its own order, even across different
+tags too: as you type ("acti"), a drop-down lists the matching tags
+(Action...), with their kind and how many volumes have them; a click, or ↓
+and Enter, takes you to their volumes. A reading list opens in its own order, even across different
 series.
 
 To read from a Komga or Kavita server: right click → Add a server… (or the

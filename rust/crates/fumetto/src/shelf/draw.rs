@@ -26,7 +26,9 @@ impl Shelf {
         if lay.placed.is_empty() && !(d.searching && !self.search.is_empty()) {
             self.draw_empty(&mut l, d, &g);
         }
-        vec![l, self.bar(d, &g, m)]
+        let mut layers = vec![l, self.bar(d, &g, m)];
+        layers.extend(self.dropdown(d, &g, m));
+        layers
     }
 
     /// L'intestazione dentro una serie, un gruppo, fra i gruppi o in una

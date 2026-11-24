@@ -163,6 +163,8 @@ pub enum Hit {
     Crumb(usize),
     Return,
     Back,
+    /// Un tag della tendina della ricerca.
+    Suggestion(usize),
     Bar,
 }
 
@@ -278,12 +280,15 @@ pub struct Shelf {
     /// sono alzate, da 0 a 1.
     lifts: Vec<(usize, f32)>,
     lifted_at: Option<Instant>,
+    /// Il tag della tendina della ricerca scelto con le frecce.
+    suggested: Option<usize>,
 }
 
 mod draw;
 mod input;
 mod menus;
 mod sections;
+mod suggest;
 #[cfg(test)]
 mod tests;
 

@@ -545,3 +545,48 @@ fn la_ricerca_trova_anche_i_tag() {
     shelf.search = "rilegg".into();
     assert_eq!(found(&shelf), [Tile::Volume(3)], "un'etichetta, anche a meta'");
 }
+
+#[test]
+fn la_ricerca_suggerisce_i_tag() {
+    use fumetto_core::library::Group;
+    let (mut e, st, at) = library();
+    let genre = |n: &str| Group::new(GroupKind::Genre, n, None);
+    e[0].groups.push(genre("Azione"));
+    e[1].groups.push(genre("azione"));
+    e[2].groups.push(genre("Fantascienza e azione"));
+    e[3].groups.push(Group::new(GroupKind::Tag, "Azioni da rileggere", None));
+    let d = data(&e, &st, &at);
+    let view = (1920.0, 1080.0);
+    let mut shelf = Shelf::default();
+    shelf.key(Key::Char('a'), &d, view, 1.0);
+    assert!(shelf.suggestions(&d).is_empty(), "con una lettera sola niente tendina");
+    for c in "zio".chars() {
+        shelf.key(Key::Char(c), &d, view, 1.0);
+    }
+    let names: Vec<(String, usize)> = shelf.suggestions(&d).into_iter().map(|s| (s.name, s.count)).collect();
+    assert_eq!(
+        names,
+        [("Azione".to_owned(), 2), ("Azioni da rileggere".to_owned(), 1), ("Fantascienza e azione".to_owned(), 1)],
+        "prima quelli che cominciano cosi' (il piu' usato in testa, senza badare alle maiuscole), poi gli altri"
+    );
+    // si vede: la tendina e' l'ultimo strato
+    let layers = shelf.layers(&d, view, 1.0, &mut fumetto_render::Estimate);
+    assert!(layers.last().unwrap().texts.iter().any(|t| t.text == "Azioni da rileggere"));
+    // giu' e Invio: fra i volumi di quel tag, e la ricerca ha fatto il suo
+    shelf.key(Key::Down, &d, view, 1.0);
+    shelf.key(Key::Down, &d, view, 1.0);
+    shelf.key(Key::Enter, &d, view, 1.0);
+    assert_eq!(shelf.group, Some((GroupKind::Tag, "Azioni da rileggere".to_owned())));
+    assert!(shelf.search.is_empty() && shelf.suggestions(&d).is_empty());
+    assert_eq!(shelf.sections(&d)[0].tiles, [Tile::Volume(3)]);
+    // fra i tag la tendina non serve: la ricerca li filtra gia'
+    shelf.search = "azio".into();
+    assert!(shelf.suggestions(&d).is_empty());
+    // con un clic su una riga
+    let mut shelf = Shelf { search: "azio".into(), ..Shelf::default() };
+    let layers = shelf.layers(&d, view, 1.0, &mut fumetto_render::Estimate);
+    let row = layers.last().unwrap().texts.iter().find(|t| t.text == "Azione").unwrap();
+    shelf.click(&d, view, 1.0, row.x + 4.0, row.y + 4.0);
+    assert_eq!(shelf.group, Some((GroupKind::Genre, "Azione".to_owned())));
+    assert_eq!(shelf.sections(&d)[0].tiles.len(), 2, "i due volumi di Azione, scritta in due modi");
+}

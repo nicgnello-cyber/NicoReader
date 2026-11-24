@@ -119,7 +119,9 @@ a mano stanno in `correzioni.json`, nella cartella dei dati: il file del
 volume non si tocca. Un clic su un tag porta in libreria fra gli altri volumi
 che ce l'hanno ("questo personaggio c'e' anche in..."). L'icona degli
 scaffali nella barra della libreria mostra tutti i tag, per categoria; e la
-ricerca trova un volume anche dai suoi tag. Una lista di lettura si apre nel
+ricerca trova un volume anche dai suoi tag: mentre si scrive ("azio"), sotto
+si apre una tendina con i tag che rispondono (Azione...), con la categoria e
+quanti volumi li hanno; un clic, o ↓ e Invio, porta fra i loro volumi. Una lista di lettura si apre nel
 suo ordine, anche fra serie diverse.
 
 Per leggere da un server Komga o Kavita: tasto destro → Aggiungi un server…

@@ -183,6 +183,11 @@ fn view_shots(s: &mut Shelves, root: &Path) -> Result<(), String> {
         s.shot("libreria-serie", &|ui, _| ui.shelf.enter_series(series.clone()))?;
     }
     s.shot("libreria-cerca", &|ui, ctx| type_in(ui, ctx, "god"))?;
+    // due lettere: la tendina con i tag che le contengono, il primo scelto
+    s.shot("libreria-tag-suggeriti", &|ui, ctx| {
+        type_in(ui, ctx, "pr");
+        ui.key(Key::Down, ctx);
+    })?;
     s.shot("libreria-menu", &|ui, ctx| ui.open_menu(ctx.view.0 * 0.3, ctx.scale * 200.0, ctx))?;
     s.shot("libreria-in-lettura", &|ui, _| ui.shelf.filter = Filter::Reading)?;
     s.shot("libreria-letti", &|ui, _| ui.shelf.filter = Filter::Done)?;
