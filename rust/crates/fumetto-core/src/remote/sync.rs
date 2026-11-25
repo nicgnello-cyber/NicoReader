@@ -92,13 +92,9 @@ struct State {
 impl State {
     fn save(&self) {
         let Some(file) = &self.file else { return };
-        let Ok(json) = serde_json::to_vec(&self.known) else { return };
-        let tmp = file.with_extension("tmp");
-        let _ = file
-            .parent()
-            .map_or(Ok(()), std::fs::create_dir_all)
-            .and_then(|_| std::fs::write(&tmp, json))
-            .and_then(|_| std::fs::rename(&tmp, file));
+        if let Ok(json) = serde_json::to_vec(&self.known) {
+            let _ = crate::write_atomic(file, &json);
+        }
     }
 }
 

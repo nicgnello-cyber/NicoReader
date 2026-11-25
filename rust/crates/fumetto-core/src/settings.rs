@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -81,11 +81,6 @@ impl Settings {
     pub fn forget_search(&mut self, name: &str) {
         self.saved_searches.retain(|s| s.name != name);
     }
-
-    /// Il nome di una ricerca gia' salvata cosi'.
-    pub fn saved_as(&self, query: &str) -> Option<&str> {
-        self.saved_searches.iter().find(|s| s.query == query.trim()).map(|s| s.name.as_str())
-    }
 }
 
 impl Default for Settings {
@@ -117,7 +112,7 @@ impl Default for Settings {
 }
 
 impl Settings {
-    pub fn load(path: &PathBuf) -> Settings {
+    pub fn load(path: &Path) -> Settings {
         let mut s: Settings =
             std::fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
         // le password dei server stanno nel portachiavi (vedi keychain)
@@ -132,10 +127,7 @@ impl Settings {
         s
     }
 
-    pub fn save(&self, path: &PathBuf) -> io::Result<()> {
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
+    pub fn save(&self, path: &Path) -> io::Result<()> {
         // nel file le password che il portachiavi non ha preso, e basta
         let mut written = self.clone();
         for server in &mut written.servers {
@@ -143,15 +135,8 @@ impl Settings {
                 server.password.clear();
             }
         }
-        let tmp = path.with_extension("tmp");
-        std::fs::write(&tmp, serde_json::to_vec_pretty(&written).map_err(io::Error::other)?)?;
         // con una password dentro, il file e' solo di chi lo possiede
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
-        }
-        std::fs::rename(&tmp, path)
+        crate::files::write_private(path, &serde_json::to_vec_pretty(&written).map_err(io::Error::other)?)
     }
 }
 
@@ -174,7 +159,7 @@ mod tests {
         let mut s = Settings::default();
         s.save_search("Wolverine da leggere", "personaggio:wolverine -tag:letto ");
         s.save_search("Manga", "tipo:manga");
-        assert_eq!(s.saved_as("personaggio:wolverine -tag:letto"), Some("Wolverine da leggere"));
+        assert_eq!(s.saved_searches[0].query, "personaggio:wolverine -tag:letto", "senza spazi ai lati");
         // lo stesso nome, con altre maiuscole: la si sostituisce
         s.save_search("wolverine DA LEGGERE", "personaggio:wolverine");
         assert_eq!(s.saved_searches.len(), 2);

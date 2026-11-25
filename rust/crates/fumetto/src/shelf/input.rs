@@ -138,7 +138,7 @@ impl Shelf {
     }
 
     pub fn wheel(&mut self, pixels: f32) {
-        self.glide += pixels;
+        self.glide.push(pixels);
     }
 
     pub fn key(&mut self, key: Key, d: &ShelfData, view: (f32, f32), s: f32) -> Handled {
@@ -173,12 +173,15 @@ impl Shelf {
             Key::Left => self.selected = nearest(&lay.placed, self.selected, Dir::Left),
             Key::Down => self.selected = nearest(&lay.placed, self.selected, Dir::Down),
             Key::Up => self.selected = nearest(&lay.placed, self.selected, Dir::Up),
-            Key::PageDown => self.glide += g.view.1 * 0.8,
-            Key::PageUp => self.glide -= g.view.1 * 0.8,
-            Key::Home => (self.scroll, self.glide, self.selected) = (0.0, 0.0, (n > 0).then_some(0)),
+            Key::PageDown => self.glide.push(g.view.1 * 0.8),
+            Key::PageUp => self.glide.push(-g.view.1 * 0.8),
+            Key::Home => {
+                (self.scroll, self.selected) = (0.0, (n > 0).then_some(0));
+                self.glide.stop();
+            }
             Key::End => {
-                (self.scroll, self.glide) = (self.max_scroll(d, &g), 0.0);
-                self.selected = n.checked_sub(1);
+                (self.scroll, self.selected) = (self.max_scroll(d, &g), n.checked_sub(1));
+                self.glide.stop();
             }
             Key::Enter => {
                 let tile = self.selected.and_then(|k| lay.placed.into_iter().nth(k)).map(|p| p.tile);
@@ -233,7 +236,7 @@ impl Shelf {
             0.0
         };
         self.scroll = (self.scroll + delta).clamp(0.0, self.max_scroll(d, g));
-        self.glide = 0.0;
+        self.glide.stop();
     }
 
     /// Fa avanzare lo scorrimento morbido e le celle che si alzano; `true`
@@ -244,26 +247,13 @@ impl Shelf {
     }
 
     fn advance_glide(&mut self, d: &ShelfData, view: (f32, f32), s: f32, now: Instant) -> bool {
-        let dt = self.last.map_or(1.0 / 60.0, |t| (now - t).as_secs_f32()).min(0.05);
-        if self.glide.abs() < 0.5 {
-            (self.glide, self.last) = (0.0, None);
-            return false;
-        }
-        self.last = Some(now);
-        let step = glide_step(self.glide, dt);
-        self.glide -= step;
         let max = self.max_scroll(d, &Geo::new(view, s));
-        let before = self.scroll;
-        self.scroll = (self.scroll + step).clamp(0.0, max);
-        if self.scroll == before {
-            self.glide = 0.0; // contro il bordo
-        }
-        true
+        self.glide.advance(&mut self.scroll, max, now)
     }
 
     /// Qualcosa si muove ancora: serve il prossimo fotogramma.
     pub fn moving(&self) -> bool {
-        self.glide.abs() >= 0.5 || self.lifting()
+        self.glide.moving() || self.lifting()
     }
 
     /// La cella sotto il mouse sale, le altre tornano giu', in `LIFT_TIME`.

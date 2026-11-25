@@ -5,6 +5,8 @@
 //! e' decodificata, e con una posizione assoluta ogni scoperta sopra lo schermo
 //! farebbe saltare la vista. Cosi' invece chi legge non si accorge di nulla.
 
+use std::time::Instant;
+
 /// Posizione nel nastro. Dopo ogni movimento `offset` sta dentro la pagina
 /// `anchor`: 0 <= offset < altezza(anchor).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -74,6 +76,50 @@ impl Strip {
         if old_h > 0.0 {
             self.offset *= new_h / old_h;
         }
+    }
+}
+
+/// Uno scorrimento morbido, come quello del nastro, per la libreria e le
+/// miniature: la strada che resta da fare (rotella, frecce, pagina giu'), e
+/// quando si e' avanzati l'ultima volta.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Glide {
+    remaining: f32,
+    last: Option<Instant>,
+}
+
+impl Glide {
+    /// Altra strada da fare (con segno: positivo = giu').
+    pub fn push(&mut self, pixels: f32) {
+        self.remaining += pixels;
+    }
+
+    /// Fermo dov'e'.
+    pub fn stop(&mut self) {
+        *self = Glide::default();
+    }
+
+    pub fn moving(&self) -> bool {
+        self.remaining.abs() >= 0.5
+    }
+
+    /// Porta `scroll`, fra 0 e `max`, un passo avanti: `true` se c'e' ancora
+    /// movimento. Contro il bordo si ferma.
+    pub fn advance(&mut self, scroll: &mut f32, max: f32, now: Instant) -> bool {
+        if !self.moving() {
+            self.stop();
+            return false;
+        }
+        let dt = self.last.map_or(1.0 / 60.0, |t| (now - t).as_secs_f32()).min(0.05);
+        self.last = Some(now);
+        let step = glide_step(self.remaining, dt);
+        self.remaining -= step;
+        let before = *scroll;
+        *scroll = (*scroll + step).clamp(0.0, max);
+        if *scroll == before {
+            self.remaining = 0.0;
+        }
+        true
     }
 }
 

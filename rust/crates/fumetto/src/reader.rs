@@ -384,37 +384,32 @@ impl Reader {
     /// Si e' alla fine del volume: avanti non c'e' piu' niente (l'ultima
     /// pagina a schermo; nel nastro, il fondo dell'ultima sul bordo basso).
     pub fn at_end(&self) -> bool {
-        if self.len == 0 {
-            return false;
-        }
-        match self.mode {
-            Mode::Strip => {
-                let mut further = self.strip_now();
-                let before = further;
-                further.scroll(1.0, |i| self.strip_height(i), self.len, self.view.1 as f32);
-                further == before && self.glide <= 0.5
-            }
-            _ => {
-                let (s, n) = self.group_of(self.page);
-                s + n >= self.len
-            }
-        }
+        self.at_edge(true)
     }
 
     /// Si e' all'inizio del volume: indietro non c'e' piu' niente (la prima
     /// pagina a schermo; nel nastro, la cima della prima sul bordo alto).
     pub fn at_start(&self) -> bool {
+        self.at_edge(false)
+    }
+
+    fn at_edge(&self, forward: bool) -> bool {
         if self.len == 0 {
             return false;
         }
+        let dir = if forward { 1.0 } else { -1.0 };
         match self.mode {
             Mode::Strip => {
+                // un pixel in quella direzione non si muove, e non resta strada da fare
                 let mut further = self.strip_now();
                 let before = further;
-                further.scroll(-1.0, |i| self.strip_height(i), self.len, self.view.1 as f32);
-                further == before && self.glide >= -0.5
+                further.scroll(dir, |i| self.strip_height(i), self.len, self.view.1 as f32);
+                further == before && self.glide * dir <= 0.5
             }
-            _ => self.group_of(self.page).0 == 0,
+            _ => {
+                let (s, n) = self.group_of(self.page);
+                if forward { s + n >= self.len } else { s == 0 }
+            }
         }
     }
 

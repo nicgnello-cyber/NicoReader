@@ -24,16 +24,16 @@ use std::time::Instant;
 
 use fumetto_core::LibrarySort;
 use fumetto_core::library::{self, Entry, GroupKind, Status, by_number, same_name};
-use fumetto_core::lingua::{italian, t};
+use fumetto_core::lingua::{italian, t, volumes};
 use fumetto_core::natural_cmp;
 use fumetto_core::remote::{self, Server};
 use fumetto_render::{Align, Face, Layer, Measure, Rect, Text};
 
 use crate::reader::Action;
-use crate::strip::glide_step;
+use crate::strip::Glide;
 use crate::ui::{
-    self, ACCENT, BLACK, Command, HAIR, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, PLATE, TICK, alpha, caps,
-    draw_icon, fade, fit,
+    self, ACCENT, Command, HAIR, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, PLATE, TICK, alpha, caps, draw_icon,
+    fade, fit,
 };
 
 /// Cio' che la libreria deve sapere, dall'app.
@@ -290,8 +290,7 @@ pub struct Shelf {
     crumbs: RefCell<Vec<Crumb>>,
     scroll: f32,
     /// Pixel di scorrimento ancora da percorrere (come nel nastro).
-    glide: f32,
-    last: Option<Instant>,
+    glide: Glide,
     /// La cella scelta con la tastiera (indice fra quelle disposte).
     selected: Option<usize>,
     hover: Option<Hit>,
@@ -512,7 +511,8 @@ impl Shelf {
     }
 
     fn reset_view(&mut self) {
-        (self.scroll, self.glide, self.selected) = (0.0, 0.0, None);
+        (self.scroll, self.selected) = (0.0, None);
+        self.glide.stop();
     }
 
     pub fn set_sort(&mut self, sort: LibrarySort) {

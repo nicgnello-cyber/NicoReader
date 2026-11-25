@@ -4,13 +4,13 @@
 //! essere eseguite.
 
 use std::collections::{HashSet, VecDeque};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
-use std::thread::JoinHandle;
+use std::sync::Arc;
 use std::time::Instant;
 
 use crate::adjust;
 use crate::book::{Book, Content};
 use crate::decode::{Page, decode};
+use crate::pool::{Pool, Shared};
 use crate::resize::resize;
 
 /// Come una pagina deve stare sullo schermo.
@@ -125,13 +125,7 @@ pub struct Loaded {
 }
 
 pub struct Loader {
-    shared: Arc<Shared>,
-    workers: Vec<JoinHandle<()>>,
-}
-
-struct Shared {
-    state: Mutex<State>,
-    wake: Condvar,
+    pool: Pool<State>,
 }
 
 #[derive(Default)]
@@ -141,38 +135,19 @@ struct State {
     target: Option<Target>,
     queue: VecDeque<usize>,
     running: HashSet<(u64, usize, Option<Target>)>,
-    stop: bool,
-}
-
-impl Shared {
-    fn lock(&self) -> MutexGuard<'_, State> {
-        // un thread morto a meta' non deve bloccare gli altri: lo stato resta coerente
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
-    }
 }
 
 impl Loader {
     /// `deliver` viene chiamata dai thread di lavoro: deve solo passare il
     /// risultato a chi disegna (per esempio svegliando il ciclo degli eventi).
     pub fn new(threads: usize, deliver: impl Fn(Loaded) + Send + Sync + 'static) -> Loader {
-        let shared = Arc::new(Shared { state: Mutex::default(), wake: Condvar::new() });
+        let mut pool = Pool::new(State::default());
         let deliver = Arc::new(deliver);
-        let workers = (0..threads.max(1))
-            .map(|n| {
-                let (shared, deliver) = (shared.clone(), deliver.clone());
-                std::thread::Builder::new()
-                    .name(format!("pagine-{n}"))
-                    .spawn(move || {
-                        // chi disegna deve passare sempre per primo: con tutti i
-                        // core occupati a decodificare, a pari priorita' il
-                        // nastro scendeva a 22 fotogrammi al secondo
-                        let _ = thread_priority::set_current_thread_priority(thread_priority::ThreadPriority::Min);
-                        work(&shared, &*deliver)
-                    })
-                    .expect("thread di decodifica")
-            })
-            .collect();
-        Loader { shared, workers }
+        for n in 0..threads.max(1) {
+            let deliver = deliver.clone();
+            pool.spawn(format!("pagine-{n}"), move |shared| work(shared, &*deliver));
+        }
+        Loader { pool }
     }
 
     /// Quanti thread usare: tutti i core meno uno, che resta a chi disegna.
@@ -184,61 +159,39 @@ impl Loader {
     /// pagina in lavorazione). Restituisce la generazione con cui arriveranno
     /// le sue pagine.
     pub fn set_book(&self, book: Option<Arc<Book>>) -> u64 {
-        let mut s = self.shared.lock();
-        s.generation += 1;
-        s.book = book;
-        s.queue.clear();
-        s.generation
+        self.pool.update(|s| {
+            s.generation += 1;
+            s.book = book;
+            s.queue.clear();
+            s.generation
+        })
     }
 
     /// Cambia la misura delle pagine (finestra ridimensionata, altro modo di
     /// lettura). Le pagine gia' in lavorazione arrivano comunque, con la loro
     /// misura: meglio una pagina da riscalare che uno schermo nero.
     pub fn set_target(&self, target: Target) {
-        self.shared.lock().target = Some(target);
+        self.pool.update(|s| s.target = Some(target));
     }
 
     /// Sostituisce la coda: `order` e' la lista completa di cio' che serve, dal
     /// piu' urgente. Le pagine gia' in lavorazione non si ripetono.
     pub fn request(&self, order: &[usize]) {
-        let mut s = self.shared.lock();
-        let key = (s.generation, s.target);
-        let queue: VecDeque<usize> =
-            order.iter().copied().filter(|&i| !s.running.contains(&(key.0, i, key.1))).collect();
-        s.queue = queue;
-        drop(s);
-        self.shared.wake.notify_all();
+        self.pool.update(|s| {
+            let key = (s.generation, s.target);
+            s.queue = order.iter().copied().filter(|&i| !s.running.contains(&(key.0, i, key.1))).collect();
+        });
     }
 }
 
-impl Drop for Loader {
-    fn drop(&mut self) {
-        self.shared.lock().stop = true;
-        self.shared.wake.notify_all();
-        for w in self.workers.drain(..) {
-            let _ = w.join();
-        }
-    }
-}
-
-fn work(shared: &Shared, deliver: &dyn Fn(Loaded)) {
-    loop {
-        let (book, generation, target, index) = {
-            let mut s = shared.lock();
-            loop {
-                if s.stop {
-                    return;
-                }
-                if let (Some(book), Some(target)) = (s.book.clone(), s.target)
-                    && let Some(index) = s.queue.pop_front()
-                {
-                    let generation = s.generation;
-                    s.running.insert((generation, index, Some(target)));
-                    break (book, generation, target, index);
-                }
-                s = shared.wake.wait(s).unwrap_or_else(|e| e.into_inner());
-            }
-        };
+fn work(shared: &Shared<State>, deliver: &dyn Fn(Loaded)) {
+    let take = |s: &mut State| {
+        let (book, target) = (s.book.clone()?, s.target?);
+        let index = s.queue.pop_front()?;
+        s.running.insert((s.generation, index, Some(target)));
+        Some((book, s.generation, target, index))
+    };
+    while let Some((book, generation, target, index)) = shared.next(take) {
         let t = Instant::now();
         let content = read_page(&book, index, target);
         let read_ms = ms(t);
@@ -249,7 +202,7 @@ fn work(shared: &Shared, deliver: &dyn Fn(Loaded)) {
         let t = Instant::now();
         let page = decoded.map(|d| to_screen(d, target));
         let resize_ms = ms(t);
-        shared.lock().running.remove(&(generation, index, Some(target)));
+        shared.with(|s| s.running.remove(&(generation, index, Some(target))));
         deliver(Loaded { generation, index, target, native, page, read_ms, decode_ms, resize_ms });
     }
 }

@@ -5,7 +5,7 @@
 use fumetto::ui::{Reach, TagScope, TagsOf};
 use fumetto_core::edits::VolumeEdit;
 use fumetto_core::library::{Group, GroupKind, groups_of};
-use fumetto_core::lingua::italian;
+use fumetto_core::lingua::{italian, volumes};
 
 use super::*;
 
@@ -185,12 +185,7 @@ impl App {
             return;
         }
         self.ui.shelf.group_renamed(kind, &tag.name, None);
-        let text = match (paths.len() == 1, italian()) {
-            (true, true) => "Tag tolto da 1 volume".to_owned(),
-            (false, true) => format!("Tag tolto da {} volumi", paths.len()),
-            (true, false) => "Tag removed from 1 volume".to_owned(),
-            (false, false) => format!("Tag removed from {} volumes", paths.len()),
-        };
+        let text = format!("{} {}", t("Tag tolto da", "Tag removed from"), volumes(paths.len()));
         self.toast_undoable(text);
     }
 
@@ -242,7 +237,7 @@ impl App {
             return e.title.clone();
         }
         match &self.book {
-            Some(b) if fumetto_core::absolute(&b.path) == fumetto_core::absolute(path) => b.title.clone(),
+            Some(b) if fumetto_core::same_path(&b.path, path) => b.title.clone(),
             _ => fumetto_core::title_of(path),
         }
     }
@@ -302,9 +297,7 @@ fn file_tags(lib: &Lib, book: Option<&Book>, path: &Path) -> Vec<Group> {
         return e.groups.clone();
     }
     match book {
-        Some(b) if fumetto_core::absolute(&b.path) == fumetto_core::absolute(path) => {
-            b.info.as_ref().map(groups_of).unwrap_or_default()
-        }
+        Some(b) if fumetto_core::same_path(&b.path, path) => b.info.as_ref().map(groups_of).unwrap_or_default(),
         _ => Vec::new(),
     }
 }

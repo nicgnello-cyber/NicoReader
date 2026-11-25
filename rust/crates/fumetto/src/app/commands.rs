@@ -83,7 +83,7 @@ impl App {
         remote::sync::report_mark(path, read);
         // il volume aperto: da qui il lettore non lo riscrive, finche' non ci si muove
         if let (Some(book), Some(reader)) = (&self.book, &self.reader)
-            && fumetto_core::absolute(&book.path) == fumetto_core::absolute(path)
+            && fumetto_core::same_path(&book.path, path)
         {
             self.marked = Some((book.path.clone(), reader.snapshot()));
         }

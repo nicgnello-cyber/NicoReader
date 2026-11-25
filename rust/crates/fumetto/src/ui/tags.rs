@@ -575,12 +575,3 @@ impl TagsForm {
         }
     }
 }
-
-/// "12 volumi", "1 volume".
-fn volumes(n: usize) -> String {
-    match (n == 1, italian()) {
-        (true, _) => "1 volume".to_owned(),
-        (false, true) => format!("{n} volumi"),
-        (false, false) => format!("{n} volumes"),
-    }
-}

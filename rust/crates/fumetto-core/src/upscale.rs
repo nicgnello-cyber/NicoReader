@@ -15,12 +15,12 @@
 
 use std::collections::VecDeque;
 use std::process::Command;
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
-use std::thread::JoinHandle;
+use std::sync::Arc;
 
 use crate::book::Book;
 use crate::decode::Page;
 use crate::loader::{Decoded, Target, decode_page, to_screen};
+use crate::pool::{Pool, Shared};
 
 /// Si migliora solo una pagina mostrata almeno 1,2 volte i suoi pixel: sotto,
 /// l'interpolazione della scheda video non si distingue.
@@ -76,13 +76,7 @@ pub struct Job {
 }
 
 pub struct Upscaler {
-    shared: Arc<Shared>,
-    worker: Option<JoinHandle<()>>,
-}
-
-struct Shared {
-    state: Mutex<State>,
-    wake: Condvar,
+    pool: Pool<State>,
 }
 
 struct State {
@@ -91,56 +85,26 @@ struct State {
     /// vuole): allora la si lascia a meta'.
     current: Option<Key>,
     drop_current: bool,
-    stop: bool,
-}
-
-impl Shared {
-    fn lock(&self) -> MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
-    }
 }
 
 impl Upscaler {
     /// `engine` fa la rete (dal thread del modulo); `deliver` riceve le
     /// pagine migliorate, dallo stesso thread.
     pub fn new(engine: Engine, deliver: impl Fn(Upscaled) + Send + Sync + 'static) -> Upscaler {
-        let shared = Arc::new(Shared {
-            state: Mutex::new(State { queue: VecDeque::new(), current: None, drop_current: false, stop: false }),
-            wake: Condvar::new(),
-        });
-        let worker = {
-            let shared = shared.clone();
-            std::thread::Builder::new()
-                .name("ingrandimento".into())
-                .spawn(move || {
-                    let _ = thread_priority::set_current_thread_priority(thread_priority::ThreadPriority::Min);
-                    work(&shared, engine, &deliver)
-                })
-                .expect("thread dell'ingrandimento")
-        };
-        Upscaler { shared, worker: Some(worker) }
+        let mut pool = Pool::new(State { queue: VecDeque::new(), current: None, drop_current: false });
+        pool.spawn("ingrandimento".into(), move |shared| work(shared, engine, &deliver));
+        Upscaler { pool }
     }
 
     /// Sostituisce la coda: le pagine a schermo, dalla piu' urgente. Quella in
     /// lavorazione, se la coda nuova non la vuole, si lascia a meta'.
     pub fn request(&self, jobs: Vec<Job>) {
-        let mut s = self.shared.lock();
-        if let Some(current) = s.current {
-            s.drop_current = !jobs.iter().any(|j| key(j) == current);
-        }
-        s.queue = jobs.into();
-        drop(s);
-        self.shared.wake.notify_all();
-    }
-}
-
-impl Drop for Upscaler {
-    fn drop(&mut self) {
-        self.shared.lock().stop = true;
-        self.shared.wake.notify_all();
-        if let Some(w) = self.worker.take() {
-            let _ = w.join();
-        }
+        self.pool.update(|s| {
+            if let Some(current) = s.current {
+                s.drop_current = !jobs.iter().any(|j| key(j) == current);
+            }
+            s.queue = jobs.into();
+        });
     }
 }
 
@@ -154,25 +118,16 @@ fn key(job: &Job) -> Key {
     (job.generation, job.index, job.target.trim, job.target.rotation)
 }
 
-fn work(shared: &Shared, mut engine: Engine, deliver: &dyn Fn(Upscaled)) {
+fn work(shared: &Shared<State>, mut engine: Engine, deliver: &dyn Fn(Upscaled)) {
     let mut done: VecDeque<(Key, (u32, u32), Arc<Page>)> = VecDeque::new();
     // il motore che non va lo si dice una volta sola
     let mut broken = false;
-    loop {
-        let job = {
-            let mut s = shared.lock();
-            loop {
-                if s.stop {
-                    return;
-                }
-                if let Some(job) = s.queue.pop_front() {
-                    s.current = Some(key(&job));
-                    s.drop_current = false;
-                    break job;
-                }
-                s = shared.wake.wait(s).unwrap_or_else(|e| e.into_inner());
-            }
-        };
+    let take = |s: &mut State| {
+        let job = s.queue.pop_front()?;
+        (s.current, s.drop_current) = (Some(key(&job)), false);
+        Some(job)
+    };
+    while let Some(job) = shared.next(take) {
         let k = key(&job);
         let mut error = None;
         let big = match done.iter().find(|d| d.0 == k) {
@@ -195,11 +150,10 @@ fn work(shared: &Shared, mut engine: Engine, deliver: &dyn Fn(Upscaled)) {
                 }
             },
         };
-        let dropped = {
-            let mut s = shared.lock();
+        let dropped = shared.with(|s| {
             s.current = None;
             std::mem::take(&mut s.drop_current)
-        };
+        });
         // lasciata a meta': non e' un fallimento, la si potra' richiedere
         if dropped && big.is_none() && error.is_none() {
             continue;
@@ -214,16 +168,13 @@ fn work(shared: &Shared, mut engine: Engine, deliver: &dyn Fn(Upscaled)) {
 
 /// La pagina rifatta dalla rete, ai suoi pixel (2x, o 4x per le scansioni
 /// minuscole); con la misura di riferimento della pagina originale.
-fn upscale(shared: &Shared, engine: &mut Engine, job: &Job) -> Result<Option<Big>, String> {
+fn upscale(shared: &Shared<State>, engine: &mut Engine, job: &Job) -> Result<Option<Big>, String> {
     let Ok(d) = decode_page(&job.book, job.index, job.target) else { return Ok(None) };
     if d.exact {
         return Ok(None); // pagina PDF disegnata: ha gia' tutti i pixel che servono
     }
     let scale = if d.page.width.max(d.page.height) < 700 { 4 } else { 2 };
-    let go_on = || {
-        let s = shared.lock();
-        !s.stop && !s.drop_current
-    };
+    let go_on = || !shared.stopping() && !shared.with(|s| s.drop_current);
     Ok(engine(&d.page, scale, &go_on)?.map(|page| (d.native, page)))
 }
 

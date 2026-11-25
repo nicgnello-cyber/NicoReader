@@ -14,10 +14,9 @@ use fumetto_core::lingua::{italian, t};
 use fumetto_render::{Align, Face, Layer, Measure, Rect, Text};
 
 use crate::reader::Action;
-use crate::strip::glide_step;
+use crate::strip::Glide;
 use crate::ui::{
-    self, ACCENT, BLACK, Command, HAIR, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, PLATE, alpha, caps, draw_icon,
-    fit,
+    self, ACCENT, Command, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, PLATE, alpha, caps, draw_icon, fit,
 };
 
 /// Cio' che le miniature devono sapere, dall'app.
@@ -107,8 +106,7 @@ impl Geo {
 pub struct Thumbs {
     scroll: f32,
     /// Pixel di scorrimento ancora da percorrere (come nel nastro).
-    glide: f32,
-    last: Option<Instant>,
+    glide: Glide,
     /// La pagina scelta con la tastiera.
     selected: Option<usize>,
     hover: Option<Hit>,
@@ -202,7 +200,7 @@ impl Thumbs {
     }
 
     pub fn wheel(&mut self, pixels: f32) {
-        self.glide += pixels;
+        self.glide.push(pixels);
     }
 
     pub fn key(&mut self, key: Key, d: &ThumbsData, view: (f32, f32), s: f32) -> Handled {
@@ -235,7 +233,7 @@ impl Thumbs {
     fn resize(&mut self, d: &ThumbsData, bigger: bool) -> Option<Command> {
         let size = next_size(d.size, bigger)?;
         self.reveal = Some(self.selected.unwrap_or(d.here));
-        self.glide = 0.0;
+        self.glide.stop();
         Some(Command::ThumbSize(size))
     }
 
@@ -253,31 +251,18 @@ impl Thumbs {
             0.0
         };
         self.scroll = (self.scroll + delta).clamp(0.0, g.max_scroll(d.pages));
-        self.glide = 0.0;
+        self.glide.stop();
     }
 
     /// Fa avanzare lo scorrimento morbido; `true` se c'e' ancora movimento.
     pub fn advance(&mut self, d: &ThumbsData, view: (f32, f32), s: f32, now: Instant) -> bool {
         let g = Geo::new(d, view, s);
         self.settle(d, &g);
-        let dt = self.last.map_or(1.0 / 60.0, |t| (now - t).as_secs_f32()).min(0.05);
-        if self.glide.abs() < 0.5 {
-            (self.glide, self.last) = (0.0, None);
-            return false;
-        }
-        self.last = Some(now);
-        let step = glide_step(self.glide, dt);
-        self.glide -= step;
-        let before = self.scroll;
-        self.scroll = (self.scroll + step).clamp(0.0, g.max_scroll(d.pages));
-        if self.scroll == before {
-            self.glide = 0.0; // contro il bordo
-        }
-        true
+        self.glide.advance(&mut self.scroll, g.max_scroll(d.pages), now)
     }
 
     pub fn gliding(&self) -> bool {
-        self.glide.abs() >= 0.5
+        self.glide.moving()
     }
 
     /// Le miniature sono gia' disegnate: qui tutto il resto, sopra di loro.
@@ -331,9 +316,7 @@ impl Thumbs {
         let s = g.s;
         let (vw, h) = (g.view.0, g.top);
         let cy = (h / 2.0).round();
-        let mut l = Layer::default();
-        l.rects.push(Rect::new(0.0, 0.0, vw, h, BLACK));
-        l.rects.push(Rect::new(0.0, h - s.round(), vw, s.round(), alpha(HAIR, 0.8)));
+        let mut l = ui::bar_layer(vw, h, s);
         let count = caps(
             &if italian() { format!("{} pagine", d.pages) } else { format!("{} pages", d.pages) },
             11.0 * s,

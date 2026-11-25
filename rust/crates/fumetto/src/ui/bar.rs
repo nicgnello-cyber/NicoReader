@@ -379,14 +379,21 @@ pub(super) fn hud_hit(ctx: &Context, x: f32, y: f32) -> Option<Button> {
     hud_buttons(ctx, b).into_iter().find(|btn| x >= btn.x && x < btn.x + btn.w)
 }
 
-/// La barra in alto: nera come la galleria, un filo la separa dalle pagine.
+/// Il fondo di una barra in alto (del lettore, della libreria, delle
+/// miniature): nero come la galleria, un filo la separa da cio' che sta sotto.
+pub(crate) fn bar_layer(vw: f32, h: f32, s: f32) -> Layer {
+    let mut l = Layer::default();
+    l.rects.push(Rect::new(0.0, 0.0, vw, h, BLACK));
+    l.rects.push(Rect::new(0.0, h - s.round(), vw, s.round(), alpha(HAIR, 0.8)));
+    l
+}
+
+/// La barra in alto del lettore.
 pub(super) fn hud(ctx: &Context, b: &BookInfo, hover: Option<Hover>, m: &mut dyn Measure) -> Layer {
     let s = ctx.scale;
     let vw = ctx.view.0;
     let h = hud_height(s);
-    let mut l = Layer::default();
-    l.rects.push(Rect::new(0.0, 0.0, vw, h, BLACK));
-    l.rects.push(Rect::new(0.0, h - s.round(), vw, s.round(), alpha(HAIR, 0.8)));
+    let mut l = bar_layer(vw, h, s);
     let buttons = hud_buttons(ctx, b);
     let (by, bh) = (((h - BTN * s) / 2.0).round(), (BTN * s).round());
     let cy = by + bh / 2.0;

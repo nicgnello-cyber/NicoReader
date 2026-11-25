@@ -19,7 +19,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use fumetto_core::lingua::{italian, t};
+use fumetto_core::lingua::{italian, t, volumes};
 use fumetto_render::{Align, Face, Layer, Measure, Rect, Scene, Text};
 
 use crate::keys::{Bind, Keymap};
@@ -42,7 +42,7 @@ mod tests;
 mod welcome;
 
 use bar::{Hover, hud, hud_hit};
-pub(crate) use bar::{Icon, draw_icon, tooltip};
+pub(crate) use bar::{Icon, bar_layer, draw_icon, tooltip};
 use form::{Form, Outcome};
 pub(crate) use menu::Row;
 use menu::{Menu, main_rows};

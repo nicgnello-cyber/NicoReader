@@ -147,13 +147,8 @@ impl Progress {
         if !self.dirty {
             return Ok(());
         }
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
         let json = serde_json::to_vec_pretty(&self.entries).map_err(io::Error::other)?;
-        let tmp = path.with_extension("tmp");
-        std::fs::write(&tmp, json)?;
-        std::fs::rename(&tmp, path)?;
+        crate::write_atomic(path, &json)?;
         self.dirty = false;
         Ok(())
     }

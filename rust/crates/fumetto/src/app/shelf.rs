@@ -194,11 +194,7 @@ impl App {
                 self.save_settings();
                 self.library_open = self.book.is_some();
                 self.rescan();
-                let note = if fumetto_core::lingua::italian() {
-                    format!("Server aggiunto: {n} volumi")
-                } else {
-                    format!("Server added: {n} volumes")
-                };
+                let note = format!("{}: {}", t("Server aggiunto", "Server added"), fumetto_core::lingua::volumes(n));
                 self.ui.toast(note, Instant::now());
             }
             Err(e) => self.ui.form_done(Err(e)),
@@ -248,7 +244,7 @@ impl App {
                 self.refresh_shelf();
                 // il volume aperto: il verso scelto vale subito; tolto, torna quello del file
                 if let (Some(book), Some(reader)) = (&self.book, &mut self.reader)
-                    && fumetto_core::absolute(&book.path) == fumetto_core::absolute(path)
+                    && fumetto_core::same_path(&book.path, path)
                     && (rtl.is_some() || had_rtl)
                 {
                     reader.manga = rtl.or(book.info.as_ref().and_then(|i| i.right_to_left)).unwrap_or(false);

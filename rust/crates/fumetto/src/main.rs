@@ -140,7 +140,7 @@ fn forwarded(event_loop: &EventLoop<app::UserEvent>, asked: Option<&Path>) -> bo
 /// non dalla cartella di prima.
 fn settings(prova: bool, own_dir: bool, crashed: bool) -> (Settings, Option<PathBuf>) {
     let path = (!prova || own_dir).then(|| data_dir().join("impostazioni.json"));
-    let mut settings = path.as_ref().map_or_else(Settings::default, Settings::load);
+    let mut settings = path.as_deref().map_or_else(Settings::default, Settings::load);
     if prova {
         settings.webtoon = false;
     }

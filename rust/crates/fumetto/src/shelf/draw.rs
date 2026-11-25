@@ -214,9 +214,7 @@ impl Shelf {
         let s = g.s;
         let (vw, h) = (g.view.0, g.top);
         let cy = (h / 2.0).round();
-        let mut l = Layer::default();
-        l.rects.push(Rect::new(0.0, 0.0, vw, h, BLACK));
-        l.rects.push(Rect::new(0.0, h - s.round(), vw, s.round(), alpha(HAIR, 0.8)));
+        let mut l = ui::bar_layer(vw, h, s);
         let geo = BarGeo::new(d, vw, s, !self.search.is_empty());
         if geo.logo {
             l.texts.push(
@@ -365,7 +363,7 @@ fn draw_progress(l: &mut Layer, status: Status, x: f32, y: f32, w: f32, s: f32) 
 
 /// "12 volumi · 3 letti".
 fn volumes_read(n: usize, done: usize) -> String {
-    if italian() { format!("{n} volumi \u{00b7} {done} letti") } else { format!("{n} volumes \u{00b7} {done} read") }
+    format!("{} \u{00b7} {done} {}", volumes(n), t("letti", "read"))
 }
 
 fn meta_of(s: Status) -> String {
