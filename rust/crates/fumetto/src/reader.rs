@@ -183,6 +183,9 @@ pub struct Reader {
     pub trim: bool,
     /// Gradi in senso orario: 0, 90, 180, 270.
     rotation: u16,
+    /// Luminosita', contrasto e gamma solo per questo volume; `None`: quelle
+    /// di tutti.
+    pub image: Option<[i32; 3]>,
     /// Le pagine segnate, in ordine.
     bookmarks: Vec<usize>,
     cover_alone: bool,
@@ -221,6 +224,7 @@ impl Reader {
             linear: true,
             trim: false,
             rotation: 0,
+            image: None,
             bookmarks: Vec::new(),
             cover_alone: false,
             zoom: 1.0,

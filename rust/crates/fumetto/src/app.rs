@@ -53,9 +53,8 @@ macro_rules! input_context {
             &$app.recent,
             &[],
             $app.settings.hud,
-            $app.shelf_shown().then(|| {
-                shelf_data(&$app.lib, &$app.settings.library, &always, $app.book.is_some(), $app.search.waiting())
-            }),
+            $app.shelf_shown()
+                .then(|| shelf_data(&$app.lib, &$app.settings, &always, $app.book.is_some(), $app.search.waiting())),
             $app.thumbs_shown()
                 .then(|| thumbs_data(&$app.book, $app.reader.as_ref(), &always_ready, $app.settings.thumb_size))
                 .flatten(),
@@ -622,8 +621,11 @@ impl App {
     }
 
     /// Le regolazioni dell'immagine di adesso.
+    /// Quelle del volume aperto, se ha le sue.
     fn adjust(&self) -> Adjust {
-        Adjust::from_steps(self.settings.brightness, self.settings.contrast, self.settings.gamma)
+        let s = &self.settings;
+        let [b, c, g] = self.reader.as_ref().and_then(|r| r.image).unwrap_or([s.brightness, s.contrast, s.gamma]);
+        Adjust::from_steps(b, c, g)
     }
 
     fn prepared(&self) -> Prepared<'_> {

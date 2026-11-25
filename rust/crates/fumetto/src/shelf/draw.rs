@@ -169,7 +169,8 @@ impl Shelf {
             }
             Tile::Series { name, count, done, .. }
             | Tile::Group { name, count, done, .. }
-            | Tile::Folder { name, count, done, .. } => (name.clone(), volumes_read(*count, *done)),
+            | Tile::Folder { name, count, done, .. }
+            | Tile::Saved { name, count, done, .. } => (name.clone(), volumes_read(*count, *done)),
         }
     }
 
@@ -223,7 +224,7 @@ impl Shelf {
             );
         }
         self.draw_filters(&mut l, d, &geo, h, s);
-        self.draw_search(&mut l, &geo, cy, s, m);
+        self.draw_search(&mut l, d, &geo, cy, s, m);
         self.draw_buttons(&mut l, &geo, vw, h, s, m);
         l
     }
@@ -256,7 +257,7 @@ impl Shelf {
 
     /// La ricerca: basta scrivere. Con del testo, il cursore e la crocetta;
     /// senza, in una finestra molto stretta, solo la lente.
-    fn draw_search(&self, l: &mut Layer, geo: &BarGeo, cy: f32, s: f32, m: &mut dyn Measure) {
+    fn draw_search(&self, l: &mut Layer, d: &ShelfData, geo: &BarGeo, cy: f32, s: f32, m: &mut dyn Measure) {
         let (sx, sw) = (geo.search_x, geo.search_w);
         if geo.search_icon {
             draw_icon(l, Icon::Search, (sx + sw / 2.0).round(), cy, s, MUTED_F);
@@ -272,13 +273,21 @@ impl Shelf {
             );
             return;
         }
-        let text = fit(m, Text::new(self.search.as_str(), Face::Sans, 14.0 * s, INK).weight(450), sw - 60.0 * s);
+        let text = fit(m, Text::new(self.search.as_str(), Face::Sans, 14.0 * s, INK).weight(450), sw - 84.0 * s);
         let tw = m.width(&text);
         l.texts.push(text.on_baseline(sx + 26.0 * s, cy + 5.0 * s));
         let caret = (sx + 28.0 * s + tw).round();
         l.rects.push(Rect::new(caret, (cy - 9.0 * s).round(), (2.0 * s).round(), (18.0 * s).round(), ACCENT));
         let color = if self.hover == Some(Hit::ClearSearch) { INK_F } else { MUTED_F };
         draw_icon(l, Icon::Close, (sx + sw - 10.0 * s).round(), cy, s * 0.8, color);
+        // il segno: salvarla fra i tag (rosso se lo e' gia': un clic la toglie)
+        let saved = d.saved.iter().any(|x| x.query == self.search.trim());
+        let color = match (saved, self.hover == Some(Hit::SaveSearch)) {
+            (true, _) => ACCENT,
+            (false, true) => INK_F,
+            (false, false) => MUTED_F,
+        };
+        draw_icon(l, Icon::Bookmark, (sx + sw - 36.0 * s).round(), cy, s * 0.8, color);
     }
 
     /// I tasti a destra: gruppi, cartelle, ordine, cartelle della libreria,
@@ -324,7 +333,7 @@ impl Shelf {
 /// spuntano in alto a destra) o la cartella (la linguetta e un bordo dietro).
 fn draw_shape(l: &mut Layer, tile: &Tile, x: f32, y: f32, w: f32, h: f32, s: f32) {
     match tile {
-        Tile::Series { .. } | Tile::Group { .. } => {
+        Tile::Series { .. } | Tile::Group { .. } | Tile::Saved { .. } => {
             for (k, a) in [(1.0, 0.55), (2.0, 0.3)] {
                 let o = (5.0 * k * s).round();
                 l.rects.push(Rect::line(x + o, y - o, x + w + o, y - o, s.max(1.0), alpha(MUTED_F, a)));
@@ -501,8 +510,12 @@ pub(super) fn bar_hit(d: &ShelfData, shelf: &Shelf, view: (f32, f32), s: f32, x:
     if let Some(k) = g.tabs.iter().position(|&tx| x >= tx && x < tx + g.tab_w) {
         return Some(Hit::Filter(Filter::ALL[k]));
     }
-    if !shelf.search.is_empty() && x >= g.search_x + g.search_w - 24.0 * s && x < g.search_x + g.search_w + 4.0 * s {
+    let end = g.search_x + g.search_w;
+    if !shelf.search.is_empty() && x >= end - 24.0 * s && x < end + 4.0 * s {
         return Some(Hit::ClearSearch);
+    }
+    if !shelf.search.is_empty() && !g.search_icon && x >= end - 48.0 * s && x < end - 24.0 * s {
+        return Some(Hit::SaveSearch);
     }
     g.buttons().find(|&(_, _, bx)| x >= bx && x < bx + 36.0 * s).map(|(hit, _, _)| hit)
 }

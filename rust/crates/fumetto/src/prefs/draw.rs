@@ -4,26 +4,22 @@
 use super::*;
 
 impl Prefs {
-    pub fn layers(
-        &self, settings: &Settings, keys: &Keymap, view: (f32, f32), s: f32, m: &mut dyn Measure,
-    ) -> Vec<Layer> {
+    pub fn layers(&self, v: &View, view: (f32, f32), s: f32, m: &mut dyn Measure) -> Vec<Layer> {
         let g = Geo::new(view, s);
-        let rows = self.rows(settings, keys);
+        let rows = self.rows(v);
         let tops = self.tops(&rows, &g);
         let mut l = Layer::default();
         for (i, (row, &top)) in rows.iter().zip(&tops).enumerate() {
             let h = row.height() * s;
             if top + h >= HEADER * s && top <= view.1 {
-                self.draw_row(&mut l, settings, &g, row, (i, top), m);
+                self.draw_row(&mut l, v, &g, row, (i, top), m);
             }
         }
         vec![background(&g), l, self.header(&g)]
     }
 
     /// Una riga, con la cima in `top`; scelta o sotto il mouse, illuminata.
-    fn draw_row(
-        &self, l: &mut Layer, settings: &Settings, g: &Geo, row: &Row, (i, top): (usize, f32), m: &mut dyn Measure,
-    ) {
+    fn draw_row(&self, l: &mut Layer, v: &View, g: &Geo, row: &Row, (i, top): (usize, f32), m: &mut dyn Measure) {
         let (s, x0, w, pad) = (g.s, g.x, g.w, g.pad);
         let h = row.height() * s;
         let hovered = self.hover == Some(Hit::Row(i));
@@ -42,7 +38,7 @@ impl Prefs {
             }
             Row::Slider { label, which } => {
                 let lit = self.drag == Some(*which) || hovered;
-                draw_slider(l, g, label, *which, which.value(settings), top, lit);
+                draw_slider(l, g, label, *which, which.value(v), top, lit);
             }
             Row::Toggle { label, on, .. } => draw_toggle(l, g, label, *on, top, h),
             Row::Stepper { label, value, .. } => {

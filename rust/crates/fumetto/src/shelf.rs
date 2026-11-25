@@ -59,6 +59,8 @@ pub struct ShelfData<'a> {
     pub cover_shown: &'a dyn Fn(&Path) -> f32,
     /// Dietro la libreria c'e' un volume aperto: si puo' tornare a leggerlo.
     pub reading: bool,
+    /// Le ricerche salvate: stanno fra i tag.
+    pub saved: &'a [fumetto_core::SavedSearch],
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -125,6 +127,14 @@ pub enum Tile {
         count: usize,
         done: usize,
     },
+    /// Una ricerca salvata, fra i tag: aprirla la rifa'.
+    Saved {
+        name: String,
+        query: String,
+        cover: usize,
+        count: usize,
+        done: usize,
+    },
 }
 
 impl Tile {
@@ -132,7 +142,10 @@ impl Tile {
     fn cover(&self) -> usize {
         match self {
             Tile::Volume(i) => *i,
-            Tile::Series { cover, .. } | Tile::Group { cover, .. } | Tile::Folder { cover, .. } => *cover,
+            Tile::Series { cover, .. }
+            | Tile::Group { cover, .. }
+            | Tile::Folder { cover, .. }
+            | Tile::Saved { cover, .. } => *cover,
         }
     }
 
@@ -140,9 +153,10 @@ impl Tile {
     fn counts(&self, status: &[Status]) -> (usize, usize) {
         match self {
             Tile::Volume(i) => (1, usize::from(status[*i] == Status::Done)),
-            Tile::Series { count, done, .. } | Tile::Group { count, done, .. } | Tile::Folder { count, done, .. } => {
-                (*count, *done)
-            }
+            Tile::Series { count, done, .. }
+            | Tile::Group { count, done, .. }
+            | Tile::Folder { count, done, .. }
+            | Tile::Saved { count, done, .. } => (*count, *done),
         }
     }
 }
@@ -165,6 +179,8 @@ pub enum Hit {
     Back,
     /// Un tag della tendina della ricerca.
     Suggestion(usize),
+    /// Salva la ricerca (o, se lo e' gia', la toglie dalle salvate).
+    SaveSearch,
     /// La barra dei volumi scelti: "Tag…", la crocetta.
     PickTags,
     PickClear,
@@ -353,6 +369,14 @@ impl Shelf {
             }
         }
         trail
+    }
+
+    /// Rifa' una ricerca salvata, nella libreria intera.
+    pub fn open_search(&mut self, query: String) {
+        (self.groups, self.group, self.series) = (false, None, None);
+        self.search = query;
+        self.suggested = None;
+        self.reset_view();
     }
 
     pub fn enter_folder(&mut self, path: PathBuf) {

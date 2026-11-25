@@ -98,6 +98,13 @@ impl Shelf {
                 }
                 Handled::Yes(None)
             }
+            Some(Hit::SaveSearch) => {
+                let query = self.search.trim().to_owned();
+                Handled::Yes(Some(match d.saved.iter().find(|s| s.query == query) {
+                    Some(saved) => Command::ForgetSearch(saved.name.clone()),
+                    None => Command::AskSaveSearch(query),
+                }))
+            }
             Some(Hit::PickTags) => Handled::Yes(Some(Command::EditTags(TagsOf::Volumes(self.picked.clone())))),
             Some(Hit::PickClear) => {
                 self.picked.clear();
@@ -121,6 +128,10 @@ impl Shelf {
             }
             Tile::Folder { path, .. } => {
                 self.enter_folder(path);
+                None
+            }
+            Tile::Saved { query, .. } => {
+                self.open_search(query);
                 None
             }
         }

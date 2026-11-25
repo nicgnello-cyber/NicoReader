@@ -10,24 +10,24 @@ fn open(tab: Tab) -> (Prefs, Settings, Keymap) {
 fn trascinare_la_luminosita() {
     let (mut p, st, km) = open(Tab::Image);
     let g = Geo::new(VIEW, 1.0);
-    let rows = p.rows(&st, &km);
+    let rows = p.rows(&View::of(&st, &km));
     let top = p.tops(&rows, &g)[0];
     let (tx, tw, ty) = g.track(top);
     // tre quarti della pista: +50
-    assert_eq!(p.press(&st, &km, VIEW, 1.0, tx + tw * 0.75, ty), Some(Command::Pref(Pref::Brightness(50))));
+    assert_eq!(p.press(&View::of(&st, &km), VIEW, 1.0, tx + tw * 0.75, ty), Some(Command::Pref(Pref::Brightness(50))));
     assert_eq!(
-        p.drag(&st, &km, VIEW, 1.0, tx - 100.0),
+        p.drag(&View::of(&st, &km), VIEW, 1.0, tx - 100.0),
         Some(Command::Pref(Pref::Brightness(-100))),
         "oltre il bordo: il minimo"
     );
-    assert_eq!(p.click(&st, &km, VIEW, 1.0, tx, ty), Handled::Yes(None), "rilasciando non cambia altro");
+    assert_eq!(p.click(&View::of(&st, &km), VIEW, 1.0, tx, ty), Handled::Yes(None), "rilasciando non cambia altro");
 }
 
 #[test]
 fn l_avviso_delle_versioni_nuove_si_spegne() {
     let (p, mut st, km) = open(Tab::Reading);
     let toggle = |p: &Prefs, st: &Settings| {
-        p.rows(st, &km).into_iter().find_map(|r| match r {
+        p.rows(&View::of(st, &km)).into_iter().find_map(|r| match r {
             Row::Toggle { on, pref: pref @ Pref::CheckUpdates(_), .. } => Some((on, pref)),
             _ => None,
         })
@@ -40,22 +40,31 @@ fn l_avviso_delle_versioni_nuove_si_spegne() {
 #[test]
 fn con_la_tastiera() {
     let (mut p, st, km) = open(Tab::Image);
-    p.key(Key::Down, &st, &km, VIEW, 1.0); // luminosita'
-    assert_eq!(p.key(Key::Right, &st, &km, VIEW, 1.0), Handled::Yes(Some(Command::Pref(Pref::Brightness(5)))));
-    p.key(Key::PageDown, &st, &km, VIEW, 1.0); // Lettura
-    p.key(Key::Down, &st, &km, VIEW, 1.0); // webtoon, acceso di serie
-    assert_eq!(p.key(Key::Enter, &st, &km, VIEW, 1.0), Handled::Yes(Some(Command::Pref(Pref::Webtoon(false)))));
-    assert_eq!(p.key(Key::Escape, &st, &km, VIEW, 1.0), Handled::Yes(Some(Command::Act(Action::ToggleSettings))));
+    p.key(Key::Down, &View::of(&st, &km), VIEW, 1.0); // luminosita'
+    assert_eq!(
+        p.key(Key::Right, &View::of(&st, &km), VIEW, 1.0),
+        Handled::Yes(Some(Command::Pref(Pref::Brightness(5))))
+    );
+    p.key(Key::PageDown, &View::of(&st, &km), VIEW, 1.0); // Lettura
+    p.key(Key::Down, &View::of(&st, &km), VIEW, 1.0); // webtoon, acceso di serie
+    assert_eq!(
+        p.key(Key::Enter, &View::of(&st, &km), VIEW, 1.0),
+        Handled::Yes(Some(Command::Pref(Pref::Webtoon(false))))
+    );
+    assert_eq!(
+        p.key(Key::Escape, &View::of(&st, &km), VIEW, 1.0),
+        Handled::Yes(Some(Command::Act(Action::ToggleSettings)))
+    );
 }
 
 #[test]
 fn un_tasto_nuovo_per_un_comando() {
     let (mut p, st, km) = open(Tab::Keys);
     let g = Geo::new(VIEW, 1.0);
-    let rows = p.rows(&st, &km);
+    let rows = p.rows(&View::of(&st, &km));
     let i = rows.iter().position(|r| matches!(r, Row::Key { bind: Bind::Lens, .. })).unwrap();
     let top = p.tops(&rows, &g)[i];
-    p.click(&st, &km, VIEW, 1.0, g.x + 60.0, top + 10.0);
+    p.click(&View::of(&st, &km), VIEW, 1.0, g.x + 60.0, top + 10.0);
     assert_eq!(p.capturing(), Some(Bind::Lens));
     let k = Combo::parse("Z").unwrap();
     assert_eq!(p.captured(Some(k.clone())), Some(Command::Pref(Pref::Bind(Bind::Lens, k))));
@@ -66,16 +75,16 @@ fn un_tasto_nuovo_per_un_comando() {
 fn la_presentazione_a_passi() {
     let (mut p, st, km) = open(Tab::Reading);
     let g = Geo::new(VIEW, 1.0);
-    let rows = p.rows(&st, &km);
+    let rows = p.rows(&View::of(&st, &km));
     let i = rows.iter().position(|r| matches!(r, Row::Stepper { .. })).unwrap();
     let top = p.tops(&rows, &g)[i];
     let right = g.x + g.w - g.pad;
     assert_eq!(
-        p.click(&st, &km, VIEW, 1.0, right - 10.0, top + 20.0),
+        p.click(&View::of(&st, &km), VIEW, 1.0, right - 10.0, top + 20.0),
         Handled::Yes(Some(Command::Pref(Pref::Slideshow(6))))
     );
     assert_eq!(
-        p.click(&st, &km, VIEW, 1.0, right - 95.0, top + 20.0),
+        p.click(&View::of(&st, &km), VIEW, 1.0, right - 95.0, top + 20.0),
         Handled::Yes(Some(Command::Pref(Pref::Slideshow(4))))
     );
 }
@@ -83,9 +92,30 @@ fn la_presentazione_a_passi() {
 #[test]
 fn i_tasti_scorrono() {
     let (mut p, st, km) = open(Tab::Keys);
-    p.wheel(&st, &km, VIEW, 1.0, 99_999.0);
+    p.wheel(&View::of(&st, &km), VIEW, 1.0, 99_999.0);
     let g = Geo::new(VIEW, 1.0);
-    let rows = p.rows(&st, &km);
+    let rows = p.rows(&View::of(&st, &km));
     let last = *p.tops(&rows, &g).last().unwrap();
     assert!(last < VIEW.1 && last > VIEW.1 - 200.0, "in fondo si vede l'ultima riga: {last}");
+}
+
+#[test]
+fn le_regolazioni_solo_per_un_volume() {
+    let (p, st, km) = open(Tab::Image);
+    // senza volume aperto l'interruttore non c'e'
+    let toggle = |v: &View| {
+        p.rows(v).into_iter().find_map(|r| match r {
+            Row::Toggle { on, pref: pref @ Pref::VolumeImage(_), .. } => Some((on, pref)),
+            _ => None,
+        })
+    };
+    assert_eq!(toggle(&View::of(&st, &km)), None);
+    // con un volume: spento, e lo si accende
+    let general = View { volume: Some(false), ..View::of(&st, &km) };
+    assert_eq!(toggle(&general), Some((false, Pref::VolumeImage(true))));
+    // acceso, le regolazioni sono quelle del volume
+    let mine = View { volume: Some(true), image: [30, -10, 5], ..View::of(&st, &km) };
+    assert_eq!(toggle(&mine), Some((true, Pref::VolumeImage(false))));
+    assert_eq!(Slider::Brightness.value(&mine), 30.0);
+    assert_eq!(Slider::Contrast.value(&mine), -10.0);
 }

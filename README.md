@@ -151,6 +151,16 @@ of the other kinds are suggested too, with their kind beside them. Every tag
 change (added, removed, renamed, removed from every volume) is undone with
 **Ctrl+Z** (Cmd+Z), one after the other.
 
+A search you use often can be saved: while searching, the bookmark in the
+search field asks for a name, and the search shows up at the top of the tags
+("Wolverine to read"); a click runs it again on the volumes of the moment.
+A red bookmark means the typed search is already saved: another click
+removes it (or right click on its cover among the tags).
+
+Brightness, contrast and gamma (settings → Image) apply to every volume;
+with a volume open, *For this volume only* keeps them for that one, for the
+scans that are too light or too dark, and the others stay as they are.
+
 To read from a Komga or Kavita server: right click → Add a server… (or the
 folder icon in the library). For Komga, the server address with your user
 name and password; for Kavita, the OPDS link from your user settings (it
@@ -226,13 +236,13 @@ every `v*` tag, and for pull requests that touch the code.
 To publish a new version, with the Download links following it
 automatically: raise `version` in `rust/Cargo.toml`, merge, then create the
 tag, either from the GitHub website (Releases → Draft a new release → tag
-`v0.5.0`, create on publish → Publish release) or with
+`v0.5.1`, create on publish → Publish release) or with
 
-    git tag v0.5.0
-    git push origin v0.5.0
+    git tag v0.5.1
+    git push origin v0.5.1
 
 Actions builds the packages for every system and publishes them in the
-`v0.5.0` Release, under the version-less names the links use (it stops if the
+`v0.5.1` Release, under the version-less names the links use (it stops if the
 tag doesn't match the version in Cargo.toml), with the notes from
 `.github/note-release.md` if the Release has none. To rewrite only the notes
 of the current version: Run workflow with "note" checked.

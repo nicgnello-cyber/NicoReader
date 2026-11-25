@@ -364,3 +364,14 @@ fn dal_nastro_alla_doppia_pagina_si_resta_dove_si_era() {
     assert_eq!(r.mode, Mode::Double);
     assert_eq!(r.group_of(r.here()), r.group_of(here), "la coppia della pagina che si leggeva");
 }
+
+#[test]
+fn le_regolazioni_del_volume_si_ricordano() {
+    let mut r = Reader::new(30, 0);
+    let saved = Saved { page: 3, pages: 30, image: Some([20, -300, 0]), ..Default::default() };
+    r.restore(&saved);
+    assert_eq!(r.image, Some([20, -100, 0]), "dentro i limiti");
+    assert_eq!(r.snapshot().image, Some([20, -100, 0]));
+    r.image = None;
+    assert_eq!(r.snapshot().image, None, "di nuovo quelle di tutti");
+}

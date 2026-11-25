@@ -122,6 +122,6 @@ fn tile_paths(d: &ShelfData, tile: &Tile) -> Vec<PathBuf> {
             .filter(|e| e.series.as_deref() == Some(name.as_str()))
             .map(|e| e.path.clone())
             .collect(),
-        Tile::Group { .. } | Tile::Folder { .. } => Vec::new(),
+        Tile::Group { .. } | Tile::Folder { .. } | Tile::Saved { .. } => Vec::new(),
     }
 }

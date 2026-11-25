@@ -37,13 +37,15 @@ enum Purpose {
     Volume(VolumeData),
     /// Un tag da rinominare in tutta la libreria: la categoria, il nome di adesso.
     Rename(GroupKind, String),
+    /// Il nome di una ricerca da salvare.
+    SaveSearch(String),
 }
 
 impl Purpose {
     /// Quanti campi da scrivere.
     fn fields(&self) -> usize {
         match self {
-            Purpose::Pdf(..) | Purpose::Rename(..) => 1,
+            Purpose::Pdf(..) | Purpose::Rename(..) | Purpose::SaveSearch(_) => 1,
             Purpose::Server | Purpose::Volume(_) => 3,
         }
     }
@@ -85,6 +87,11 @@ impl Form {
     /// Il nome nuovo di un tag, a partire da quello di adesso.
     pub(super) fn rename(kind: GroupKind, name: String) -> Form {
         Form::with(Purpose::Rename(kind, name.clone()), [name, String::new(), String::new()])
+    }
+
+    /// Il nome di una ricerca da salvare: di partenza, la ricerca stessa.
+    pub(super) fn save_search(query: String) -> Form {
+        Form::with(Purpose::SaveSearch(query.clone()), [query, String::new(), String::new()])
     }
 
     /// I dati di un volume da correggere, con i valori di adesso nei campi.
@@ -182,6 +189,14 @@ impl Form {
                     return Outcome::Close;
                 } else {
                     Ok(Command::RenameTag(*kind, old.clone(), new.to_owned()))
+                }
+            }
+            Purpose::SaveSearch(query) => {
+                let name = self.fields[0].trim();
+                if name.is_empty() {
+                    Err(t("Manca il nome.", "The name is missing."))
+                } else {
+                    Ok(Command::SaveSearch(name.to_owned(), query.clone()))
                 }
             }
             Purpose::Pdf(path, _) => {
@@ -327,6 +342,17 @@ impl Form {
                     ),
                 ],
             ),
+            Purpose::SaveSearch(query) => (
+                t("Salva la ricerca", "Save the search"),
+                query,
+                [
+                    t(
+                        "Con un nome, sta fra i tag: un clic la rifa' con i volumi di quel momento.",
+                        "With a name, it sits among the tags: a click runs it again on the volumes of the moment.",
+                    ),
+                    t("Un nome gia' usato la sostituisce.", "A name already in use replaces that search."),
+                ],
+            ),
             Purpose::Pdf(_, title) => (
                 t("PDF protetto", "Protected PDF"),
                 title,
@@ -359,6 +385,7 @@ impl Form {
     fn labels(&self) -> Vec<&'static str> {
         match &self.purpose {
             Purpose::Rename(kind, _) => vec![kind_label(*kind, false)],
+            Purpose::SaveSearch(_) => vec![t("Nome", "Name")],
             Purpose::Pdf(..) => vec![t("Password", "Password")],
             Purpose::Volume(_) => vec![t("Titolo", "Title"), t("Serie", "Series"), t("Numero", "Number")],
             Purpose::Server => vec![t("Indirizzo", "Address"), t("Nome", "User name"), t("Password", "Password")],
@@ -413,7 +440,12 @@ impl Form {
         }
         let line = match (&self.purpose, self.busy) {
             (Purpose::Pdf(..), true) => t("Apertura\u{2026}", "Opening\u{2026}"),
-            (Purpose::Volume(_) | Purpose::Rename(..), true) => t("Salvataggio\u{2026}", "Saving\u{2026}"),
+            (Purpose::Volume(_) | Purpose::Rename(..) | Purpose::SaveSearch(_), true) => {
+                t("Salvataggio\u{2026}", "Saving\u{2026}")
+            }
+            (Purpose::SaveSearch(_), false) => {
+                t("Invio per salvare   \u{00b7}   Esc per lasciar stare", "Enter to save   \u{00b7}   Esc to cancel")
+            }
             (Purpose::Server, true) => t("Collegamento in corso\u{2026}", "Connecting\u{2026}"),
             (Purpose::Volume(_), false) => t(
                 "Tab per il campo dopo   \u{00b7}   \u{2190} \u{2192} per il verso   \u{00b7}   Invio per salvare   \u{00b7}   Esc per lasciar stare",

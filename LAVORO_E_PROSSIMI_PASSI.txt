@@ -1,5 +1,5 @@
 NICOREADER (prima: Fumetto) - lettore di fumetti, manga e webtoon
-Stato del progetto al 24 novembre 2026 (versione 0.5.0)
+Stato del progetto al 25 novembre 2026 (versione 0.5.1)
 =====================================================================
 
 Dal 27 settembre il programma si chiama NicoReader e il progetto e'
@@ -976,6 +976,25 @@ Il capitolo 7 ne tiene la memoria e i numeri.
      - Annulla: ogni cambio ai tag fa una fotografia delle correzioni dei
        suoi volumi (Edits::snapshot/restore); Ctrl+Z torna indietro, fino a
        30 cambi. Gli avvisi lo ricordano.
+  5c. [x] Ricerche salvate, regolazioni per volume, versione 0.5.1
+     (25 novembre).
+     - Ricerche salvate: nella barra della libreria, mentre si cerca, il
+       segno (Icon::Bookmark) chiede un nome (ui/form.rs, Purpose::
+       SaveSearch) e la salva nelle impostazioni (Settings::saved_searches;
+       un nome gia' usato la sostituisce). Stanno in testa ai tag
+       (sections.rs, saved_section: Tile::Saved con i volumi che trovano
+       adesso; quelle che non ne trovano non si vedono). Un clic la rifa'
+       nella libreria intera; il menu la apre o la toglie; il segno rosso
+       nella barra dice che la ricerca scritta e' gia' salvata, e un clic
+       la toglie.
+     - Regolazioni per volume: nelle impostazioni (Immagine), con un volume
+       aperto, "Solo per questo volume": luminosita', contrasto e gamma
+       restano con lui (Saved::image, nei progressi; Reader::image) e gli
+       altri usano quelle di tutti. Il foglio riceve una prefs::View
+       (impostazioni, tasti, regolazioni di adesso) al posto di impostazioni
+       e tasti.
+     - Versione 0.5.1: le PR 39 (lavori tecnici), 40 (riorganizzazione e
+       tag) e questa.
   5. Distribuzione (capitolo 5).
 
   Da decidere tu, quando vuoi:
@@ -1237,7 +1256,7 @@ Il capitolo 7 ne tiene la memoria e i numeri.
     [x] Doppio clic (24 novembre): il tempo scelto nel sistema
         (GetDoubleClickTime su Windows, NSEvent doubleClickInterval su
         macOS; 450 ms su Linux), in system.rs.
-    [ ] Presentazione: i secondi si cambiano solo in impostazioni.json.
+    [x] Presentazione: i secondi si scelgono nelle impostazioni (Lettura).
 
 
 =====================================================================
@@ -1306,8 +1325,8 @@ Il capitolo 7 ne tiene la memoria e i numeri.
   [x] Luminosita', contrasto, gamma (sulla scheda video, 25 settembre).
   [x] Lente d'ingrandimento.
   [x] Scorciatoie da tastiera personalizzabili, foglio delle impostazioni.
-  [ ] Luminosita' e contrasto per volume (oggi valgono per tutti).
-  [ ] Tablet e touch: gesti, scorrimento con il dito, pizzico per zoomare.
+  [x] Luminosita' e contrasto per volume (5c).
+  [x] Tablet e touch: gesti, scorrimento con il dito, pizzico per zoomare.
   [ ] Statistiche di lettura e sincronizzazione dei progressi tramite una
       cartella condivisa (OneDrive, Dropbox...), senza server.
   [ ] Profili colore delle scansioni (ICC).

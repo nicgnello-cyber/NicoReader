@@ -114,6 +114,33 @@ impl App {
         self.changed();
     }
 
+    /// Salva una ricerca della libreria con un nome: sta fra i tag.
+    pub(super) fn save_search(&mut self, name: &str, query: &str) {
+        self.settings.save_search(name, query);
+        self.save_settings();
+        self.ui.form_done(Ok(()));
+        let text = if italian() {
+            format!("Ricerca salvata: «{}» sta fra i tag", name.trim())
+        } else {
+            format!("Search saved: \u{201c}{}\u{201d} is among the tags", name.trim())
+        };
+        self.ui.toast(text, Instant::now());
+        self.changed();
+    }
+
+    /// Toglie una ricerca dalle salvate.
+    pub(super) fn forget_search(&mut self, name: &str) {
+        self.settings.forget_search(name);
+        self.save_settings();
+        let text = if italian() {
+            format!("«{name}» tolta dalle ricerche salvate")
+        } else {
+            format!("\u{201c}{name}\u{201d} removed from the saved searches")
+        };
+        self.ui.toast(text, Instant::now());
+        self.changed();
+    }
+
     /// Il nome nuovo di un tag, su tutti i volumi della libreria che lo
     /// hanno; se un tag con quel nome c'e' gia', i due diventano uno.
     pub(super) fn rename_tag(&mut self, kind: GroupKind, old: String, new: String) {

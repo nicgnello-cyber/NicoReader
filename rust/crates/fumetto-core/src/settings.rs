@@ -54,6 +54,38 @@ pub struct Settings {
     /// Quanto sono grandi le miniature delle pagine (+ e -), rispetto alla
     /// misura di partenza.
     pub thumb_size: f32,
+    /// Le ricerche della libreria salvate con un nome: stanno fra i tag.
+    pub saved_searches: Vec<SavedSearch>,
+}
+
+/// Una ricerca della libreria con il suo nome ("Wolverine da leggere":
+/// "personaggio:wolverine -tag:letto").
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SavedSearch {
+    pub name: String,
+    pub query: String,
+}
+
+impl Settings {
+    /// Salva una ricerca; una con lo stesso nome (senza badare alle
+    /// maiuscole) la sostituisce.
+    pub fn save_search(&mut self, name: &str, query: &str) {
+        let search = SavedSearch { name: name.trim().to_owned(), query: query.trim().to_owned() };
+        match self.saved_searches.iter_mut().find(|s| crate::library::same_name(&s.name, &search.name)) {
+            Some(old) => *old = search,
+            None => self.saved_searches.push(search),
+        }
+    }
+
+    /// Toglie una ricerca salvata, per nome.
+    pub fn forget_search(&mut self, name: &str) {
+        self.saved_searches.retain(|s| s.name != name);
+    }
+
+    /// Il nome di una ricerca gia' salvata cosi'.
+    pub fn saved_as(&self, query: &str) -> Option<&str> {
+        self.saved_searches.iter().find(|s| s.query == query.trim()).map(|s| s.name.as_str())
+    }
 }
 
 impl Default for Settings {
@@ -79,6 +111,7 @@ impl Default for Settings {
             library_folder: None,
             library_sort: LibrarySort::Name,
             thumb_size: 1.0,
+            saved_searches: Vec::new(),
         }
     }
 }
@@ -134,6 +167,23 @@ mod tests {
         assert_eq!((s.hud, s.library_sort), (false, LibrarySort::Name), "un ordine sconosciuto non perde il resto");
         let json = serde_json::to_string(&Settings { library_sort: LibrarySort::Year, ..Settings::default() }).unwrap();
         assert!(json.contains(r#""library_sort":"year""#), "{json}");
+    }
+
+    #[test]
+    fn le_ricerche_salvate() {
+        let mut s = Settings::default();
+        s.save_search("Wolverine da leggere", "personaggio:wolverine -tag:letto ");
+        s.save_search("Manga", "tipo:manga");
+        assert_eq!(s.saved_as("personaggio:wolverine -tag:letto"), Some("Wolverine da leggere"));
+        // lo stesso nome, con altre maiuscole: la si sostituisce
+        s.save_search("wolverine DA LEGGERE", "personaggio:wolverine");
+        assert_eq!(s.saved_searches.len(), 2);
+        assert_eq!(s.saved_searches[0].query, "personaggio:wolverine");
+        s.forget_search("Manga");
+        assert_eq!(s.saved_searches.len(), 1);
+        // un file senza la voce: nessuna
+        let old: Settings = serde_json::from_str(r#"{"hud": true}"#).unwrap();
+        assert!(old.saved_searches.is_empty());
     }
 
     #[test]

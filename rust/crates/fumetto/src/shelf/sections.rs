@@ -97,7 +97,9 @@ pub(super) fn matches_text(e: &Entry, needle: &str) -> bool {
 pub(super) fn tile_name<'a>(d: &'a ShelfData, t: &'a Tile) -> &'a str {
     match t {
         Tile::Volume(i) => &d.entries[*i].title,
-        Tile::Series { name, .. } | Tile::Group { name, .. } | Tile::Folder { name, .. } => name,
+        Tile::Series { name, .. } | Tile::Group { name, .. } | Tile::Folder { name, .. } | Tile::Saved { name, .. } => {
+            name
+        }
     }
 }
 /// Le serie con piu' volumi diventano una pila, al posto del primo; tutto
@@ -383,14 +385,37 @@ pub(super) fn group_sections(d: &ShelfData, filter: Filter, query: &Query) -> Ve
             _ => sections.push((kind, Section { title: String::new(), tiles: vec![tile], one_row: false })),
         }
     }
-    sections
+    let saved = saved_section(d, filter).filter(|_| query.is_empty());
+    saved
         .into_iter()
-        .map(|(kind, mut section)| {
+        .chain(sections.into_iter().map(|(kind, mut section)| {
             section.tiles.sort_by(|a, b| natural_cmp(tile_name(d, a), tile_name(d, b)));
             section.title = format!("{} \u{00b7} {}", kind_label(kind, true), section.tiles.len());
             section
-        })
+        }))
         .collect()
+}
+
+/// Le ricerche salvate, in testa ai tag, con i volumi che trovano adesso;
+/// quelle che non ne trovano nessuno non si vedono (si tolgono rifacendole:
+/// il segno nella barra le toglie dalle salvate).
+fn saved_section(d: &ShelfData, filter: Filter) -> Option<Section> {
+    let tiles: Vec<Tile> = d
+        .saved
+        .iter()
+        .filter_map(|s| {
+            let query = Query::parse(&s.query);
+            let members: Vec<usize> =
+                (0..d.library_len()).filter(|&i| filter.keeps(d.status[i]) && query.matches(&d.entries[i])).collect();
+            if members.is_empty() {
+                return None;
+            }
+            let (cover, done) = cover_and_done(d, &members);
+            Some(Tile::Saved { name: s.name.clone(), query: s.query.clone(), cover, count: members.len(), done })
+        })
+        .collect();
+    let title = format!("{} \u{00b7} {}", t("Ricerche salvate", "Saved searches"), tiles.len());
+    (!tiles.is_empty()).then_some(Section { title, tiles, one_row: false })
 }
 
 /// I volumi trovati cercando sui server, che la libreria non ha: per serie e

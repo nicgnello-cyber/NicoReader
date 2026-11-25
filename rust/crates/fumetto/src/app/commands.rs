@@ -44,6 +44,8 @@ impl App {
             Command::ShowGroup(kind, name) => self.show_group(kind, name),
             Command::RenameTag(kind, old, new) => self.rename_tag(kind, old, new),
             Command::RemoveTagEverywhere(kind, name) => self.confirm_untag(kind, name),
+            Command::SaveSearch(name, query) => self.save_search(&name, &query),
+            Command::ForgetSearch(name) => self.forget_search(&name),
             // quelli interni li ha gia' fatti l'interfaccia
             Command::Series(_)
             | Command::Group(..)
@@ -52,7 +54,9 @@ impl App {
             | Command::Sort(_)
             | Command::FoldersMenu(..)
             | Command::AskServer
-            | Command::AskRenameTag(..) => {}
+            | Command::AskRenameTag(..)
+            | Command::AskSaveSearch(_)
+            | Command::OpenSearch(_) => {}
         }
         self.request_redraw();
     }
@@ -126,10 +130,11 @@ impl App {
         let now = Instant::now();
         let s = &mut self.settings;
         match p {
-            Pref::Brightness(v) => s.brightness = v,
-            Pref::Contrast(v) => s.contrast = v,
-            Pref::Gamma(v) => s.gamma = v,
-            Pref::ResetImage => (s.brightness, s.contrast, s.gamma) = (0, 0, 0),
+            Pref::Brightness(v) => self.change_image(|i| i[0] = v),
+            Pref::Contrast(v) => self.change_image(|i| i[1] = v),
+            Pref::Gamma(v) => self.change_image(|i| i[2] = v),
+            Pref::ResetImage => self.change_image(|i| *i = [0; 3]),
+            Pref::VolumeImage(on) => self.volume_image(on),
             Pref::LensZoom(v) => s.lens_zoom = v,
             Pref::LensSize(v) => s.lens_size = v,
             Pref::Slideshow(v) => {
@@ -177,6 +182,40 @@ impl App {
         // le regolazioni trascinate cambiano a ogni movimento: si scrivono dopo
         self.settings_dirty = true;
         self.request_redraw();
+    }
+
+    /// Cambia luminosita', contrasto e gamma: quelli del volume aperto, se
+    /// ha i suoi, se no quelli di tutti.
+    fn change_image(&mut self, change: impl FnOnce(&mut [i32; 3])) {
+        match self.reader.as_mut().and_then(|r| r.image.as_mut()) {
+            Some(image) => {
+                change(image);
+                self.remember();
+            }
+            None => {
+                let s = &mut self.settings;
+                let mut image = [s.brightness, s.contrast, s.gamma];
+                change(&mut image);
+                [s.brightness, s.contrast, s.gamma] = image;
+            }
+        }
+    }
+
+    /// Le regolazioni solo per il volume aperto (si parte da quelle di
+    /// tutti), o di nuovo quelle di tutti.
+    fn volume_image(&mut self, on: bool) {
+        let s = &self.settings;
+        let general = [s.brightness, s.contrast, s.gamma];
+        if let Some(reader) = &mut self.reader {
+            reader.image = on.then_some(general);
+            self.remember();
+            let note = if on {
+                t("Regolazioni solo per questo volume", "Settings for this volume only")
+            } else {
+                t("Di nuovo le regolazioni di tutti", "Back to the general settings")
+            };
+            self.ui.toast(note, Instant::now());
+        }
     }
 
     /// I tasti sono cambiati: la mappa si rifa', si salva, e una riga dice come.

@@ -36,6 +36,10 @@ pub struct Saved {
     pub rotation: u16,
     /// Le pagine segnate (da 0), in ordine.
     pub bookmarks: Vec<usize>,
+    /// Luminosita', contrasto e gamma solo per questo volume; `None`: quelle
+    /// di tutti.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<[i32; 3]>,
 }
 
 pub struct Progress {

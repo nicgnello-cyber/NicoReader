@@ -39,6 +39,12 @@ impl Shelf {
                 ),
             ],
             Tile::Folder { path, .. } => folder_menu(path),
+            Tile::Saved { name, query, .. } => vec![
+                Row::Head(t("Ricerca salvata", "Saved search")),
+                Row::plain(t("Apri", "Open"), Command::OpenSearch(query.clone())),
+                Row::Sep,
+                Row::plain(t("Togli dalle salvate", "Remove from saved"), Command::ForgetSearch(name.clone())),
+            ],
             Tile::Volume(i) => volume_menu(d, *i),
         }
     }

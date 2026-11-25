@@ -307,7 +307,7 @@ impl App {
 
 /// La libreria come la vede l'interfaccia.
 pub(super) fn shelf_data<'a>(
-    lib: &'a Lib, roots: &'a [PathBuf], cover_shown: &'a dyn Fn(&Path) -> f32, reading: bool, searching: bool,
+    lib: &'a Lib, settings: &'a Settings, cover_shown: &'a dyn Fn(&Path) -> f32, reading: bool, searching: bool,
 ) -> ShelfData<'a> {
     ShelfData {
         entries: &lib.entries,
@@ -318,9 +318,10 @@ pub(super) fn shelf_data<'a>(
         edited: &lib.edited,
         read_at: &lib.read_at,
         scanning: lib.scanning,
-        roots,
+        roots: &settings.library,
         cover_shown,
         reading,
+        saved: &settings.saved_searches,
     }
 }
 
