@@ -997,6 +997,15 @@ Il capitolo 7 ne tiene la memoria e i numeri.
        tag) e questa.
      - Tecnici: profili colore ICC, impaginazioni dei testi tenute, AVIF
        con le tabelle (vedi capitolo 5 e le idee).
+     - Snellito: i thread di pagine, copertine e ingrandimento hanno lo
+       stesso codice (pool.rs: Pool, Shared::next/with/stopping); i sette
+       salvataggi "accanto e poi al suo posto" sono uno (files.rs:
+       write_atomic, write_private), anche per la jump list che scriveva
+       diretto; libreria e miniature scorrono con lo stesso Glide
+       (strip.rs); inizio e fine del volume sono un at_edge; "N volumi" e'
+       lingua::volumes; il fondo delle tre barre e' ui::bar_layer; "e' il
+       volume aperto?" e' same_path. Tolte clear_picks e saved_as, mai
+       usate.
   5. Distribuzione (capitolo 5).
 
   Da decidere tu, quando vuoi:
