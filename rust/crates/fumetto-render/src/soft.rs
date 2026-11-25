@@ -5,13 +5,13 @@
 //! e si mescolano allo stesso modo (valori sRGB, come nei browser): quando
 //! arriva la scheda video il passaggio non si vede.
 
-use glyphon::{FontSystem, SwashCache, SwashContent};
+use glyphon::{SwashCache, SwashContent};
 
-use crate::overlay::{font_system, shape};
+use crate::text::Typesetter;
 use crate::{Measure, Rect, Scene, Text};
 
 pub struct SoftOverlay {
-    fonts: FontSystem,
+    text: Typesetter,
     swash: SwashCache,
 }
 
@@ -30,7 +30,7 @@ impl Default for SoftOverlay {
 
 impl SoftOverlay {
     pub fn new() -> SoftOverlay {
-        SoftOverlay { fonts: font_system(), swash: SwashCache::new() }
+        SoftOverlay { text: Typesetter::new(), swash: SwashCache::new() }
     }
 
     /// Disegna la scena sopra cio' che la tela contiene gia', strato per
@@ -41,21 +41,23 @@ impl SoftOverlay {
                 fill(canvas, r);
             }
             for t in &layer.texts {
-                self.text(canvas, t);
+                self.draw_text(canvas, t);
             }
         }
+        self.text.end_frame();
     }
 
     /// Un testo, come lo mette glyphon: al massimo due righe, la riga di
     /// base arrotondata al pixel.
-    fn text(&mut self, canvas: &mut Canvas, t: &Text) {
-        let buffer = shape(&mut self.fonts, t, Some(2));
+    fn draw_text(&mut self, canvas: &mut Canvas, t: &Text) {
+        let (fonts, buffers) = self.text.layer(std::slice::from_ref(t));
+        let buffer = buffers[0];
         let (left, top) = (t.x.round(), t.y.round());
         for run in buffer.layout_runs() {
             for glyph in run.glyphs {
                 let physical = glyph.physical((left, top), 1.0);
                 let color = glyph.color_opt.map_or(t.color, |c| [c.r(), c.g(), c.b(), c.a()]);
-                let Some(image) = self.swash.get_image(&mut self.fonts, physical.cache_key) else { continue };
+                let Some(image) = self.swash.get_image(fonts, physical.cache_key) else { continue };
                 let x0 = physical.x + image.placement.left;
                 let y0 = run.line_y.round() as i32 + physical.y - image.placement.top;
                 let (w, h) = (image.placement.width as i32, image.placement.height as i32);
@@ -92,11 +94,11 @@ impl SoftOverlay {
 
 impl Measure for SoftOverlay {
     fn width(&mut self, t: &Text) -> f32 {
-        crate::overlay::line_width(&mut self.fonts, t)
+        self.text.width(t)
     }
 
     fn lines(&mut self, t: &Text) -> usize {
-        crate::overlay::line_count(&mut self.fonts, t)
+        self.text.lines(t)
     }
 }
 

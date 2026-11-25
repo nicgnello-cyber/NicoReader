@@ -3,10 +3,10 @@
 //! istruzioni SIMD). Tutto dentro l'eseguibile: niente librerie da installare.
 //!
 //! Da AV1 escono tre piani Y, Cb, Cr (i due di colore spesso a meta'
-//! risoluzione): qui si riportano a RGB con la matrice che dichiara il file.
+//! risoluzione): qui si riportano a RGB con la matrice che dichiara il file,
+//! con tabelle a punto fisso fatte una volta per pagina (`Tables`).
 //! L'alfa, che nelle pagine a fumetti non c'e', si ignora: la pagina e' opaca.
 
-use std::ffi::c_void;
 use std::mem::MaybeUninit;
 use std::ptr::NonNull;
 
@@ -122,63 +122,179 @@ impl Picture {
     fn to_rgba(&self) -> Option<Page> {
         let p = &self.0;
         let (w, h) = (p.p.w as usize, p.p.h as usize);
-        let bpc = p.p.bpc as u32;
-        let layout = p.p.layout;
+        let bits = p.p.bpc as u32;
         // SAFETY: la sequenza vive quanto l'immagine
         let seq = unsafe { p.seq_hdr?.as_ref() };
-        let full = seq.color_range != 0;
-        let (sx, sy) = match layout {
+        let sub = match p.p.layout {
             DAV1D_PIXEL_LAYOUT_I420 => (1, 1),
             DAV1D_PIXEL_LAYOUT_I422 => (1, 0),
             _ => (0, 0),
         };
-        let gray = layout == DAV1D_PIXEL_LAYOUT_I400;
-        let wide = bpc > 8;
-        let max = ((1u32 << bpc) - 1) as f32;
-        // un campione di un piano, riportato a 0..1
-        let sample = |plane: usize, x: usize, y: usize| -> f32 {
-            let stride = p.stride[plane.min(1)];
-            let base = p.data[plane].map_or(std::ptr::null(), |d| d.as_ptr() as *const c_void);
-            // SAFETY: (x, y) sta dentro il piano (w x h, o la sua meta' per il
-            // colore), e lo stride e' quello che ha dato dav1d
-            unsafe {
-                let row = base.cast::<u8>().offset(y as isize * stride);
-                let v = if wide { *row.cast::<u16>().add(x) as f32 } else { *row.add(x) as f32 };
-                v / max
-            }
-        };
-        let (kr, kb) = match seq.mtrx {
-            DAV1D_MC_BT709 => (0.2126, 0.0722),
-            DAV1D_MC_BT2020_NCL | DAV1D_MC_BT2020_CL => (0.2627, 0.0593),
-            _ => (0.299, 0.114),
-        };
-        let identity = seq.mtrx == DAV1D_MC_IDENTITY;
-        let mut rgba = Vec::with_capacity(w * h * 4);
-        for y in 0..h {
-            for x in 0..w {
-                let yv = sample(0, x, y);
-                let (cb, cr) =
-                    if gray { (0.5, 0.5) } else { (sample(1, x >> sx, y >> sy), sample(2, x >> sx, y >> sy)) };
-                let (r, g, b) = if identity {
-                    (cr, yv, cb) // GBR: Y e' il verde, U il blu, V il rosso
-                } else {
-                    let (yv, cb, cr) = if full {
-                        (yv, cb - 0.5, cr - 0.5)
-                    } else {
-                        ((yv - 16.0 / 255.0) * 255.0 / 219.0, (cb - 0.5) * 255.0 / 224.0, (cr - 0.5) * 255.0 / 224.0)
-                    };
-                    let kg = 1.0 - kr - kb;
-                    let r = yv + 2.0 * (1.0 - kr) * cr;
-                    let b = yv + 2.0 * (1.0 - kb) * cb;
-                    let g = (yv - kr * r - kb * b) / kg;
-                    (r, g, b)
+        let matrix = match seq.mtrx {
+            _ if p.p.layout == DAV1D_PIXEL_LAYOUT_I400 => Matrix::Gray { full: seq.color_range != 0 },
+            DAV1D_MC_IDENTITY => Matrix::Identity,
+            m => {
+                let (kr, kb) = match m {
+                    DAV1D_MC_BT709 => (0.2126, 0.0722),
+                    DAV1D_MC_BT2020_NCL | DAV1D_MC_BT2020_CL => (0.2627, 0.0593),
+                    _ => (0.299, 0.114),
                 };
-                let q = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
-                rgba.extend_from_slice(&[q(r), q(g), q(b), 255]);
+                Matrix::Ycc { kr, kb, full: seq.color_range != 0 }
             }
-        }
+        };
+        let rgba = if bits > 8 {
+            self.convert::<u16>(w, h, sub, bits, matrix)?
+        } else {
+            self.convert::<u8>(w, h, sub, bits, matrix)?
+        };
         Some(Page { width: w as u32, height: h as u32, rgba, opaque: true })
     }
+
+    /// I piani di dav1d come fette di campioni (`T`: u8 fino a 8 bit, u16
+    /// oltre), poi la conversione.
+    fn convert<T: Copy + Into<u32>>(
+        &self, w: usize, h: usize, (sx, sy): (usize, usize), bits: u32, matrix: Matrix,
+    ) -> Option<Vec<u8>> {
+        let p = &self.0;
+        let (cw, ch) = ((w + sx) >> sx, (h + sy) >> sy);
+        let plane = |i: usize, width: usize, height: usize| -> Option<Plane<'_, T>> {
+            let stride = usize::try_from(p.stride[i.min(1)]).ok()? / size_of::<T>();
+            let base = p.data[i]?.as_ptr() as *const T;
+            if stride < width || height == 0 {
+                return None;
+            }
+            // SAFETY: dav1d da' un piano di `height` righe distanti `stride`
+            // campioni, ognuna con almeno `width` campioni; la fetta si ferma
+            // alla fine dell'ultima riga, e vive quanto l'immagine (&self)
+            let data = unsafe { std::slice::from_raw_parts(base, stride * (height - 1) + width) };
+            Some(Plane { data, stride })
+        };
+        let y = plane(0, w, h)?;
+        let chroma = match matrix {
+            Matrix::Gray { .. } => None,
+            _ => Some((plane(1, cw, ch)?, plane(2, cw, ch)?)),
+        };
+        Some(planes_to_rgba(w, h, (sx, sy), &y, chroma.as_ref(), bits, matrix))
+    }
+}
+
+/// Come da Y, Cb, Cr si torna a RGB.
+#[derive(Clone, Copy, Debug)]
+enum Matrix {
+    /// Solo Y: grigio.
+    Gray { full: bool },
+    /// GBR: Y e' il verde, Cb il blu, Cr il rosso.
+    Identity,
+    /// Luminanza e differenze di colore, con i pesi del rosso e del blu.
+    Ycc { kr: f32, kb: f32, full: bool },
+}
+
+/// Un piano: i campioni, e quanti ce ne sono da una riga all'altra.
+struct Plane<'a, T> {
+    data: &'a [T],
+    stride: usize,
+}
+
+impl<T: Copy> Plane<'_, T> {
+    fn row(&self, y: usize, len: usize) -> &[T] {
+        &self.data[y * self.stride..][..len]
+    }
+}
+
+/// Le cifre dopo la virgola dei punti fissi delle tabelle.
+const FRAC: u32 = 16;
+
+/// Per ogni valore di un campione, quanto da' a R, G e B (gia' per 255, in
+/// punti fissi): cosi' un pixel costa cinque letture e qualche somma, invece
+/// di una dozzina di moltiplicazioni in virgola mobile.
+struct Tables {
+    y: Vec<i32>,
+    r_cr: Vec<i32>,
+    g_cb: Vec<i32>,
+    g_cr: Vec<i32>,
+    b_cb: Vec<i32>,
+}
+
+impl Tables {
+    fn new(bits: u32, matrix: Matrix) -> Tables {
+        let max = ((1u32 << bits) - 1) as f32;
+        let fixed = |v: f32| (v * 255.0 * (1 << FRAC) as f32).round() as i32;
+        let each = |f: &dyn Fn(f32) -> f32| (0..=max as u32).map(|v| fixed(f(v as f32 / max))).collect::<Vec<i32>>();
+        // il campo ridotto ("TV"): il nero a 16/255, il bianco a 235/255
+        let luma = |full: bool| move |v: f32| if full { v } else { (v - 16.0 / 255.0) * 255.0 / 219.0 };
+        let chroma = |full: bool| move |v: f32| if full { v - 0.5 } else { (v - 0.5) * 255.0 / 224.0 };
+        let zero = || vec![0; max as usize + 1];
+        match matrix {
+            Matrix::Gray { full } => {
+                Tables { y: each(&luma(full)), r_cr: zero(), g_cb: zero(), g_cr: zero(), b_cb: zero() }
+            }
+            // GBR: Y e' il verde, Cb il blu, Cr il rosso: le tabelle di Cb e Cr
+            // portano il loro canale intero, quella di Y solo il verde (vedi
+            // `planes_to_rgba`)
+            Matrix::Identity => {
+                let plain = each(&|v| v);
+                Tables { y: plain.clone(), r_cr: plain.clone(), g_cb: zero(), g_cr: zero(), b_cb: plain }
+            }
+            Matrix::Ycc { kr, kb, full } => {
+                let kg = 1.0 - kr - kb;
+                let c = chroma(full);
+                Tables {
+                    y: each(&luma(full)),
+                    r_cr: each(&|v| 2.0 * (1.0 - kr) * c(v)),
+                    b_cb: each(&|v| 2.0 * (1.0 - kb) * c(v)),
+                    // G = (Y - kr R - kb B) / kg, con R e B scritti come sopra
+                    g_cb: each(&|v| -kb * 2.0 * (1.0 - kb) * c(v) / kg),
+                    g_cr: each(&|v| -kr * 2.0 * (1.0 - kr) * c(v) / kg),
+                }
+            }
+        }
+    }
+}
+
+/// Da punto fisso a 0..255, arrotondando.
+fn byte(v: i32) -> u8 {
+    ((v + (1 << (FRAC - 1))) >> FRAC).clamp(0, 255) as u8
+}
+
+/// I piani Y, Cb, Cr (questi due ridotti di `sx`, `sy`) in pixel RGBA opachi.
+fn planes_to_rgba<T: Copy + Into<u32>>(
+    w: usize, h: usize, (sx, sy): (usize, usize), y: &Plane<T>, chroma: Option<&(Plane<T>, Plane<T>)>, bits: u32,
+    matrix: Matrix,
+) -> Vec<u8> {
+    let t = Tables::new(bits, matrix);
+    let cw = (w + sx) >> sx;
+    let index = |v: T| v.into() as usize;
+    let mut rgba = vec![255u8; w * h * 4];
+    for (row, out) in rgba.chunks_exact_mut(w * 4).enumerate() {
+        let ys = y.row(row, w);
+        match (chroma, matrix) {
+            (Some((cb, cr)), Matrix::Identity) => {
+                let (cbs, crs) = (cb.row(row >> sy, cw), cr.row(row >> sy, cw));
+                for (x, px) in out.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+                    let (b, r) = (index(cbs[x >> sx]), index(crs[x >> sx]));
+                    px[..3].copy_from_slice(&[byte(t.r_cr[r]), byte(t.y[index(ys[x])]), byte(t.b_cb[b])]);
+                }
+            }
+            (Some((cb, cr)), _) => {
+                let (cbs, crs) = (cb.row(row >> sy, cw), cr.row(row >> sy, cw));
+                for (x, px) in out.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+                    let (l, b, r) = (t.y[index(ys[x])], index(cbs[x >> sx]), index(crs[x >> sx]));
+                    px[..3].copy_from_slice(&[
+                        byte(l + t.r_cr[r]),
+                        byte(l + t.g_cb[b] + t.g_cr[r]),
+                        byte(l + t.b_cb[b]),
+                    ]);
+                }
+            }
+            (None, _) => {
+                for (x, px) in out.as_chunks_mut::<4>().0.iter_mut().enumerate() {
+                    let l = byte(t.y[index(ys[x])]);
+                    px[..3].copy_from_slice(&[l, l, l]);
+                }
+            }
+        }
+    }
+    rgba
 }
 
 #[cfg(test)]
@@ -196,6 +312,72 @@ mod tests {
         let near = |a: &[u8], b: [u8; 3]| a.iter().zip(b).all(|(&a, b)| a.abs_diff(b) <= 4);
         assert!(near(px(10, 10), [200, 40, 30]), "rosso: {:?}", px(10, 10));
         assert!(near(px(80, 50), [30, 60, 190]), "blu: {:?}", px(80, 50));
+    }
+
+    /// La formula di prima, pixel per pixel in virgola mobile: le tabelle
+    /// devono dare gli stessi numeri (al piu' uno di differenza, per
+    /// l'arrotondamento), con ogni matrice, campo e profondita'.
+    #[test]
+    fn le_tabelle_danno_la_formula() {
+        fn reference(yv: f32, cb: f32, cr: f32, m: Matrix) -> [u8; 3] {
+            let q = |v: f32| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+            match m {
+                Matrix::Gray { full } => {
+                    let l = if full { yv } else { (yv - 16.0 / 255.0) * 255.0 / 219.0 };
+                    [q(l); 3]
+                }
+                Matrix::Identity => [q(cr), q(yv), q(cb)],
+                Matrix::Ycc { kr, kb, full } => {
+                    let (yv, cb, cr) = if full {
+                        (yv, cb - 0.5, cr - 0.5)
+                    } else {
+                        ((yv - 16.0 / 255.0) * 255.0 / 219.0, (cb - 0.5) * 255.0 / 224.0, (cr - 0.5) * 255.0 / 224.0)
+                    };
+                    let r = yv + 2.0 * (1.0 - kr) * cr;
+                    let b = yv + 2.0 * (1.0 - kb) * cb;
+                    let g = (yv - kr * r - kb * b) / (1.0 - kr - kb);
+                    [q(r), q(g), q(b)]
+                }
+            }
+        }
+        fn check<T: Copy + Into<u32> + TryFrom<u32>>(bits: u32, m: Matrix) {
+            let max = (1u32 << bits) - 1;
+            // 4 x 4 pixel, colore a meta' risoluzione (4:2:0), valori sparsi
+            let (w, h) = (4, 4);
+            let v = |i: u32| T::try_from(i.wrapping_mul(2_654_435_761) % (max + 1)).ok().unwrap();
+            let ys: Vec<T> = (0..16).map(|i| v(i + 1)).collect();
+            let cbs: Vec<T> = (0..4).map(|i| v(i + 40)).collect();
+            let crs: Vec<T> = (0..4).map(|i| v(i + 90)).collect();
+            let y = Plane { data: &ys, stride: 4 };
+            let chroma = (Plane { data: &cbs, stride: 2 }, Plane { data: &crs, stride: 2 });
+            let with = !matches!(m, Matrix::Gray { .. });
+            let out = planes_to_rgba(w, h, (1, 1), &y, with.then_some(&chroma), bits, m);
+            for row in 0..h {
+                for x in 0..w {
+                    let f = |s: T| s.into() as f32 / max as f32;
+                    let c = (row / 2) * 2 + x / 2;
+                    let want = reference(f(ys[row * 4 + x]), f(cbs[c]), f(crs[c]), m);
+                    let got = &out[(row * w + x) * 4..][..3];
+                    assert!(
+                        got.iter().zip(want).all(|(a, b)| a.abs_diff(b) <= 1),
+                        "{bits} bit, {m:?}, ({x}, {row}): {got:?} invece di {want:?}"
+                    );
+                }
+            }
+        }
+        let matrices = [
+            Matrix::Gray { full: true },
+            Matrix::Gray { full: false },
+            Matrix::Identity,
+            Matrix::Ycc { kr: 0.2126, kb: 0.0722, full: true },
+            Matrix::Ycc { kr: 0.299, kb: 0.114, full: false },
+            Matrix::Ycc { kr: 0.2627, kb: 0.0593, full: false },
+        ];
+        for m in matrices {
+            check::<u8>(8, m);
+            check::<u16>(10, m);
+            check::<u16>(12, m);
+        }
     }
 
     #[test]

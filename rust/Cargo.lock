@@ -911,6 +911,7 @@ dependencies = [
  "keyring",
  "libloading 0.9.0",
  "libwebp-sys",
+ "moxcms",
  "quick-xml",
  "rav1d",
  "serde",

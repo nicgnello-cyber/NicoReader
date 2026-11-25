@@ -21,6 +21,8 @@ libloading = "0.9.0"
 # cartella di prova sono WebP 14.125 pagine su 15.400, e' il formato che conta.
 # sse41: il codice SIMD c'e', ma libwebp controlla la CPU prima di usarlo.
 libwebp-sys = { version = "0.14.4", features = ["sse41"] }
+# i profili colore delle scansioni; c'e' gia' per `image`, che la usa
+moxcms = "0.8"
 # i cataloghi OPDS dei server (Komga, Kavita): Atom, con i namespace
 quick-xml = { version = "0.41", default-features = false }
 # per controllare l'aggiornamento scaricato contro l'impronta che da' GitHub

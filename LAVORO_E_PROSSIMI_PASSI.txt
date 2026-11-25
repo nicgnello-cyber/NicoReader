@@ -995,6 +995,8 @@ Il capitolo 7 ne tiene la memoria e i numeri.
        e tasti.
      - Versione 0.5.1: le PR 39 (lavori tecnici), 40 (riorganizzazione e
        tag) e questa.
+     - Tecnici: profili colore ICC, impaginazioni dei testi tenute, AVIF
+       con le tabelle (vedi capitolo 5 e le idee).
   5. Distribuzione (capitolo 5).
 
   Da decidere tu, quando vuoi:
@@ -1201,9 +1203,11 @@ Il capitolo 7 ne tiene la memoria e i numeri.
         stima, cosi' quando arriva la scheda video non si sposta niente. Le
         copertine arrivate prima stanno in RAM (CoverImage::Cpu) e salgono
         sulla scheda video quando c'e'. Miniature e lente la aspettano.
-    [ ] I testi dell'interfaccia si impaginano a ogni fotogramma (pochi
-        microsecondi l'uno): con la libreria a schermo sono decine; se lo
-        scorrimento ne risente, una cache per testo (overlay.rs).
+    [x] I testi dell'interfaccia si impaginano una volta (25 novembre):
+        fumetto-render/text.rs (Typesetter) tiene le impaginazioni per
+        testo, corpo, carattere e scatola, per la scheda video e per il
+        processore; quelle non usate da 120 fotogrammi se ne vanno quando
+        sono piu' di 400.
     [ ] macOS mai provato su un Mac vero; Linux solo in una macchina virtuale (driver
         grafici veri, priorita' dei thread, cestino, "mostra nella
         cartella", Wayland da provare). L'icona della finestra c'e' solo su
@@ -1250,9 +1254,11 @@ Il capitolo 7 ne tiene la memoria e i numeri.
     [x] Il peso: misurato pezzo per pezzo e ridotto di un quarto senza
         togliere niente (vedi 4t). rav1d a soli 8 bit toglierebbe ancora
         qualcosa, ma gli AVIF a 10 bit non si leggerebbero.
-    [ ] La conversione YUV -> RGB degli AVIF e' un ciclo semplice per
-        pixel, in virgola mobile: se gli AVIF diventano comuni, misurare
-        quanto pesa dei 150 ms e farla a righe o con SIMD.
+    [x] La conversione YUV -> RGB degli AVIF (25 novembre): tabelle a
+        punto fisso per pagina, riga per riga (avif.rs, Tables): su 6
+        megapixel da 90 a 37 ms. Una prova la confronta con la formula di
+        prima, con ogni matrice, campo e profondita' (al piu' 1 di
+        differenza).
     [x] Doppio clic (24 novembre): il tempo scelto nel sistema
         (GetDoubleClickTime su Windows, NSEvent doubleClickInterval su
         macOS; 450 ms su Linux), in system.rs.
@@ -1329,4 +1335,9 @@ Il capitolo 7 ne tiene la memoria e i numeri.
   [x] Tablet e touch: gesti, scorrimento con il dito, pizzico per zoomare.
   [ ] Statistiche di lettura e sincronizzazione dei progressi tramite una
       cartella condivisa (OneDrive, Dropbox...), senza server.
-  [ ] Profili colore delle scansioni (ICC).
+  [x] Profili colore delle scansioni (ICC), 25 novembre: icc.rs porta in
+      sRGB le pagine JPEG, PNG, TIFF, GIF e WebP con un profilo (anche di
+      grigio: i "Dot Gain" del bianco e nero) con moxcms, gia' dentro per
+      `image`. Le conversioni si tengono per profilo; quelle che non
+      cambiano niente (sRGB) si saltano. AVIF (avif-parse non da' il
+      profilo) e JPEG XL (jxl-oxide converte da se') restano come prima.
