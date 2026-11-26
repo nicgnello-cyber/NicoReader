@@ -142,9 +142,13 @@ virgolette ci sono piu' parole insieme, e il nome di un tag dev'essere
 proprio quello; il meno davanti esclude. La tendina completa l'ultima
 condizione fra i volumi che rispondono alle altre.
 
-Per dare dei tag a piu' volumi insieme: **Ctrl+clic** (Cmd+clic su macOS)
-sulle copertine le sceglie (una pila sceglie tutta la serie); in basso una
-barra dice quanti sono, e *Tag…* apre il pannello per tutti. Nel pannello,
+Per dare dei tag a piu' volumi insieme, anche di serie diverse: si sceglie
+il primo con **Ctrl+clic** (Cmd+clic su macOS), con **Spazio** sulla
+copertina evidenziata dalle frecce, o con tasto destro → Seleziona; poi
+basta un clic sulle altre copertine. Un clic su una pila la apre, per
+scegliere fra i suoi volumi (con Ctrl+clic la si sceglie tutta); la scelta
+resta entrando e uscendo dalle serie. In basso una barra dice quanti sono,
+e *Tag…* apre il pannello per tutti; la crocetta lascia la scelta. Nel pannello,
 mentre scrivi, si suggeriscono anche i tag delle altre categorie, con la
 loro categoria accanto. Ogni cambio ai tag (aggiunto, tolto, rinominato,
 tolto da tutti) si annulla con **Ctrl+Z** (Cmd+Z), uno dopo l'altro.

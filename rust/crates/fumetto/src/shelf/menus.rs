@@ -14,6 +14,15 @@ impl Shelf {
             rows.push(Row::Sep);
         }
         rows.extend(Self::own_menu(d, tile));
+        // un volume o una serie si sceglie anche da qui, per dar tag a molti insieme
+        if matches!(tile, Tile::Volume(_) | Tile::Series { .. }) {
+            let label = if self.is_picked(d, tile) {
+                t("Togli dalla selezione", "Remove from selection")
+            } else {
+                t("Seleziona", "Select")
+            };
+            rows.extend([Row::Sep, Row::plain(label, Command::Pick(pick::tile_paths(d, tile)))]);
+        }
         rows
     }
 

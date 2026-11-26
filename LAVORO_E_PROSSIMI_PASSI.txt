@@ -1021,6 +1021,12 @@ Il capitolo 7 ne tiene la memoria e i numeri.
        (menu.rs: columns, a capo fra le sezioni); Row::Break non c'e' piu'.
      - Un posto per ogni cosa: "Aggiungi un server" solo nel menu delle
        cartelle della libreria; "Mostra nella cartella" detto sempre cosi'.
+     - Scegliere volumi di serie diverse: si comincia con Ctrl+clic, con
+       Spazio sulla copertina evidenziata (a ricerca vuota) o dal menu
+       ("Seleziona" / "Togli dalla selezione", Command::Pick); poi un clic
+       su un volume lo sceglie, uno su una pila la apre. Esc dentro una
+       serie torna su e la scelta resta; fuori la lascia
+       (pick.rs: pick_tile, toggle_pick).
   5. Distribuzione (capitolo 5).
 
   Da decidere tu, quando vuoi:

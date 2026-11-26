@@ -196,6 +196,8 @@ pub enum Command {
     /// Interni all'interfaccia: aprire una serie, un gruppo o una cartella,
     /// il menu delle cartelle, il modulo per aggiungere un server.
     Series(String),
+    /// Scegliere questi volumi in libreria, o lasciarli se lo sono gia'.
+    Pick(Vec<PathBuf>),
     /// Il modulo per il nome nuovo di un tag.
     AskRenameTag(fumetto_core::library::GroupKind, String),
     /// Il modulo per il nome di una ricerca da salvare; rifare una ricerca
@@ -523,6 +525,10 @@ impl Ui {
         match cmd? {
             Command::Series(name) => {
                 self.shelf.enter_series(name);
+                None
+            }
+            Command::Pick(paths) => {
+                self.shelf.toggle_pick(paths);
                 None
             }
             Command::Group(kind, name) => {

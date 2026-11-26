@@ -143,9 +143,13 @@ Quotes keep several words together, and a tag's name must be exactly that;
 a minus excludes. The drop-down completes the last condition among the
 volumes that match the others.
 
-To tag several volumes at once: **Ctrl+click** (Cmd+click on macOS) picks
-covers (a stack picks the whole series); a bar at the bottom says how many,
-and *Tags…* opens the panel for all of them. In the panel, as you type, tags
+To tag several volumes at once, even from different series: pick the first
+with **Ctrl+click** (Cmd+click on macOS), with **Space** on the cover the
+arrows highlight, or with right click → Select; then a plain click picks
+the others. A click on a stack opens it, to pick among its volumes
+(Ctrl+click picks it whole); the selection stays as you go in and out of
+series. A bar at the bottom says how many, and *Tags…* opens the panel for
+all of them; its cross drops the selection. In the panel, as you type, tags
 of the other kinds are suggested too, with their kind beside them. Every tag
 change (added, removed, renamed, removed from every volume) is undone with
 **Ctrl+Z** (Cmd+Z), one after the other.
