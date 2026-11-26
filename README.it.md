@@ -69,7 +69,10 @@ pacchetti.
 
 Si apre un volume dal menu (tasto destro), con Ctrl+O (Cmd+O sul Mac), dalla
 libreria o con doppio clic sul file. Senza volume riprende l'ultimo letto.
-Ctrl+, apre le impostazioni (anche i tasti). Su Windows gli ultimi volumi
+Ctrl+, apre le impostazioni (anche i tasti). **Esc** (o il tasto
+"indietro" del mouse) torna indietro: dalla lettura alla libreria, da una
+serie alla libreria; non chiude mai l'app, che si chiude con **Ctrl+Q**
+(Cmd+Q sul Mac). Su Windows gli ultimi volumi
 letti sono anche nella jump list: tasto destro sull'icona di NicoReader nella
 barra delle applicazioni.
 
@@ -97,7 +100,8 @@ ai dati del file", nello stesso menu, le toglie.
 L'icona ad albero nella barra della libreria mostra la libreria per
 cartelle, come su disco: prima le sottocartelle (con la copertina del primo
 volume che contengono), poi i volumi, in ordine naturale (2 prima di 10), e
-in alto il percorso per risalire (anche con Backspace o Esc). Le cartelle con
+in alto il percorso per risalire (anche con Backspace, Esc o il tasto
+"indietro" del mouse). Le cartelle con
 dentro serie diverse, come quelle di un autore, sono anche raccolte.
 NicoReader ricorda la vista e l'ultima cartella aperta.
 

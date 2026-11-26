@@ -62,19 +62,21 @@ pub enum Bind {
     Fullscreen,
     Hud,
     Settings,
+    /// Esc: indietro (dalla lettura alla libreria), mai fuori dall'app.
+    Back,
     Quit,
 }
 
 impl Bind {
     // una tabella: a una voce per riga sarebbe lunga quaranta righe
     #[rustfmt::skip]
-    pub const ALL: [Bind; 40] = [
+    pub const ALL: [Bind; 41] = [
         Bind::Right, Bind::Left, Bind::Down, Bind::Up, Bind::Next, Bind::Prev, Bind::First, Bind::Last, Bind::GoTo,
         Bind::Thumbs, Bind::Double, Bind::Cover, Bind::Strip, Bind::StripWider, Bind::StripNarrower, Bind::Manga,
         Bind::ZoomIn, Bind::ZoomOut, Bind::ZoomPage, Bind::ZoomWidth, Bind::ZoomActual, Bind::Lens, Bind::RotateRight,
         Bind::RotateLeft, Bind::Trim, Bind::Upscale, Bind::Linear, Bind::Slideshow, Bind::Bookmark, Bind::Tags, Bind::Save,
         Bind::Copy, Bind::Open, Bind::OpenFolder, Bind::Library, Bind::Close, Bind::Fullscreen, Bind::Hud,
-        Bind::Settings, Bind::Quit,
+        Bind::Settings, Bind::Back, Bind::Quit,
     ];
 
     /// Il nome che si scrive nelle impostazioni: non cambia mai.
@@ -119,6 +121,7 @@ impl Bind {
             Bind::Fullscreen => "schermo_intero",
             Bind::Hud => "barra",
             Bind::Settings => "impostazioni",
+            Bind::Back => "torna",
             Bind::Quit => "esci",
         }
     }
@@ -165,6 +168,7 @@ impl Bind {
             Bind::Fullscreen => t("Schermo intero", "Full screen"),
             Bind::Hud => t("Barra in alto", "Top bar"),
             Bind::Settings => t("Impostazioni", "Settings"),
+            Bind::Back => t("Torna alla libreria", "Back to the library"),
             Bind::Quit => t("Esci", "Quit"),
         }
     }
@@ -197,6 +201,7 @@ impl Bind {
             | Bind::Fullscreen
             | Bind::Hud
             | Bind::Settings
+            | Bind::Back
             | Bind::Quit => t("Volumi e finestra", "Volumes and window"),
         }
     }
@@ -243,7 +248,8 @@ impl Bind {
             Bind::Fullscreen => &["F", "F11"],
             Bind::Hud => &["H"],
             Bind::Settings => &["Ctrl+,"],
-            Bind::Quit => &["Escape"],
+            Bind::Back => &["Escape"],
+            Bind::Quit => &["Ctrl+Q"],
         }
     }
 }
@@ -490,7 +496,8 @@ pub fn action(b: Bind, k: &KeyContext) -> Action {
         Bind::Hud => Action::ToggleHud,
         Bind::Settings => Action::ToggleSettings,
         // a schermo intero Esc prima ne esce
-        Bind::Quit if k.fullscreen => Action::ToggleFullscreen,
+        Bind::Back if k.fullscreen => Action::ToggleFullscreen,
+        Bind::Back => Action::Back,
         Bind::Quit => Action::Quit,
     }
 }
@@ -560,6 +567,15 @@ mod tests {
         assert_eq!(action(Bind::Right, &k(false, false, false)), Action::Next);
         assert_eq!(action(Bind::Right, &k(true, false, false)), Action::Prev);
         assert!(matches!(action(Bind::Right, &k(false, true, false)), Action::Pan(..)));
-        assert_eq!(action(Bind::Quit, &k(false, false, true)), Action::ToggleFullscreen);
+        assert_eq!(action(Bind::Back, &k(false, false, true)), Action::ToggleFullscreen);
+        assert_eq!(action(Bind::Back, &k(false, false, false)), Action::Back);
+        assert_eq!(action(Bind::Quit, &k(false, false, true)), Action::Quit);
+    }
+
+    #[test]
+    fn esc_torna_indietro_e_non_esce() {
+        let km = Keymap::new(&BTreeMap::new());
+        assert_eq!(km.lookup(&combo("Escape")), Some(Bind::Back));
+        assert_eq!(km.lookup(&Combo::parse("Ctrl+Q").unwrap()), Some(Bind::Quit));
     }
 }

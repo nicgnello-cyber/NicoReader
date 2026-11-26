@@ -72,7 +72,10 @@ The code also builds for Linux ARM64, but there are no packages for it yet.
 
 Open a volume from the menu (right click), with Ctrl+O (Cmd+O on a Mac), from
 the library, or by double-clicking the file. With no volume, it resumes the
-last one you read. Ctrl+, opens the settings (keys included). On Windows the
+last one you read. Ctrl+, opens the settings (keys included). **Esc** (or
+the mouse's back button) goes back: from reading to the library, from a
+series to the library; it never closes the app, which closes with **Ctrl+Q**
+(Cmd+Q on a Mac). On Windows the
 volumes you read last are also in the jump list: right click the NicoReader
 icon on the taskbar.
 
@@ -98,7 +101,7 @@ in the same menu undoes them.
 The tree icon in the library bar shows the library by folder, as on disk:
 subfolders first (with the cover of the first volume inside), then the
 volumes, in natural order (2 before 10), with the path at the top to go back
-up (Backspace or Esc too). Folders full of different series, like an
+up (Backspace, Esc or the mouse's back button too). Folders full of different series, like an
 author's, are also collections. NicoReader remembers the view and the last
 folder you were in.
 

@@ -23,7 +23,7 @@ impl Shelf {
                 let crumbs = self.crumbs.borrow();
                 return crumbs.iter().position(|c| x >= c.x0 && x < c.x1).map(Hit::Crumb);
             }
-            if x < g.pad + 200.0 * s {
+            if x < g.pad - 14.0 * s + BACK_W * s {
                 return Some(Hit::Back);
             }
         }

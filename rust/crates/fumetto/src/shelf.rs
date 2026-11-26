@@ -224,6 +224,9 @@ struct Layout {
     totals: (usize, usize),
 }
 
+/// Quanto e' largo al piu' il tasto per tornare su, nell'intestazione, in punti.
+const BACK_W: f32 = 240.0;
+
 /// Le misure della griglia per questa finestra.
 struct Geo {
     s: f32,

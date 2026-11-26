@@ -1027,6 +1027,12 @@ Il capitolo 7 ne tiene la memoria e i numeri.
        su un volume lo sceglie, uno su una pila la apre. Esc dentro una
        serie torna su e la scelta resta; fuori la lascia
        (pick.rs: pick_tile, toggle_pick).
+     - Esc non chiude piu' l'app: e' un comando a se' (Bind::Back,
+       "torna", Action::Back) che dal lettore porta alla libreria; senza
+       libreria resta e dice come uscire. Uscire e' Ctrl+Q (Cmd+Q). Il
+       tasto "indietro" del mouse fa come Esc ovunque. Il "< Libreria"
+       nell'intestazione di serie e gruppi e' un tasto (BACK_W), non solo
+       una scritta.
   5. Distribuzione (capitolo 5).
 
   Da decidere tu, quando vuoi:
