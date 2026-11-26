@@ -81,8 +81,7 @@ next, and going forward again opens it; at the first page, going back twice
 opens the previous one, at its last page. Which one depends on where you
 opened it from: the next in the series (by number), in the reading list, or,
 in the folder view, the next on disk, moving on to the next folder when one
-is finished. Both are also in the right-click menu, under Previous volume and
-Next volume.
+is finished. Both are also in the right-click menu, under In the series.
 
 On a touch screen, tap the sides to turn pages or swipe; drag to move a
 zoomed page or to scroll the strip, the library and the thumbnails; pinch
@@ -161,8 +160,8 @@ Brightness, contrast and gamma (settings → Image) apply to every volume;
 with a volume open, *For this volume only* keeps them for that one, for the
 scans that are too light or too dark, and the others stay as they are.
 
-To read from a Komga or Kavita server: right click → Add a server… (or the
-folder icon in the library). For Komga, the server address with your user
+To read from a Komga or Kavita server: in the library, the folder icon → Add
+a server…. For Komga, the server address with your user
 name and password; for Kavita, the OPDS link from your user settings (it
 contains the key, so no password is needed). The server enters the library
 only if it answers; its series and volumes appear next to the local ones,

@@ -79,7 +79,7 @@ indietro due volte si apre il precedente, dalla sua ultima pagina. Quale
 dipende da dove lo si è aperto: il seguente della serie (per numero), della
 lista di lettura o, nella vista per cartelle, il seguente su disco, passando
 alla cartella dopo quando una è finita. Ci sono anche nel menu del tasto
-destro, sotto Volume precedente e Volume successivo.
+destro, sotto Nella serie.
 
 Su uno schermo touch si tocca ai lati per girare pagina, o si striscia; si
 trascina per spostare una pagina ingrandita o per scorrere il nastro, la
@@ -160,8 +160,8 @@ i volumi; con un volume aperto, *Solo per questo volume* li tiene per lui,
 per le scansioni troppo chiare o troppo scure, e gli altri restano come
 sono.
 
-Per leggere da un server Komga o Kavita: tasto destro → Aggiungi un server…
-(o l'icona della cartella nella libreria). Per Komga l'indirizzo del server,
+Per leggere da un server Komga o Kavita: nella libreria, l'icona della
+cartella → Aggiungi un server…. Per Komga l'indirizzo del server,
 con nome e password; per Kavita il link OPDS che c'è nelle impostazioni
 dell'utente (dentro c'è la chiave, la password non serve). Il server entra
 nella libreria solo se risponde; serie e volumi compaiono accanto a quelli

@@ -190,33 +190,40 @@ fn il_modulo_del_server() {
 fn il_menu_salta_titoli_e_separatori() {
     let recent = [Recent { path: "a.cbz".into(), title: "A".into(), place: "3 / 10".into() }];
     let mut ui = Ui::new();
-    let c = ctx(Some(book(10)), &recent);
+    let c = ctx(None, &recent);
     ui.open_menu(100.0, 100.0, &c);
     ui.key(Key::Down, &c); // Apri
     ui.key(Key::Down, &c); // Apri cartella
     ui.key(Key::Down, &c); // Libreria
-    ui.key(Key::Down, &c); // Aggiungi un server
     ui.key(Key::Down, &c); // oltre separatore e titolo: il volume recente
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::Open("a.cbz".into()))));
+    // nel lettore, dal fondo: Chiudi
+    let c = ctx(Some(book(10)), &recent);
     ui.open_menu(100.0, 100.0, &c);
-    ui.key(Key::Up, &c); // dal fondo: Chiudi
+    ui.key(Key::Up, &c);
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::Act(Action::Close))));
 }
 
-/// Il menu lungo va in due colonne: un clic nella seconda sceglie una sua voce.
+/// Il menu del lettore sta in una colonna; in una finestra bassa va in piu'
+/// colonne, e un clic nell'ultima sceglie una sua voce.
 #[test]
-fn il_menu_in_due_colonne() {
+fn il_menu_va_in_colonne_solo_se_non_ci_sta() {
     let mut ui = Ui::new();
-    let c = ctx(Some(book(10)), &[]);
-    ui.open_menu(100.0, 100.0, &c);
+    let tall = Context { view: (1600.0, 1000.0), ..ctx(Some(book(10)), &[]) };
+    ui.open_menu(100.0, 100.0, &tall);
+    let (frame, _) = ui.menu.as_ref().unwrap().frame(&tall);
+    assert!((frame.w - super::menu::MENU_W).abs() < 1.0, "una colonna: {}", frame.w);
+
+    let low = Context { view: (1600.0, 420.0), ..ctx(Some(book(10)), &[]) };
+    ui.open_menu(100.0, 100.0, &low);
     let m = ui.menu.as_ref().unwrap();
-    let (frame, spots) = m.frame(&c);
-    assert!((frame.w - 2.0 * super::menu::MENU_W).abs() < 1.0, "due colonne: {}", frame.w);
-    let double =
-        m.rows.iter().position(|r| matches!(r, Row::Item { cmd: Command::Act(Action::ToggleDouble), .. })).unwrap();
-    let (x, y) = spots[double];
-    assert!(x > frame.x + super::menu::MENU_W - 1.0, "la seconda colonna");
-    assert_eq!(ui.click(x + 50.0, y + 10.0, &c), Handled::Yes(Some(Command::Act(Action::ToggleDouble))));
+    let (frame, spots) = m.frame(&low);
+    assert!(frame.w > 1.5 * super::menu::MENU_W, "piu' colonne: {}", frame.w);
+    assert!(frame.y + frame.h <= 420.0, "sta nella finestra");
+    let close = m.rows.iter().position(|r| matches!(r, Row::Item { cmd: Command::Act(Action::Close), .. })).unwrap();
+    let (x, y) = spots[close].unwrap();
+    assert!(x > frame.x + super::menu::MENU_W - 1.0, "non nella prima colonna");
+    assert_eq!(ui.click(x + 50.0, y + 10.0, &low), Handled::Yes(Some(Command::Act(Action::Close))));
 }
 
 #[test]
@@ -330,15 +337,18 @@ fn la_barra_di_lettura_non_si_sovrappone() {
             assert!(buttons.last().is_some_and(|b| b.x + b.w <= vw), "larga {vw}, scala {s}: fuori a destra");
         }
     }
-    // larga: tutto; poi se ne vanno inizio e fine, lo zoom, i modi
-    let has = |vw: f32, icon: Icon| {
+    // larga: tutto; poi se ne va lo zoom, poi i modi
+    let has = |vw: f32, id: Hover| {
         let c = Context { view: (vw, 800.0), hud: true, ..ctx(Some(book(212)), &[]) };
-        hud_buttons(&c, c.book.as_ref().unwrap()).iter().any(|b| b.face == Look::Icon(icon))
+        hud_buttons(&c, c.book.as_ref().unwrap()).iter().any(|b| b.id() == id)
     };
-    assert!(has(1920.0, Icon::First) && has(1920.0, Icon::Plus) && has(1920.0, Icon::Double));
-    assert!(!has(880.0, Icon::First) && has(880.0, Icon::Plus));
-    assert!(!has(760.0, Icon::Plus) && has(760.0, Icon::Double));
-    assert!(!has(600.0, Icon::Double) && has(600.0, Icon::Bookmark));
+    let (zoom, double, mark) = (Hover::Zoom, Hover::Icon(Icon::Double), Hover::Icon(Icon::Bookmark));
+    assert!(has(1920.0, zoom) && has(1920.0, double));
+    assert!(!has(700.0, zoom) && has(700.0, double));
+    assert!(!has(600.0, double) && has(600.0, mark));
+    // tredici tasti, non di piu'
+    let c = Context { view: (1920.0, 800.0), hud: true, ..ctx(Some(book(212)), &[]) };
+    assert_eq!(hud_buttons(&c, c.book.as_ref().unwrap()).len(), 13);
 }
 
 #[test]
