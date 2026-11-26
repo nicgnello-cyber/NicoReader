@@ -231,7 +231,7 @@ impl App {
         let scale = self.scale();
         let covers = &self.covers;
         let cover_shown = |p: &Path| covers.shown(p, now);
-        let d = shelf_data(&self.lib, &self.settings.library, &cover_shown, self.book.is_some(), self.search.waiting());
+        let d = shelf_data(&self.lib, &self.settings, &cover_shown, self.book.is_some(), self.search.waiting());
         let ctx = context(
             self.window.as_deref(),
             &self.book,
@@ -413,6 +413,7 @@ impl App {
         &mut self, items: &[Item], covers: &[(Extra, f32, f32, f32, f32)], scene: &Scene,
     ) -> Option<Instant> {
         let size = self.view_size();
+        let adjust = self.adjust();
         let cpu = self.cpu.as_mut()?;
         let pages = items.iter().filter_map(|it| {
             self.cpu_pages.get(&it.page).map(|(p, _)| cpu_view::Item::page(p, it.x, it.y, it.w, it.h))
@@ -424,7 +425,6 @@ impl App {
             Some(cpu_view::Item { radius: *radius, opacity: *opacity, adjusted: false, ..page })
         });
         let list: Vec<cpu_view::Item> = pages.chain(covers).collect();
-        let adjust = Adjust::from_steps(self.settings.brightness, self.settings.contrast, self.settings.gamma);
         let table = (!adjust.is_none()).then(|| adjust.table());
         if let Err(e) = cpu.draw(size, &list, table.as_ref(), scene) {
             eprintln!("finestra: {e}");
@@ -542,6 +542,7 @@ pub(super) fn context<'a>(
             slideshow,
             next: look.next.map(|(p, title)| (p.as_path(), title.as_str())),
             prev: look.prev.map(|(p, title)| (p.as_path(), title.as_str())),
+            image: r.image,
         }
     });
     let fullscreen = window.is_some_and(|w| w.fullscreen().is_some());

@@ -165,12 +165,7 @@ pub(super) fn save_catalog(server: &Server, c: &Catalog) {
         .collect();
     let Ok(json) = serde_json::to_vec(&Saved { entries, links: c.links.clone() }) else { return };
     // la cache e' un di piu': se non si scrive, pazienza
-    let tmp = file.with_extension("tmp");
-    let _ = file
-        .parent()
-        .map_or(Ok(()), std::fs::create_dir_all)
-        .and_then(|_| std::fs::write(&tmp, json))
-        .and_then(|_| std::fs::rename(&tmp, &file));
+    let _ = crate::write_atomic(&file, &json);
 }
 
 pub(super) fn load_catalog(server: &Server) -> Option<Catalog> {

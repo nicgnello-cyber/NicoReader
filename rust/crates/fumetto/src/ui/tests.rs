@@ -20,6 +20,7 @@ fn book(pages: usize) -> BookInfo<'static> {
         slideshow: false,
         next: None,
         prev: None,
+        image: None,
     }
 }
 
@@ -557,4 +558,24 @@ fn i_suggerimenti_anche_dalle_altre_categorie() {
     ui.key(Key::Down, &c);
     let team = Group::new(GroupKind::Team, "X-Men", None);
     assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(Command::AddTag(vec![path], team))));
+}
+
+#[test]
+fn il_nome_di_una_ricerca_da_salvare() {
+    let mut ui = Ui::new();
+    let c = ctx(None, &[]);
+    assert_eq!(ui.internal(Some(Command::AskSaveSearch("tipo:manga".into())), &c), None);
+    assert!(ui.modal() && ui.typing());
+    // di partenza il nome e' la ricerca: lo si cambia
+    for _ in 0.."tipo:manga".len() {
+        ui.key(Key::Backspace, &c);
+    }
+    assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(None), "senza nome non si salva");
+    for ch in "Manga".chars() {
+        ui.key(Key::Char(ch), &c);
+    }
+    let saved = Command::SaveSearch("Manga".into(), "tipo:manga".into());
+    assert_eq!(ui.key(Key::Enter, &c), Handled::Yes(Some(saved)));
+    ui.form_done(Ok(()));
+    assert!(!ui.modal());
 }

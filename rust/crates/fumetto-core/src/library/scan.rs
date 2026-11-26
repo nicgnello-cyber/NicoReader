@@ -130,13 +130,9 @@ impl InfoCache {
 
     /// La cache e' un di piu': se non si scrive, la prossima volta si rilegge.
     pub(super) fn save(&self, file: &Path) {
-        let Ok(json) = serde_json::to_vec(&self.0) else { return };
-        let tmp = file.with_extension("tmp");
-        let _ = file
-            .parent()
-            .map_or(Ok(()), std::fs::create_dir_all)
-            .and_then(|_| std::fs::write(&tmp, json))
-            .and_then(|_| std::fs::rename(&tmp, file));
+        if let Ok(json) = serde_json::to_vec(&self.0) {
+            let _ = crate::write_atomic(file, &json);
+        }
     }
 }
 

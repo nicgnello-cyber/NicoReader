@@ -19,7 +19,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use fumetto_core::lingua::{italian, t};
+use fumetto_core::lingua::{italian, t, volumes};
 use fumetto_render::{Align, Face, Layer, Measure, Rect, Scene, Text};
 
 use crate::keys::{Bind, Keymap};
@@ -42,7 +42,7 @@ mod tests;
 mod welcome;
 
 use bar::{Hover, hud, hud_hit};
-pub(crate) use bar::{Icon, draw_icon, tooltip};
+pub(crate) use bar::{Icon, bar_layer, draw_icon, tooltip};
 use form::{Form, Outcome};
 pub(crate) use menu::Row;
 use menu::{Menu, main_rows};
@@ -95,6 +95,8 @@ pub struct BookInfo<'a> {
     /// I volumi da leggere dopo e prima di questo: percorso e titolo.
     pub next: Option<(&'a std::path::Path, &'a str)>,
     pub prev: Option<(&'a std::path::Path, &'a str)>,
+    /// Luminosita', contrasto e gamma solo per questo volume, se li ha.
+    pub image: Option<[i32; 3]>,
 }
 
 pub struct Context<'a> {
@@ -119,7 +121,18 @@ pub struct Context<'a> {
     pub lens: Option<(f32, f32, f32)>,
 }
 
-impl Context<'_> {
+impl<'a> Context<'a> {
+    /// Cio' che il foglio delle impostazioni mostra: le regolazioni del
+    /// volume aperto, se ha le sue, se no quelle di tutti.
+    pub(crate) fn prefs_view(&self) -> crate::prefs::View<'a> {
+        let mut view = crate::prefs::View::of(self.settings, self.keys);
+        if let Some(book) = &self.book {
+            view.volume = Some(book.image.is_some());
+            view.image = book.image.unwrap_or(view.image);
+        }
+        view
+    }
+
     /// La barra c'e' davvero: mostrata, con un volume aperto e a schermo.
     fn bar(&self) -> bool {
         self.hud && self.book.is_some() && self.shelf.is_none() && self.thumbs.is_none()
@@ -168,6 +181,10 @@ pub enum Command {
     /// uniscono); toglierlo da tutti i volumi, dopo averlo chiesto.
     RenameTag(fumetto_core::library::GroupKind, String, String),
     RemoveTagEverywhere(fumetto_core::library::GroupKind, String),
+    /// Salva una ricerca della libreria (il nome, la ricerca), o la toglie
+    /// dalle salvate (per nome).
+    SaveSearch(String, String),
+    ForgetSearch(String),
     /// Toglie le correzioni: tornano i dati del file.
     ResetVolume(PathBuf),
     /// Dalle miniature: va alla pagina (da 0) e torna a leggere.
@@ -181,6 +198,10 @@ pub enum Command {
     Series(String),
     /// Il modulo per il nome nuovo di un tag.
     AskRenameTag(fumetto_core::library::GroupKind, String),
+    /// Il modulo per il nome di una ricerca da salvare; rifare una ricerca
+    /// salvata.
+    AskSaveSearch(String),
+    OpenSearch(String),
     Group(fumetto_core::library::GroupKind, String),
     Folder(PathBuf),
     FoldersMenu(f32, f32),
@@ -433,12 +454,12 @@ impl Ui {
         if self.menu.is_some() || self.goto.is_some() || self.form.is_some() || self.tags.is_some() {
             return None;
         }
-        self.prefs.as_mut()?.press(ctx.settings, ctx.keys, ctx.view, ctx.scale, x, y)
+        self.prefs.as_mut()?.press(&ctx.prefs_view(), ctx.view, ctx.scale, x, y)
     }
 
     /// Il mouse si muove con il tasto premuto.
     pub fn drag(&mut self, x: f32, ctx: &Context) -> Option<Command> {
-        self.prefs.as_mut()?.drag(ctx.settings, ctx.keys, ctx.view, ctx.scale, x)
+        self.prefs.as_mut()?.drag(&ctx.prefs_view(), ctx.view, ctx.scale, x)
     }
 
     /// Fa comparire la didascalia (o la tiene a schermo).
@@ -537,6 +558,15 @@ impl Ui {
                 self.form = Some(Form::rename(kind, name));
                 None
             }
+            Command::AskSaveSearch(query) => {
+                self.menu = None;
+                self.form = Some(Form::save_search(query));
+                None
+            }
+            Command::OpenSearch(query) => {
+                self.shelf.open_search(query);
+                None
+            }
             other => Some(other),
         }
     }
@@ -617,7 +647,7 @@ impl Ui {
         if let Some(p) = &self.prefs {
             // il foglio scivola dentro da destra
             let a = shown(Part::Prefs);
-            for mut l in p.layers(ctx.settings, ctx.keys, ctx.view, s, m) {
+            for mut l in p.layers(&ctx.prefs_view(), ctx.view, s, m) {
                 appear(&mut l, a, 36.0 * s, 0.0);
                 scene.layers.push(l);
             }

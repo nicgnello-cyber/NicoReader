@@ -194,11 +194,7 @@ impl App {
                 self.save_settings();
                 self.library_open = self.book.is_some();
                 self.rescan();
-                let note = if fumetto_core::lingua::italian() {
-                    format!("Server aggiunto: {n} volumi")
-                } else {
-                    format!("Server added: {n} volumes")
-                };
+                let note = format!("{}: {}", t("Server aggiunto", "Server added"), fumetto_core::lingua::volumes(n));
                 self.ui.toast(note, Instant::now());
             }
             Err(e) => self.ui.form_done(Err(e)),
@@ -248,7 +244,7 @@ impl App {
                 self.refresh_shelf();
                 // il volume aperto: il verso scelto vale subito; tolto, torna quello del file
                 if let (Some(book), Some(reader)) = (&self.book, &mut self.reader)
-                    && fumetto_core::absolute(&book.path) == fumetto_core::absolute(path)
+                    && fumetto_core::same_path(&book.path, path)
                     && (rtl.is_some() || had_rtl)
                 {
                     reader.manga = rtl.or(book.info.as_ref().and_then(|i| i.right_to_left)).unwrap_or(false);
@@ -307,7 +303,7 @@ impl App {
 
 /// La libreria come la vede l'interfaccia.
 pub(super) fn shelf_data<'a>(
-    lib: &'a Lib, roots: &'a [PathBuf], cover_shown: &'a dyn Fn(&Path) -> f32, reading: bool, searching: bool,
+    lib: &'a Lib, settings: &'a Settings, cover_shown: &'a dyn Fn(&Path) -> f32, reading: bool, searching: bool,
 ) -> ShelfData<'a> {
     ShelfData {
         entries: &lib.entries,
@@ -318,9 +314,10 @@ pub(super) fn shelf_data<'a>(
         edited: &lib.edited,
         read_at: &lib.read_at,
         scanning: lib.scanning,
-        roots,
+        roots: &settings.library,
         cover_shown,
         reading,
+        saved: &settings.saved_searches,
     }
 }
 

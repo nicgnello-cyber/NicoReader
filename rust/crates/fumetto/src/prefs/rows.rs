@@ -3,12 +3,12 @@
 use super::*;
 
 impl Prefs {
-    pub(super) fn rows(&self, settings: &Settings, keys: &Keymap) -> Vec<Row> {
+    pub(super) fn rows(&self, v: &View) -> Vec<Row> {
         match self.tab {
-            Tab::Image => image_rows(),
-            Tab::Reading => reading_rows(settings),
+            Tab::Image => image_rows(v.volume),
+            Tab::Reading => reading_rows(v.settings),
             Tab::Lens => lens_rows(),
-            Tab::Keys => key_rows(keys),
+            Tab::Keys => key_rows(v.keys),
         }
     }
 }
@@ -18,18 +18,30 @@ fn toggle(label: &'static str, on: bool, pref: fn(bool) -> Pref) -> Row {
     Row::Toggle { label, on, pref: pref(!on) }
 }
 
-fn image_rows() -> Vec<Row> {
-    vec![
+/// Le regolazioni; con un volume aperto, se valgono solo per lui
+/// (`volume`: `Some(true)`) o per tutti.
+fn image_rows(volume: Option<bool>) -> Vec<Row> {
+    let mut rows = vec![
         Row::Slider { label: t("Luminosità", "Brightness"), which: Slider::Brightness },
         Row::Slider { label: t("Contrasto", "Contrast"), which: Slider::Contrast },
         Row::Slider { label: "Gamma", which: Slider::Gamma },
         Row::Button { label: t("Ripristina", "Reset"), pref: Pref::ResetImage },
-        Row::Note(t(
+    ];
+    if let Some(on) = volume {
+        rows.push(toggle(t("Solo per questo volume", "For this volume only"), on, Pref::VolumeImage));
+    }
+    rows.push(Row::Note(match volume {
+        Some(true) => t(
+            "Le regolazioni restano con il volume: gli altri usano quelle di tutti. Spento, torna a quelle.",
+            "The settings stay with the volume: the others use the general ones. Off, it goes back to those.",
+        ),
+        _ => t(
             "Valgono per tutte le pagine e si vedono subito. Si applicano dopo il rimpicciolimento in luce \
              lineare, che resta com'è.",
             "They apply to every page, live, after the linear-light resampling, which stays as it is.",
-        )),
-    ]
+        ),
+    }));
+    rows
 }
 
 fn reading_rows(settings: &Settings) -> Vec<Row> {

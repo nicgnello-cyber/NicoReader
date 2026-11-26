@@ -25,6 +25,7 @@ fn data<'a>(entries: &'a [Entry], status: &'a [Status], read_at: &'a [u64]) -> S
         roots: &[],
         cover_shown: &|_| 1.0,
         reading: false,
+        saved: &[],
     }
 }
 
@@ -711,4 +712,40 @@ fn piu_volumi_scelti_con_ctrl_clic() {
     assert_eq!(shelf.picked().len(), 2);
     shelf.key(Key::Escape, &d, view, 1.0);
     assert!(shelf.picked().is_empty());
+}
+
+#[test]
+fn le_ricerche_salvate_stanno_fra_i_tag() {
+    use crate::ui::{Row, TagsOf};
+    use fumetto_core::SavedSearch;
+    use fumetto_core::library::Group;
+    let (mut e, st, at) = library();
+    e[0].groups.push(Group::new(GroupKind::Character, "Wolverine", None));
+    e[3].groups.push(Group::new(GroupKind::Character, "Wolverine", None));
+    let saved = [
+        SavedSearch { name: "Wolverine".into(), query: "personaggio:wolverine".into() },
+        SavedSearch { name: "Nessuno".into(), query: "tag:inesistente".into() },
+    ];
+    let d = ShelfData { saved: &saved, ..data(&e, &st, &at) };
+    let view = (1920.0, 1080.0);
+    // fra i tag, in testa, con i volumi che trova adesso; quella vuota no
+    let mut shelf = Shelf { groups: true, ..Shelf::default() };
+    let sections = shelf.sections(&d);
+    assert_eq!(sections[0].title, "Saved searches \u{00b7} 1");
+    let tile = sections[0].tiles[0].clone();
+    assert!(matches!(&tile, Tile::Saved { name, count: 2, .. } if name == "Wolverine"));
+    // il menu: aprirla, toglierla
+    let rows = shelf.tile_menu(&d, &tile);
+    assert!(rows.iter().any(|r| matches!(r, Row::Item { cmd: Command::ForgetSearch(n), .. } if n == "Wolverine")));
+    assert!(!rows.iter().any(|r| matches!(r, Row::Item { cmd: Command::EditTags(TagsOf::Volumes(_)), .. })));
+    // aperta, rifa' la ricerca nella libreria intera
+    assert_eq!(shelf.choose(&d, tile), None);
+    assert!(!shelf.groups && shelf.search == "personaggio:wolverine");
+    assert_eq!(shelf.sections(&d).into_iter().flat_map(|s| s.tiles).count(), 2);
+    // nella barra il segno: gia' salvata, un clic la toglie; un'altra si chiede il nome
+    let bar = BarGeo::new(&d, view.0, 1.0, true);
+    let (x, y) = (bar.search_x + bar.search_w - 36.0, 20.0);
+    assert_eq!(shelf.click(&d, view, 1.0, x, y), Handled::Yes(Some(Command::ForgetSearch("Wolverine".into()))));
+    shelf.search = "tipo:manga ".into();
+    assert_eq!(shelf.click(&d, view, 1.0, x, y), Handled::Yes(Some(Command::AskSaveSearch("tipo:manga".into()))));
 }

@@ -19,3 +19,12 @@ pub fn italian() -> bool {
 pub fn t<'a>(it: &'a str, en: &'a str) -> &'a str {
     if italian() { it } else { en }
 }
+
+/// "12 volumi", "1 volume": si dice spesso, nelle due lingue.
+pub fn volumes(n: usize) -> String {
+    match (n == 1, italian()) {
+        (true, _) => "1 volume".to_owned(),
+        (false, true) => format!("{n} volumi"),
+        (false, false) => format!("{n} volumes"),
+    }
+}

@@ -74,6 +74,7 @@ impl Library {
             roots: &self.roots,
             cover_shown,
             reading: false,
+            saved: &[],
         }
     }
 }

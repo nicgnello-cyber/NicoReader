@@ -55,19 +55,23 @@ pub fn decode(data: &[u8]) -> Result<Page, DecodeError> {
     if is_jxl(data) {
         return decode_jxl(data);
     }
+    use image::ImageDecoder;
     let invalid = |e: image::ImageError| DecodeError::Invalid(e.to_string());
-    let reader = || {
-        image::ImageReader::new(std::io::Cursor::new(data))
-            .with_guessed_format()
-            .map_err(|e| DecodeError::Invalid(e.to_string()))
-    };
+    let reader = image::ImageReader::new(std::io::Cursor::new(data))
+        .with_guessed_format()
+        .map_err(|e| DecodeError::Invalid(e.to_string()))?;
+    let mut decoder = reader.into_decoder().map_err(invalid)?;
     // le dimensioni dall'intestazione, prima di allocare i pixel
-    let (w, h) = reader()?.into_dimensions().map_err(invalid)?;
+    let (w, h) = decoder.dimensions();
     check_size(w, h)?;
-    let img = reader()?.decode().map_err(invalid)?;
+    let icc = decoder.icc_profile().ok().flatten();
+    let img = image::DynamicImage::from_decoder(decoder).map_err(invalid)?;
     let opaque = !img.color().has_alpha();
-    let img = img.into_rgba8();
-    Ok(Page { width: img.width(), height: img.height(), rgba: img.into_raw(), opaque })
+    let mut rgba = img.into_rgba8().into_raw();
+    if let Some(icc) = icc {
+        crate::icc::to_srgb(&mut rgba, &icc);
+    }
+    Ok(Page { width: w, height: h, rgba, opaque })
 }
 
 /// La misura dall'intestazione, senza decodificare: bastano i primi byte.
@@ -144,6 +148,9 @@ fn decode_webp(data: &[u8]) -> Result<Page, DecodeError> {
     if out.is_null() {
         return Err(DecodeError::Invalid("dati WebP".into()));
     }
+    if let Some(icc) = crate::icc::webp_profile(data) {
+        crate::icc::to_srgb(&mut rgba, icc);
+    }
     Ok(Page { width: w, height: h, rgba, opaque: info.has_alpha == 0 })
 }
 
@@ -181,6 +188,25 @@ mod tests {
         assert_eq!(&p.rgba[..3], &[200, 40, 30]);
         let right = ((10 * 96 + 80) * 4) as usize;
         assert_eq!(&p.rgba[right..right + 3], &[30, 60, 190]);
+    }
+
+    /// Un PNG con il profilo Adobe RGB: i colori arrivano in sRGB.
+    #[test]
+    fn il_profilo_colore_si_applica() {
+        use image::ImageEncoder;
+        let encode = |icc: Option<Vec<u8>>| {
+            let mut png = Vec::new();
+            let mut encoder = image::codecs::png::PngEncoder::new(&mut png);
+            if let Some(icc) = icc {
+                encoder.set_icc_profile(icc).unwrap();
+            }
+            encoder.write_image(&[60, 160, 90], 1, 1, image::ExtendedColorType::Rgb8).unwrap();
+            png
+        };
+        assert_eq!(&decode(&encode(None)).unwrap().rgba[..3], &[60, 160, 90], "senza profilo, com'e'");
+        let adobe = moxcms::ColorProfile::new_adobe_rgb().encode().unwrap();
+        let p = decode(&encode(Some(adobe))).unwrap();
+        assert!(p.rgba[1] > 160 && p.rgba[0] < 60, "il verde Adobe RGB e' piu' saturo: {:?}", &p.rgba[..3]);
     }
 
     #[test]

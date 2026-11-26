@@ -29,6 +29,9 @@ pub enum Pref {
     Gamma(i32),
     /// Luminosita', contrasto e gamma di serie.
     ResetImage,
+    /// Le regolazioni dell'immagine solo per il volume aperto (o di nuovo
+    /// quelle di tutti).
+    VolumeImage(bool),
     Webtoon(bool),
     Trim(bool),
     Upscale(bool),
@@ -46,6 +49,24 @@ pub enum Pref {
     Unbind(Bind),
     /// Tutti i tasti di serie.
     ResetKeys,
+}
+
+/// Cio' che il foglio mostra: le impostazioni, i tasti, e le regolazioni
+/// dell'immagine di adesso (quelle del volume aperto, se ha le sue).
+pub struct View<'a> {
+    pub settings: &'a Settings,
+    pub keys: &'a Keymap,
+    /// Luminosita', contrasto, gamma.
+    pub image: [i32; 3],
+    /// Con un volume aperto: se ha regolazioni sue.
+    pub volume: Option<bool>,
+}
+
+impl<'a> View<'a> {
+    /// Senza volume aperto: le regolazioni di tutti.
+    pub fn of(settings: &'a Settings, keys: &'a Keymap) -> View<'a> {
+        View { settings, keys, image: [settings.brightness, settings.contrast, settings.gamma], volume: None }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -90,13 +111,14 @@ impl Slider {
         }
     }
 
-    fn value(self, s: &Settings) -> f32 {
+    fn value(self, v: &View) -> f32 {
+        let [brightness, contrast, gamma] = v.image;
         match self {
-            Slider::Brightness => s.brightness as f32,
-            Slider::Contrast => s.contrast as f32,
-            Slider::Gamma => s.gamma as f32,
-            Slider::LensZoom => s.lens_zoom,
-            Slider::LensSize => s.lens_size,
+            Slider::Brightness => brightness as f32,
+            Slider::Contrast => contrast as f32,
+            Slider::Gamma => gamma as f32,
+            Slider::LensZoom => v.settings.lens_zoom,
+            Slider::LensSize => v.settings.lens_size,
         }
     }
 
@@ -287,9 +309,9 @@ impl Prefs {
         rows[i].selectable().then_some(Hit::Row(i))
     }
 
-    pub fn motion(&mut self, settings: &Settings, keys: &Keymap, view: (f32, f32), s: f32, x: f32, y: f32) -> bool {
+    pub fn motion(&mut self, v: &View, view: (f32, f32), s: f32, x: f32, y: f32) -> bool {
         let g = Geo::new(view, s);
-        let hover = self.hit(&self.rows(settings, keys), &g, x, y);
+        let hover = self.hit(&self.rows(v), &g, x, y);
         let changed = hover != self.hover;
         self.hover = hover;
         changed
@@ -297,11 +319,9 @@ impl Prefs {
 
     /// Il tasto del mouse premuto: su una regolazione, la sposta subito (e
     /// comincia a trascinarla).
-    pub fn press(
-        &mut self, settings: &Settings, keys: &Keymap, view: (f32, f32), s: f32, x: f32, y: f32,
-    ) -> Option<Command> {
+    pub fn press(&mut self, v: &View, view: (f32, f32), s: f32, x: f32, y: f32) -> Option<Command> {
         let g = Geo::new(view, s);
-        let rows = self.rows(settings, keys);
+        let rows = self.rows(v);
         let Some(Hit::Row(i)) = self.hit(&rows, &g, x, y) else { return None };
         let Row::Slider { which, .. } = rows[i] else { return None };
         self.drag = Some(which);
@@ -310,10 +330,10 @@ impl Prefs {
     }
 
     /// Il mouse si muove con il tasto premuto.
-    pub fn drag(&mut self, settings: &Settings, keys: &Keymap, view: (f32, f32), s: f32, x: f32) -> Option<Command> {
+    pub fn drag(&mut self, v: &View, view: (f32, f32), s: f32, x: f32) -> Option<Command> {
         let which = self.drag?;
         let g = Geo::new(view, s);
-        let rows = self.rows(settings, keys);
+        let rows = self.rows(v);
         let i = rows.iter().position(|r| matches!(r, Row::Slider { which: w, .. } if *w == which))?;
         self.slide(&g, &rows, i, x)
     }
@@ -327,9 +347,9 @@ impl Prefs {
     }
 
     /// Un clic (tasto rilasciato senza trascinare).
-    pub fn click(&mut self, settings: &Settings, keys: &Keymap, view: (f32, f32), s: f32, x: f32, y: f32) -> Handled {
+    pub fn click(&mut self, v: &View, view: (f32, f32), s: f32, x: f32, y: f32) -> Handled {
         let g = Geo::new(view, s);
-        let rows = self.rows(settings, keys);
+        let rows = self.rows(v);
         let was_drag = self.drag.take().is_some();
         let cmd = match self.hit(&rows, &g, x, y) {
             Some(Hit::Close) => Some(Command::Act(Action::ToggleSettings)),
@@ -370,15 +390,15 @@ impl Prefs {
         *self = Prefs { tab, ..Prefs::default() };
     }
 
-    pub fn wheel(&mut self, settings: &Settings, keys: &Keymap, view: (f32, f32), s: f32, pixels: f32) {
+    pub fn wheel(&mut self, v: &View, view: (f32, f32), s: f32, pixels: f32) {
         let g = Geo::new(view, s);
-        let rows = self.rows(settings, keys);
+        let rows = self.rows(v);
         self.scroll = (self.scroll + pixels).clamp(0.0, self.max_scroll(&rows, &g));
     }
 
-    pub fn key(&mut self, key: Key, settings: &Settings, keys: &Keymap, view: (f32, f32), s: f32) -> Handled {
+    pub fn key(&mut self, key: Key, v: &View, view: (f32, f32), s: f32) -> Handled {
         let g = Geo::new(view, s);
-        let rows = self.rows(settings, keys);
+        let rows = self.rows(v);
         let choosable: Vec<usize> = (0..rows.len()).filter(|&i| rows[i].selectable()).collect();
         let at = self.selected.and_then(|sel| choosable.iter().position(|&i| i == sel));
         let step_tab = |d: isize| {
@@ -406,7 +426,7 @@ impl Prefs {
                 match self.selected.map(|i| &rows[i]) {
                     Some(Row::Slider { which, .. }) => {
                         let (_, _, step, _) = which.range();
-                        let v = which.value(settings) + if more { step } else { -step };
+                        let v = which.value(v) + if more { step } else { -step };
                         Some(Command::Pref(which.pref(v)))
                     }
                     Some(Row::Stepper { less, more: plus, .. }) => {

@@ -4,7 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -54,6 +54,33 @@ pub struct Settings {
     /// Quanto sono grandi le miniature delle pagine (+ e -), rispetto alla
     /// misura di partenza.
     pub thumb_size: f32,
+    /// Le ricerche della libreria salvate con un nome: stanno fra i tag.
+    pub saved_searches: Vec<SavedSearch>,
+}
+
+/// Una ricerca della libreria con il suo nome ("Wolverine da leggere":
+/// "personaggio:wolverine -tag:letto").
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SavedSearch {
+    pub name: String,
+    pub query: String,
+}
+
+impl Settings {
+    /// Salva una ricerca; una con lo stesso nome (senza badare alle
+    /// maiuscole) la sostituisce.
+    pub fn save_search(&mut self, name: &str, query: &str) {
+        let search = SavedSearch { name: name.trim().to_owned(), query: query.trim().to_owned() };
+        match self.saved_searches.iter_mut().find(|s| crate::library::same_name(&s.name, &search.name)) {
+            Some(old) => *old = search,
+            None => self.saved_searches.push(search),
+        }
+    }
+
+    /// Toglie una ricerca salvata, per nome.
+    pub fn forget_search(&mut self, name: &str) {
+        self.saved_searches.retain(|s| s.name != name);
+    }
 }
 
 impl Default for Settings {
@@ -79,12 +106,13 @@ impl Default for Settings {
             library_folder: None,
             library_sort: LibrarySort::Name,
             thumb_size: 1.0,
+            saved_searches: Vec::new(),
         }
     }
 }
 
 impl Settings {
-    pub fn load(path: &PathBuf) -> Settings {
+    pub fn load(path: &Path) -> Settings {
         let mut s: Settings =
             std::fs::read(path).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default();
         // le password dei server stanno nel portachiavi (vedi keychain)
@@ -99,10 +127,7 @@ impl Settings {
         s
     }
 
-    pub fn save(&self, path: &PathBuf) -> io::Result<()> {
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
+    pub fn save(&self, path: &Path) -> io::Result<()> {
         // nel file le password che il portachiavi non ha preso, e basta
         let mut written = self.clone();
         for server in &mut written.servers {
@@ -110,15 +135,8 @@ impl Settings {
                 server.password.clear();
             }
         }
-        let tmp = path.with_extension("tmp");
-        std::fs::write(&tmp, serde_json::to_vec_pretty(&written).map_err(io::Error::other)?)?;
         // con una password dentro, il file e' solo di chi lo possiede
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
-        }
-        std::fs::rename(&tmp, path)
+        crate::files::write_private(path, &serde_json::to_vec_pretty(&written).map_err(io::Error::other)?)
     }
 }
 
@@ -134,6 +152,23 @@ mod tests {
         assert_eq!((s.hud, s.library_sort), (false, LibrarySort::Name), "un ordine sconosciuto non perde il resto");
         let json = serde_json::to_string(&Settings { library_sort: LibrarySort::Year, ..Settings::default() }).unwrap();
         assert!(json.contains(r#""library_sort":"year""#), "{json}");
+    }
+
+    #[test]
+    fn le_ricerche_salvate() {
+        let mut s = Settings::default();
+        s.save_search("Wolverine da leggere", "personaggio:wolverine -tag:letto ");
+        s.save_search("Manga", "tipo:manga");
+        assert_eq!(s.saved_searches[0].query, "personaggio:wolverine -tag:letto", "senza spazi ai lati");
+        // lo stesso nome, con altre maiuscole: la si sostituisce
+        s.save_search("wolverine DA LEGGERE", "personaggio:wolverine");
+        assert_eq!(s.saved_searches.len(), 2);
+        assert_eq!(s.saved_searches[0].query, "personaggio:wolverine");
+        s.forget_search("Manga");
+        assert_eq!(s.saved_searches.len(), 1);
+        // un file senza la voce: nessuna
+        let old: Settings = serde_json::from_str(r#"{"hud": true}"#).unwrap();
+        assert!(old.saved_searches.is_empty());
     }
 
     #[test]

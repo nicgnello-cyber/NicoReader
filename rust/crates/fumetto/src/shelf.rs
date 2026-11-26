@@ -24,16 +24,16 @@ use std::time::Instant;
 
 use fumetto_core::LibrarySort;
 use fumetto_core::library::{self, Entry, GroupKind, Status, by_number, same_name};
-use fumetto_core::lingua::{italian, t};
+use fumetto_core::lingua::{italian, t, volumes};
 use fumetto_core::natural_cmp;
 use fumetto_core::remote::{self, Server};
 use fumetto_render::{Align, Face, Layer, Measure, Rect, Text};
 
 use crate::reader::Action;
-use crate::strip::glide_step;
+use crate::strip::Glide;
 use crate::ui::{
-    self, ACCENT, BLACK, Command, HAIR, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, PLATE, TICK, alpha, caps,
-    draw_icon, fade, fit,
+    self, ACCENT, Command, HAIR, Handled, INK, INK_F, Icon, Key, MUTED, MUTED_F, PLATE, TICK, alpha, caps, draw_icon,
+    fade, fit,
 };
 
 /// Cio' che la libreria deve sapere, dall'app.
@@ -59,6 +59,8 @@ pub struct ShelfData<'a> {
     pub cover_shown: &'a dyn Fn(&Path) -> f32,
     /// Dietro la libreria c'e' un volume aperto: si puo' tornare a leggerlo.
     pub reading: bool,
+    /// Le ricerche salvate: stanno fra i tag.
+    pub saved: &'a [fumetto_core::SavedSearch],
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -125,6 +127,14 @@ pub enum Tile {
         count: usize,
         done: usize,
     },
+    /// Una ricerca salvata, fra i tag: aprirla la rifa'.
+    Saved {
+        name: String,
+        query: String,
+        cover: usize,
+        count: usize,
+        done: usize,
+    },
 }
 
 impl Tile {
@@ -132,7 +142,10 @@ impl Tile {
     fn cover(&self) -> usize {
         match self {
             Tile::Volume(i) => *i,
-            Tile::Series { cover, .. } | Tile::Group { cover, .. } | Tile::Folder { cover, .. } => *cover,
+            Tile::Series { cover, .. }
+            | Tile::Group { cover, .. }
+            | Tile::Folder { cover, .. }
+            | Tile::Saved { cover, .. } => *cover,
         }
     }
 
@@ -140,9 +153,10 @@ impl Tile {
     fn counts(&self, status: &[Status]) -> (usize, usize) {
         match self {
             Tile::Volume(i) => (1, usize::from(status[*i] == Status::Done)),
-            Tile::Series { count, done, .. } | Tile::Group { count, done, .. } | Tile::Folder { count, done, .. } => {
-                (*count, *done)
-            }
+            Tile::Series { count, done, .. }
+            | Tile::Group { count, done, .. }
+            | Tile::Folder { count, done, .. }
+            | Tile::Saved { count, done, .. } => (*count, *done),
         }
     }
 }
@@ -165,6 +179,8 @@ pub enum Hit {
     Back,
     /// Un tag della tendina della ricerca.
     Suggestion(usize),
+    /// Salva la ricerca (o, se lo e' gia', la toglie dalle salvate).
+    SaveSearch,
     /// La barra dei volumi scelti: "Tag…", la crocetta.
     PickTags,
     PickClear,
@@ -274,8 +290,7 @@ pub struct Shelf {
     crumbs: RefCell<Vec<Crumb>>,
     scroll: f32,
     /// Pixel di scorrimento ancora da percorrere (come nel nastro).
-    glide: f32,
-    last: Option<Instant>,
+    glide: Glide,
     /// La cella scelta con la tastiera (indice fra quelle disposte).
     selected: Option<usize>,
     hover: Option<Hit>,
@@ -353,6 +368,14 @@ impl Shelf {
             }
         }
         trail
+    }
+
+    /// Rifa' una ricerca salvata, nella libreria intera.
+    pub fn open_search(&mut self, query: String) {
+        (self.groups, self.group, self.series) = (false, None, None);
+        self.search = query;
+        self.suggested = None;
+        self.reset_view();
     }
 
     pub fn enter_folder(&mut self, path: PathBuf) {
@@ -488,7 +511,8 @@ impl Shelf {
     }
 
     fn reset_view(&mut self) {
-        (self.scroll, self.glide, self.selected) = (0.0, 0.0, None);
+        (self.scroll, self.selected) = (0.0, None);
+        self.glide.stop();
     }
 
     pub fn set_sort(&mut self, sort: LibrarySort) {

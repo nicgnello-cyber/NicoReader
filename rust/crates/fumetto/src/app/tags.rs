@@ -5,7 +5,7 @@
 use fumetto::ui::{Reach, TagScope, TagsOf};
 use fumetto_core::edits::VolumeEdit;
 use fumetto_core::library::{Group, GroupKind, groups_of};
-use fumetto_core::lingua::italian;
+use fumetto_core::lingua::{italian, volumes};
 
 use super::*;
 
@@ -114,6 +114,33 @@ impl App {
         self.changed();
     }
 
+    /// Salva una ricerca della libreria con un nome: sta fra i tag.
+    pub(super) fn save_search(&mut self, name: &str, query: &str) {
+        self.settings.save_search(name, query);
+        self.save_settings();
+        self.ui.form_done(Ok(()));
+        let text = if italian() {
+            format!("Ricerca salvata: «{}» sta fra i tag", name.trim())
+        } else {
+            format!("Search saved: \u{201c}{}\u{201d} is among the tags", name.trim())
+        };
+        self.ui.toast(text, Instant::now());
+        self.changed();
+    }
+
+    /// Toglie una ricerca dalle salvate.
+    pub(super) fn forget_search(&mut self, name: &str) {
+        self.settings.forget_search(name);
+        self.save_settings();
+        let text = if italian() {
+            format!("«{name}» tolta dalle ricerche salvate")
+        } else {
+            format!("\u{201c}{name}\u{201d} removed from the saved searches")
+        };
+        self.ui.toast(text, Instant::now());
+        self.changed();
+    }
+
     /// Il nome nuovo di un tag, su tutti i volumi della libreria che lo
     /// hanno; se un tag con quel nome c'e' gia', i due diventano uno.
     pub(super) fn rename_tag(&mut self, kind: GroupKind, old: String, new: String) {
@@ -158,12 +185,7 @@ impl App {
             return;
         }
         self.ui.shelf.group_renamed(kind, &tag.name, None);
-        let text = match (paths.len() == 1, italian()) {
-            (true, true) => "Tag tolto da 1 volume".to_owned(),
-            (false, true) => format!("Tag tolto da {} volumi", paths.len()),
-            (true, false) => "Tag removed from 1 volume".to_owned(),
-            (false, false) => format!("Tag removed from {} volumes", paths.len()),
-        };
+        let text = format!("{} {}", t("Tag tolto da", "Tag removed from"), volumes(paths.len()));
         self.toast_undoable(text);
     }
 
@@ -215,7 +237,7 @@ impl App {
             return e.title.clone();
         }
         match &self.book {
-            Some(b) if fumetto_core::absolute(&b.path) == fumetto_core::absolute(path) => b.title.clone(),
+            Some(b) if fumetto_core::same_path(&b.path, path) => b.title.clone(),
             _ => fumetto_core::title_of(path),
         }
     }
@@ -275,9 +297,7 @@ fn file_tags(lib: &Lib, book: Option<&Book>, path: &Path) -> Vec<Group> {
         return e.groups.clone();
     }
     match book {
-        Some(b) if fumetto_core::absolute(&b.path) == fumetto_core::absolute(path) => {
-            b.info.as_ref().map(groups_of).unwrap_or_default()
-        }
+        Some(b) if fumetto_core::same_path(&b.path, path) => b.info.as_ref().map(groups_of).unwrap_or_default(),
         _ => Vec::new(),
     }
 }

@@ -197,12 +197,7 @@ impl Edits {
     fn save(&self) -> io::Result<()> {
         let Some(file) = &self.file else { return Ok(()) };
         let json = serde_json::to_vec_pretty(&self.map).map_err(io::Error::other)?;
-        if let Some(dir) = file.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        let tmp = file.with_extension("tmp");
-        std::fs::write(&tmp, json)?;
-        std::fs::rename(&tmp, file)
+        crate::write_atomic(file, &json)
     }
 
     /// Le correzioni applicate a tutta la libreria.

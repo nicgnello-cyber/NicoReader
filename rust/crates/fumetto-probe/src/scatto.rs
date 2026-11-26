@@ -232,6 +232,7 @@ fn book_info<'r>(title: &'r str, reader: &'r Reader, items: &[Item], view_w: f32
         slideshow: false,
         next: None,
         prev: None,
+        image: reader.image,
     }
 }
 

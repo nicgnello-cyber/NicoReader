@@ -15,7 +15,7 @@ impl Ui {
         }
         if let Some(p) = &mut self.prefs {
             if Prefs::covers(ctx.view, ctx.scale, self.pointer.0) {
-                p.wheel(ctx.settings, ctx.keys, ctx.view, ctx.scale, pixels);
+                p.wheel(&ctx.prefs_view(), ctx.view, ctx.scale, pixels);
             }
             return true;
         }
@@ -51,7 +51,7 @@ impl Ui {
             && self.goto.is_none()
             && let Some(p) = &mut self.prefs
         {
-            return p.motion(ctx.settings, ctx.keys, ctx.view, ctx.scale, x, y);
+            return p.motion(&ctx.prefs_view(), ctx.view, ctx.scale, x, y);
         }
         if self.modal() {
             return false;
@@ -103,7 +103,7 @@ impl Ui {
         }
         if let Some(p) = &mut self.prefs {
             if Prefs::covers(ctx.view, ctx.scale, x) {
-                return p.click(ctx.settings, ctx.keys, ctx.view, ctx.scale, x, y);
+                return p.click(&ctx.prefs_view(), ctx.view, ctx.scale, x, y);
             }
             // un clic sulle pagine chiude il foglio, come fuori da un menu
             return Handled::Yes(Some(Command::Act(Action::ToggleSettings)));
@@ -188,7 +188,7 @@ impl Ui {
             return Handled::Yes(self.key_menu(key, ctx));
         }
         if let Some(p) = &mut self.prefs {
-            return p.key(key, ctx.settings, ctx.keys, ctx.view, ctx.scale);
+            return p.key(key, &ctx.prefs_view(), ctx.view, ctx.scale);
         }
         if let Some(d) = &ctx.thumbs {
             return self.thumbs.key(key, d, ctx.view, ctx.scale);

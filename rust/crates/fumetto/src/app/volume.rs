@@ -153,7 +153,7 @@ impl App {
             reader.restore(saved);
         }
         // aperto andando indietro dal seguente: dall'ultima pagina
-        if self.open_at_end.take().is_some_and(|p| fumetto_core::absolute(&p) == fumetto_core::absolute(&book.path)) {
+        if self.open_at_end.take().is_some_and(|p| fumetto_core::same_path(&p, &book.path)) {
             reader.act(Action::GoTo(book.len().saturating_sub(1)), Instant::now());
         }
         if let Some(r) = &self.reader {

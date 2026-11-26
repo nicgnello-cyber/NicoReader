@@ -106,6 +106,7 @@ impl Reader {
             read_at: 0,
             rotation: self.rotation,
             bookmarks: self.bookmarks.clone(),
+            image: self.image,
         }
     }
 
@@ -127,6 +128,7 @@ impl Reader {
             self.strip_frac = Some(saved.strip_width.clamp(0.2, 1.0));
         }
         self.rotation = saved.rotation % 360 / 90 * 90;
+        self.image = saved.image.map(|steps| steps.map(|v| v.clamp(-100, 100)));
         self.bookmarks = saved.bookmarks.iter().copied().filter(|&p| p < self.len).collect();
         self.bookmarks.sort_unstable();
         self.bookmarks.dedup();

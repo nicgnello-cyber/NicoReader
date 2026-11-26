@@ -9,6 +9,7 @@
 pub mod esrgan;
 mod overlay;
 mod soft;
+mod text;
 mod tiling;
 
 use std::collections::HashMap;

@@ -210,7 +210,7 @@ mod win {
     /// non la vuole veder tornare al prossimo avvio.
     fn save(file: &Path, removed: &BTreeSet<String>) {
         let Ok(json) = serde_json::to_vec(removed) else { return };
-        if let Err(e) = std::fs::write(file, json) {
+        if let Err(e) = fumetto_core::write_atomic(file, &json) {
             eprintln!("jump list: {e}");
         }
     }

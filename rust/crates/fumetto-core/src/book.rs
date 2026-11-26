@@ -145,6 +145,11 @@ pub fn absolute(path: &Path) -> PathBuf {
     std::path::absolute(path).unwrap_or_else(|_| path.to_owned())
 }
 
+/// Due percorsi sono lo stesso volume (anche se uno e' relativo).
+pub fn same_path(a: &Path, b: &Path) -> bool {
+    a == b || absolute(a) == absolute(b)
+}
+
 /// Il volume c'e' ancora. Di uno remoto si sapra' aprendolo.
 pub fn exists(path: &Path) -> bool {
     remote::is_remote(path) || path.exists()

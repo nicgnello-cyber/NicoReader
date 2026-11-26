@@ -13,12 +13,12 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard};
-use std::thread::JoinHandle;
+use std::sync::Arc;
 
 use crate::book::{Book, Content};
 use crate::decode::{Page, decode};
 use crate::loader::Fit;
+use crate::pool::{Pool, Shared};
 use crate::resize::resize;
 
 /// La misura delle copertine in cache.
@@ -60,11 +60,7 @@ pub fn cover(path: &Path, cache: &Path) -> Result<Page, String> {
     let page = make(path)?;
     if let Some(file) = file {
         // la cache e' un di piu': se non si scrive, la copertina c'e' lo stesso
-        let _ = std::fs::create_dir_all(cache).and_then(|_| {
-            let tmp = file.with_extension("tmp");
-            std::fs::write(&tmp, encode_webp(&page, 82.0)?)?;
-            std::fs::rename(&tmp, &file)
-        });
+        let _ = encode_webp(&page, 82.0).and_then(|webp| crate::write_atomic(&file, &webp));
     }
     Ok(page)
 }
@@ -142,88 +138,42 @@ pub struct Cover {
 /// Prepara le copertine in due thread a bassa priorita': chi disegna e chi
 /// prepara le pagine passano prima.
 pub struct CoverLoader {
-    shared: Arc<Shared>,
-    workers: Vec<JoinHandle<()>>,
-}
-
-struct Shared {
-    state: Mutex<State>,
-    wake: Condvar,
+    pool: Pool<State>,
 }
 
 struct State {
     cache: PathBuf,
     queue: VecDeque<(PathBuf, (u32, u32))>,
     running: HashSet<PathBuf>,
-    stop: bool,
-}
-
-impl Shared {
-    fn lock(&self) -> MutexGuard<'_, State> {
-        self.state.lock().unwrap_or_else(|e| e.into_inner())
-    }
 }
 
 impl CoverLoader {
     pub fn new(cache: PathBuf, deliver: impl Fn(Cover) + Send + Sync + 'static) -> CoverLoader {
-        let shared = Arc::new(Shared {
-            state: Mutex::new(State { cache, queue: VecDeque::new(), running: HashSet::new(), stop: false }),
-            wake: Condvar::new(),
-        });
+        let mut pool = Pool::new(State { cache, queue: VecDeque::new(), running: HashSet::new() });
         let deliver = Arc::new(deliver);
-        let workers = (0..2)
-            .map(|n| {
-                let (shared, deliver) = (shared.clone(), deliver.clone());
-                std::thread::Builder::new()
-                    .name(format!("copertine-{n}"))
-                    .spawn(move || {
-                        let _ = thread_priority::set_current_thread_priority(thread_priority::ThreadPriority::Min);
-                        work(&shared, &*deliver)
-                    })
-                    .expect("thread delle copertine")
-            })
-            .collect();
-        CoverLoader { shared, workers }
+        for n in 0..2 {
+            let deliver = deliver.clone();
+            pool.spawn(format!("copertine-{n}"), move |shared| work(shared, &*deliver));
+        }
+        CoverLoader { pool }
     }
 
     /// Sostituisce la coda: le copertine che servono, dalla piu' urgente.
     pub fn request(&self, wanted: Vec<(PathBuf, (u32, u32))>) {
-        let mut s = self.shared.lock();
-        let queue = wanted.into_iter().filter(|(p, _)| !s.running.contains(p)).collect();
-        s.queue = queue;
-        drop(s);
-        self.shared.wake.notify_all();
+        self.pool.update(|s| s.queue = wanted.into_iter().filter(|(p, _)| !s.running.contains(p)).collect());
     }
 }
 
-impl Drop for CoverLoader {
-    fn drop(&mut self) {
-        self.shared.lock().stop = true;
-        self.shared.wake.notify_all();
-        for w in self.workers.drain(..) {
-            let _ = w.join();
-        }
-    }
-}
-
-fn work(shared: &Shared, deliver: &dyn Fn(Cover)) {
-    loop {
-        let (path, size, cache) = {
-            let mut s = shared.lock();
-            loop {
-                if s.stop {
-                    return;
-                }
-                if let Some((path, size)) = s.queue.pop_front() {
-                    s.running.insert(path.clone());
-                    break (path, size, s.cache.clone());
-                }
-                s = shared.wake.wait(s).unwrap_or_else(|e| e.into_inner());
-            }
-        };
+fn work(shared: &Shared<State>, deliver: &dyn Fn(Cover)) {
+    let take = |s: &mut State| {
+        let (path, size) = s.queue.pop_front()?;
+        s.running.insert(path.clone());
+        Some((path, size, s.cache.clone()))
+    };
+    while let Some((path, size, cache)) = shared.next(take) {
         let page = cover(&path, &cache)
             .map(|p| if (p.width, p.height) == size { p } else { resize(&p, size.0.max(1), size.1.max(1), true) });
-        shared.lock().running.remove(&path);
+        shared.with(|s| s.running.remove(&path));
         deliver(Cover { path, size, page });
     }
 }

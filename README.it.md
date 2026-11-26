@@ -149,6 +149,17 @@ mentre scrivi, si suggeriscono anche i tag delle altre categorie, con la
 loro categoria accanto. Ogni cambio ai tag (aggiunto, tolto, rinominato,
 tolto da tutti) si annulla con **Ctrl+Z** (Cmd+Z), uno dopo l'altro.
 
+Una ricerca che serve spesso si salva: mentre si cerca, il segno nella
+barra della ricerca chiede un nome, e la ricerca compare in testa ai tag
+("Wolverine da leggere"); un clic la rifa' con i volumi di quel momento. Il
+segno rosso dice che la ricerca scritta e' gia' salvata: un altro clic la
+toglie (o tasto destro sulla sua copertina fra i tag).
+
+Luminosita', contrasto e gamma (impostazioni → Immagine) valgono per tutti
+i volumi; con un volume aperto, *Solo per questo volume* li tiene per lui,
+per le scansioni troppo chiare o troppo scure, e gli altri restano come
+sono.
+
 Per leggere da un server Komga o Kavita: tasto destro → Aggiungi un server…
 (o l'icona della cartella nella libreria). Per Komga l'indirizzo del server,
 con nome e password; per Kavita il link OPDS che c'è nelle impostazioni
@@ -224,13 +235,13 @@ e per le pull request che toccano il codice.
 
 Una nuova versione, con i link di "Scarica" che la seguono da soli: si alza
 `version` in `rust/Cargo.toml`, e dopo il merge si crea il tag, dal sito di
-GitHub (Releases -> Draft a new release -> tag `v0.5.0`, "create on publish"
+GitHub (Releases -> Draft a new release -> tag `v0.5.1`, "create on publish"
 -> Publish release) oppure con
 
-    git tag v0.5.0
-    git push origin v0.5.0
+    git tag v0.5.1
+    git push origin v0.5.1
 
-Actions fa i pacchetti di tutti i sistemi e li pubblica nella Release `v0.5.0`,
+Actions fa i pacchetti di tutti i sistemi e li pubblica nella Release `v0.5.1`,
 con i nomi senza versione dei link (se il tag non e' la versione di
 Cargo.toml si ferma), e con le note di `.github/note-release.md` se la
 Release non ne ha. Per riscrivere solo le note della versione attuale: Run

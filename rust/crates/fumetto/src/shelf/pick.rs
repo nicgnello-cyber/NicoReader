@@ -17,11 +17,6 @@ impl Shelf {
         &self.picked
     }
 
-    /// Lascia la scelta.
-    pub fn clear_picks(&mut self) {
-        self.picked.clear();
-    }
-
     /// Ctrl+clic: sceglie o lascia la cella sotto il punto. `false` se li'
     /// non c'e' una cella che si possa scegliere (un gruppo, una cartella).
     pub fn pick_at(&mut self, d: &ShelfData, view: (f32, f32), s: f32, x: f32, y: f32) -> bool {
@@ -122,6 +117,6 @@ fn tile_paths(d: &ShelfData, tile: &Tile) -> Vec<PathBuf> {
             .filter(|e| e.series.as_deref() == Some(name.as_str()))
             .map(|e| e.path.clone())
             .collect(),
-        Tile::Group { .. } | Tile::Folder { .. } => Vec::new(),
+        Tile::Group { .. } | Tile::Folder { .. } | Tile::Saved { .. } => Vec::new(),
     }
 }
