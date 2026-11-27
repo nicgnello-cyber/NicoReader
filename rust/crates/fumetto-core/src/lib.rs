@@ -15,6 +15,7 @@ pub mod keychain;
 pub mod library;
 pub mod lingua;
 mod loader;
+pub mod moved;
 mod natural;
 mod pdf;
 mod pool;

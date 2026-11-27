@@ -2,6 +2,7 @@
 //! in ciascuno.
 
 use super::*;
+use std::collections::BTreeSet;
 
 impl App {
     /// La libreria e' a schermo: aperta sopra un volume, o nessun volume e
@@ -28,11 +29,17 @@ impl App {
         let servers = self.settings.servers.clone();
         let proxy = self.proxy.clone();
         let cache = self.info_cache.clone();
+        // i volumi di cui si ricorda qualcosa: se si sono spostati, li si segue
+        let known: BTreeSet<String> = self.edits.keys().chain(self.progress.keys()).cloned().collect();
+        let prints = self.prints.clone();
         std::thread::Builder::new()
             .name("libreria".into())
             .spawn(move || {
                 let local = library::scan_cached(&roots, &cache);
-                let mut scan = Scan { roots, servers, local, remote: None, reads: Vec::new(), failed: Vec::new() };
+                let found: Vec<PathBuf> = local.iter().map(|e| e.path.clone()).collect();
+                let moved = prints.lock().map(|mut p| p.relink(&known, &found)).unwrap_or_default();
+                let (reads, failed) = (Vec::new(), Vec::new());
+                let mut scan = Scan { roots, servers, local, remote: None, reads, failed, moved };
                 if scan.servers.is_empty() {
                     scan.remote = Some(Vec::new());
                     let _ = proxy.send_event(UserEvent::Scanned(Box::new(scan)));
@@ -45,6 +52,7 @@ impl App {
                     remote: None,
                     reads: Vec::new(),
                     failed: Vec::new(),
+                    moved: std::mem::take(&mut scan.moved),
                 };
                 let _ = proxy.send_event(UserEvent::Scanned(Box::new(first)));
                 let mut remote = Vec::new();
@@ -78,6 +86,9 @@ impl App {
             self.lib.remote = remote;
             self.lib.scanning = false;
         }
+        if !scan.moved.is_empty() {
+            self.follow_moved(&scan.moved);
+        }
         // dove si e' arrivati letto altrove (sul telefono, nel browser)
         let open = self.book.as_ref().map(|b| b.path.clone());
         let mut moved = false;
@@ -97,6 +108,26 @@ impl App {
         }
         self.refresh_shelf();
         self.changed();
+    }
+
+    /// Volumi spostati o rinominati fuori dall'app: correzioni, tag, punto
+    /// di lettura e segnalibri passano al percorso nuovo.
+    fn follow_moved(&mut self, moved: &[(PathBuf, PathBuf)]) {
+        if let Err(e) = self.edits.moved(moved) {
+            eprintln!("correzioni dei volumi spostati non salvate: {e}");
+        }
+        self.progress.moved(moved);
+        self.save_progress();
+        self.refresh_recent();
+        let n = moved.len();
+        let note = if fumetto_core::lingua::italian() {
+            let what = if n == 1 { "un volume spostato".to_owned() } else { format!("{n} volumi spostati") };
+            format!("Ritrovati {what}: tag e letture li seguono")
+        } else {
+            let what = if n == 1 { "a moved volume".to_owned() } else { format!("{n} moved volumes") };
+            format!("Found {what}: tags and reading follow them")
+        };
+        self.ui.toast(note, Instant::now());
     }
 
     /// Scarica un volume del server, in sottofondo.

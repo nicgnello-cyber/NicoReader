@@ -120,7 +120,10 @@ volume…, o dal menu di una copertina) apre i tag del volume. Si sceglie la
 categoria con ← →, si scrive (i tag gia' usati in libreria si suggeriscono,
 con quanti volumi li hanno) e Invio lo aggiunge; la × lo toglie. I tag messi
 a mano stanno in `correzioni.json`, nella cartella dei dati: il file del
-volume non si tocca. Un clic su un tag porta in libreria fra gli altri volumi
+volume non si tocca. Se lo sposti o lo rinomini fuori da NicoReader (in
+un'altra cartella della libreria), alla scansione dopo lo si riconosce
+dalla sua impronta (misura, inizio e fine del file, in `impronte.json`):
+tag, correzioni, punto di lettura e segnalibri lo seguono. Un clic su un tag porta in libreria fra gli altri volumi
 che ce l'hanno ("questo personaggio c'e' anche in..."). L'icona degli
 scaffali nella barra della libreria mostra tutti i tag, per categoria; e la
 ricerca trova un volume anche dai suoi tag: mentre si scrive ("azio"), sotto

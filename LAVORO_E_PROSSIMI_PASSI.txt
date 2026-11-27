@@ -1033,6 +1033,14 @@ Il capitolo 7 ne tiene la memoria e i numeri.
        tasto "indietro" del mouse fa come Esc ovunque. Il "< Libreria"
        nell'intestazione di serie e gruppi e' un tasto (BACK_W), non solo
        una scritta.
+     - Volumi spostati o rinominati fuori dall'app: correzioni, tag,
+       lettura e segnalibri li seguono (fumetto-core/src/moved.rs). Per ogni
+       volume ricordato un'impronta (misura + FNV-1a dei primi e ultimi
+       64 KB, impronte.json), rifatta solo se cambiano misura o data; alla
+       scansione, uno sparito e un nuovo con la stessa impronta sono lo
+       stesso volume (Edits::moved, Progress::moved). Copie identiche: non
+       si indovina. Le cartelle-volume non hanno impronta. Vale per gli
+       spostamenti dopo che l'app ha visto il file almeno una volta.
   5. Distribuzione (capitolo 5).
 
   Da decidere tu, quando vuoi:

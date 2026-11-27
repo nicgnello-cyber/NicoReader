@@ -194,6 +194,27 @@ impl Edits {
         self.save()
     }
 
+    /// I volumi di cui c'e' una correzione (o dei tag), per chiave.
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.map.keys()
+    }
+
+    /// Volumi spostati (vedi `moved`): le correzioni seguono, da dove erano a
+    /// dove sono adesso. Un volume che ne ha gia' di sue le tiene.
+    pub fn moved(&mut self, moves: &[(PathBuf, PathBuf)]) -> io::Result<()> {
+        let mut changed = false;
+        for (old, new) in moves {
+            let new = Self::key(new);
+            if !self.map.contains_key(&new)
+                && let Some(edit) = self.map.remove(&Self::key(old))
+            {
+                self.map.insert(new, edit);
+                changed = true;
+            }
+        }
+        if changed { self.save() } else { Ok(()) }
+    }
+
     fn save(&self) -> io::Result<()> {
         let Some(file) = &self.file else { return Ok(()) };
         let json = serde_json::to_vec_pretty(&self.map).map_err(io::Error::other)?;
@@ -356,5 +377,22 @@ mod tests {
         edit.add_tag(g("Logan"), &[]);
         edit.rename_tag(&g("Logan"), g("Wolverine"), &[]);
         assert_eq!((edit.tags.len(), edit.untags.len()), (1, 0));
+    }
+
+    #[test]
+    fn le_correzioni_seguono_un_volume_spostato() {
+        let (old, new, mine) = (Path::new("/fumetti/a.cbz"), Path::new("/serie/a.cbz"), Path::new("/serie/b.cbz"));
+        let mut edits = Edits::in_memory();
+        let tagged = VolumeEdit {
+            tags: vec![Group::new(crate::library::GroupKind::Character, "Wolverine", None)],
+            ..VolumeEdit::default()
+        };
+        edits.set(old, tagged.clone()).unwrap();
+        edits.set(mine, VolumeEdit { title: Some("B".into()), ..VolumeEdit::default() }).unwrap();
+        let moves = [(old.to_path_buf(), new.to_path_buf()), (old.to_path_buf(), mine.to_path_buf())];
+        edits.moved(&moves).unwrap();
+        assert_eq!(edits.get(new), Some(&tagged));
+        assert!(edits.get(old).is_none());
+        assert_eq!(edits.get(mine).and_then(|e| e.title.as_deref()), Some("B"), "chi ne ha gia' le tiene");
     }
 }

@@ -120,7 +120,10 @@ tags…, or from a cover's menu) opens the volume's tags. Pick the kind with
 ← →, type (the tags already in the library are suggested, with how many
 volumes have them) and Enter adds it; the × removes it. The tags you add are
 kept in `correzioni.json`, in the data folder: the volume's file is never
-touched. A click on a tag takes you to the library, among the other volumes
+touched. If you move or rename it outside NicoReader (to another library
+folder), the next scan recognizes it by its fingerprint (size, start and end
+of the file, in `impronte.json`): tags, corrections, reading position and
+bookmarks follow it. A click on a tag takes you to the library, among the other volumes
 that have it ("this character is also in..."). The shelves icon in the
 library bar shows all the tags, by kind; and the search finds a volume by its
 tags too: as you type ("acti"), a drop-down lists the matching tags

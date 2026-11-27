@@ -207,6 +207,8 @@ pub struct Scan {
     reads: Vec<(Vec<remote::sync::Read>, Instant)>,
     /// I server che non hanno risposto, con il perche'.
     failed: Vec<String>,
+    /// I volumi spostati fuori dall'app: (dove erano, dove sono adesso).
+    moved: Vec<(PathBuf, PathBuf)>,
 }
 
 /// La libreria trovata nelle cartelle e sui server, e dove si e' arrivati in
@@ -384,6 +386,9 @@ pub struct App {
     lib: Lib,
     /// Le schede ComicInfo.xml gia' lette, accanto alla cache delle copertine.
     info_cache: PathBuf,
+    /// Le impronte dei volumi ricordati, per seguirli quando si spostano;
+    /// le usa (e le scrive) la scansione, in sottofondo.
+    prints: Arc<std::sync::Mutex<fumetto_core::moved::Prints>>,
     /// Le copertine della libreria e della schermata iniziale.
     covers: Covers,
 
@@ -478,6 +483,9 @@ impl App {
         let data = settings_path.as_deref().and_then(Path::parent);
         let jumplist = JumpList::new(data);
         let edits = open_data(data, &covers_dir);
+        let prints = data.map_or_else(fumetto_core::moved::Prints::in_memory, |d| {
+            fumetto_core::moved::Prints::load(d.join("impronte.json"))
+        });
         let info_cache = info_cache_file(&covers_dir);
         let keymap = Keymap::new(&settings.keys);
         let uploader = Uploader::default();
@@ -541,6 +549,7 @@ impl App {
             open_at_end: None,
             touches: touch::Touches::default(),
             edits,
+            prints: Arc::new(std::sync::Mutex::new(prints)),
             tag_undo: Vec::new(),
             jumplist,
             search: search::ServerSearch::default(),
