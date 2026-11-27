@@ -1,5 +1,5 @@
 NICOREADER (prima: Fumetto) - lettore di fumetti, manga e webtoon
-Stato del progetto al 26 novembre 2026 (versione 0.5.1)
+Stato del progetto al 27 novembre 2026 (versione 0.5.2)
 =====================================================================
 
 Dal 27 settembre il programma si chiama NicoReader e il progetto e'
@@ -1006,7 +1006,9 @@ Il capitolo 7 ne tiene la memoria e i numeri.
        lingua::volumes; il fondo delle tre barre e' ui::bar_layer; "e' il
        volume aperto?" e' same_path. Tolte clear_picks e saved_as, mai
        usate.
-  5d. [x] Barra e menu piu' leggeri (26 novembre).
+  5d. [x] Barra e menu piu' leggeri, Esc, volumi spostati, versione 0.5.2
+       (26-27 novembre).
+     - Versione 0.5.2: la PR 42 (questa voce).
      - La barra del lettore ha 13 tasti invece di 18: via inizio e fine
        (restano Home e Fine), "nascondi la barra" (resta il tasto, e nelle
        impostazioni), riduci e ingrandisci. Lo zoom e' un tasto solo,
