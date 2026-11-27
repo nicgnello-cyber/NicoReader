@@ -45,9 +45,15 @@ impl Shelf {
             crumbs = self.draw_trail(l, d, g.pad, base, s, m);
             self.folder_here(d).0.as_deref().map(folder_name).unwrap_or_default()
         } else {
+            // da dove si torna: un tasto, non solo una scritta (anche Esc, Backspace, il tasto indietro del mouse)
             let (to, here) = self.back_and_here(d);
-            let color = if self.hover == Some(Hit::Back) { INK } else { MUTED };
-            l.texts.push(caps(&format!("\u{2039}   {to}"), 11.0 * s, color).on_baseline(g.pad, base));
+            let on = self.hover == Some(Hit::Back);
+            let label = caps(&format!("\u{2039}   {to}"), 11.0 * s, if on { INK } else { MUTED });
+            let (w, h) = ((m.width(&label) + 28.0 * s).min(BACK_W * s).round(), (28.0 * s).round());
+            let (x, y) = ((g.pad - 14.0 * s).round(), (base - 18.5 * s).round());
+            let fill = [1.0, 1.0, 1.0, if on { 0.12 } else { 0.06 }];
+            l.rects.push(Rect::new(x, y, w, h, fill).radius(h / 2.0));
+            l.texts.push(fit(m, label, w - 28.0 * s).on_baseline(g.pad, base));
             here
         };
         l.texts.push(

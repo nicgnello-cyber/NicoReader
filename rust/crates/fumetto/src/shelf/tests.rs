@@ -714,6 +714,52 @@ fn piu_volumi_scelti_con_ctrl_clic() {
     assert!(shelf.picked().is_empty());
 }
 
+/// Si comincia con Spazio o dal menu, poi basta un clic; la scelta resta
+/// entrando e uscendo da una serie.
+#[test]
+fn si_sceglie_da_serie_diverse() {
+    use crate::ui::Row;
+    let (e, st, at) = library();
+    let d = data(&e, &st, &at);
+    let view = (1280.0, 800.0);
+    let mut shelf = Shelf::default();
+    let placed = shelf.layout(&d, &Geo::new(view, 1.0)).placed;
+    let stack = placed.iter().position(|p| matches!(p.tile, Tile::Series { .. })).expect("la pila");
+    let single = placed.iter().position(|p| p.tile == Tile::Volume(0)).expect("Acqua Alta");
+    // il menu offre di sceglierlo
+    let label = |rows: &[Row]| {
+        rows.iter().find_map(|r| match r {
+            Row::Item { label, cmd: Command::Pick(paths), .. } => Some((*label, paths.clone())),
+            _ => None,
+        })
+    };
+    assert_eq!(label(&shelf.tile_menu(&d, &placed[single].tile)), Some(("Select", vec![e[0].path.clone()])));
+    // Spazio sceglie la copertina evidenziata
+    shelf.selected = Some(single);
+    shelf.key(Key::Char(' '), &d, view, 1.0);
+    assert_eq!(shelf.picked(), [e[0].path.clone()]);
+    assert!(shelf.search.is_empty(), "non finisce nella ricerca");
+    assert_eq!(label(&shelf.tile_menu(&d, &placed[single].tile)).unwrap().0, "Remove from selection");
+    // mentre si sceglie, un clic sulla pila la apre, un clic su un volume lo sceglie
+    let (x, y) = (placed[stack].x + 10.0, placed[stack].y + 10.0);
+    assert_eq!(shelf.click(&d, view, 1.0, x, y), Handled::Yes(None));
+    assert!(shelf.series.is_some(), "dentro la serie");
+    let inside = shelf.layout(&d, &Geo::new(view, 1.0)).placed;
+    let volume = inside.iter().find(|p| matches!(p.tile, Tile::Volume(_))).expect("un volume");
+    assert_eq!(shelf.click(&d, view, 1.0, volume.x + 10.0, volume.y + 10.0), Handled::Yes(None));
+    assert_eq!(shelf.picked().len(), 2);
+    // Esc torna su e la scelta resta; fuori, Esc la lascia
+    shelf.key(Key::Escape, &d, view, 1.0);
+    assert!(shelf.series.is_none() && shelf.picked().len() == 2);
+    shelf.key(Key::Escape, &d, view, 1.0);
+    assert!(shelf.picked().is_empty());
+    // con qualcosa scritto, Spazio e' uno spazio
+    shelf.search = "acqua".into();
+    shelf.key(Key::Char(' '), &d, view, 1.0);
+    assert_eq!(shelf.search, "acqua ");
+    assert!(shelf.picked().is_empty());
+}
+
 #[test]
 fn le_ricerche_salvate_stanno_fra_i_tag() {
     use crate::ui::{Row, TagsOf};

@@ -83,6 +83,8 @@ pub enum Action {
     OpenFolder,
     /// Chiude il volume: resta la galleria vuota.
     Close,
+    /// Indietro: dalla lettura alla libreria. Non esce mai dall'app.
+    Back,
     Quit,
     /// Gira le pagine di un quarto di giro: in senso orario (`true`) o no.
     Rotate(bool),
@@ -462,6 +464,7 @@ impl Reader {
             | Action::ToggleHud
             | Action::ToggleLibrary
             | Action::AddLibraryFolder
+            | Action::Back
             | Action::Quit
             | Action::ToggleThumbs
             | Action::ToggleSlideshow

@@ -196,6 +196,12 @@ impl App {
             WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Right, .. } => {
                 self.context_menu();
             }
+            // il tasto "indietro" del mouse fa come Esc
+            WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Back, .. } => {
+                if !self.ui_key_first(Some(ui::Key::Escape), event_loop) {
+                    self.act(Action::Back, event_loop);
+                }
+            }
             WindowEvent::Touch(touch) => self.touch(touch, event_loop),
             WindowEvent::PinchGesture { delta, .. } => self.pinch_gesture(delta as f32, event_loop),
             WindowEvent::DoubleTapGesture { .. } => self.double_tap(self.cursor.0, self.cursor.1, event_loop),
@@ -245,7 +251,7 @@ impl App {
             return;
         }
         let command = command && !self.ui.typing();
-        if !command && self.ui_key_first(event, event_loop) {
+        if !command && self.ui_key_first(ui_key(&event.logical_key), event_loop) {
             return;
         }
         if event.logical_key == Key::Named(NamedKey::ContextMenu) {
@@ -278,13 +284,13 @@ impl App {
     /// Prima l'interfaccia: con un menu aperto, nella galleria vuota, nella
     /// libreria e fra le miniature le frecce e Invio sono sue. `true` se il
     /// tasto non va oltre.
-    fn ui_key_first(&mut self, event: &KeyEvent, event_loop: &ActiveEventLoop) -> bool {
+    fn ui_key_first(&mut self, key: Option<ui::Key>, event_loop: &ActiveEventLoop) -> bool {
         let covering = self.ui.modal() || self.shelf_shown() || self.thumbs_shown();
         if !covering && self.reader.is_some() {
             return false;
         }
         let ctx = input_context!(self);
-        match ui_key(&event.logical_key).map_or(Handled::No, |k| self.ui.key(k, &ctx)) {
+        match key.map_or(Handled::No, |k| self.ui.key(k, &ctx)) {
             Handled::Yes(cmd) => {
                 self.request_redraw();
                 if let Some(cmd) = cmd {

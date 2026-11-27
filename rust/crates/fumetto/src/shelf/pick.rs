@@ -1,7 +1,11 @@
-//! Piu' volumi scelti insieme, con Ctrl+clic (Cmd+clic su macOS): una
-//! copertina si sceglie o si lascia, una pila sceglie tutti i suoi volumi.
-//! In basso una barra dice quanti sono, con "Tag…" per dar loro (o
-//! togliere) dei tag in un colpo; Esc o la crocetta lasciano la scelta.
+//! Piu' volumi scelti insieme, anche di serie diverse. Si comincia con
+//! Ctrl+clic (Cmd+clic su macOS), con Spazio sulla copertina evidenziata
+//! dalle frecce, o dal menu del tasto destro ("Seleziona"); poi basta un
+//! clic: una copertina si sceglie o si lascia, una pila si apre (con Ctrl+clic
+//! sceglie tutti i suoi volumi). La scelta resta entrando e uscendo dalle
+//! serie. In basso una barra dice quanti sono, con "Tag…" per dar loro (o
+//! togliere) dei tag in un colpo; la crocetta, o Esc fuori dalle serie,
+//! lascia la scelta.
 
 use super::*;
 
@@ -20,12 +24,22 @@ impl Shelf {
     /// Ctrl+clic: sceglie o lascia la cella sotto il punto. `false` se li'
     /// non c'e' una cella che si possa scegliere (un gruppo, una cartella).
     pub fn pick_at(&mut self, d: &ShelfData, view: (f32, f32), s: f32, x: f32, y: f32) -> bool {
-        let Some(tile) = self.tile_at(d, view, s, x, y) else { return false };
-        let paths = tile_paths(d, &tile);
+        self.tile_at(d, view, s, x, y).is_some_and(|tile| self.pick_tile(d, &tile))
+    }
+
+    /// Sceglie o lascia una cella; `false` se non ha volumi da scegliere.
+    pub(super) fn pick_tile(&mut self, d: &ShelfData, tile: &Tile) -> bool {
+        let paths = tile_paths(d, tile);
         if paths.is_empty() {
             return false;
         }
-        if self.is_picked(d, &tile) {
+        self.toggle_pick(paths);
+        true
+    }
+
+    /// Sceglie questi volumi; se lo erano gia' tutti, li lascia.
+    pub fn toggle_pick(&mut self, paths: Vec<PathBuf>) {
+        if paths.iter().all(|p| self.picked.contains(p)) {
             self.picked.retain(|p| !paths.contains(p));
         } else {
             for p in paths {
@@ -34,7 +48,6 @@ impl Shelf {
                 }
             }
         }
-        true
     }
 
     /// La cella e' scelta: il volume, o tutti i volumi della pila.
@@ -109,7 +122,7 @@ fn pick_bar_rect(view: (f32, f32), s: f32) -> [f32; 4] {
 }
 
 /// I volumi di una cella: il volume, o quelli della pila (della libreria).
-fn tile_paths(d: &ShelfData, tile: &Tile) -> Vec<PathBuf> {
+pub(super) fn tile_paths(d: &ShelfData, tile: &Tile) -> Vec<PathBuf> {
     match tile {
         Tile::Volume(i) => vec![d.entries[*i].path.clone()],
         Tile::Series { name, .. } => d.entries[..d.library_len()]

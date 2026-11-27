@@ -14,6 +14,15 @@ impl Shelf {
             rows.push(Row::Sep);
         }
         rows.extend(Self::own_menu(d, tile));
+        // un volume o una serie si sceglie anche da qui, per dar tag a molti insieme
+        if matches!(tile, Tile::Volume(_) | Tile::Series { .. }) {
+            let label = if self.is_picked(d, tile) {
+                t("Togli dalla selezione", "Remove from selection")
+            } else {
+                t("Seleziona", "Select")
+            };
+            rows.extend([Row::Sep, Row::plain(label, Command::Pick(pick::tile_paths(d, tile)))]);
+        }
         rows
     }
 
@@ -92,8 +101,7 @@ fn folder_menu(path: &Path) -> Vec<Row> {
         Row::plain(t("Apri la cartella", "Open the folder"), Command::Folder(path.to_path_buf())),
     ];
     if !remote::is_remote(path) {
-        let label = t("Mostra nel gestore dei file", "Show in the file manager");
-        rows.push(Row::plain(label, Command::Reveal(path.to_path_buf())));
+        rows.push(Row::plain(t("Mostra nella cartella", "Show in folder"), Command::Reveal(path.to_path_buf())));
     }
     rows
 }

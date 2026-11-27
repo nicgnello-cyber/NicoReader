@@ -2,6 +2,8 @@
 //! libreria che arrivano da `shelf`; come sono fatti, dove stanno, come si
 //! disegnano.
 
+use std::ops::Range;
+
 use super::*;
 
 pub(super) const MENU_W: f32 = 316.0;
@@ -39,26 +41,30 @@ impl Menu {
     }
 
     /// Il riquadro del menu e l'angolo (sinistra, cima) di ogni riga, in
-    /// pixel. Le righe vanno in colonne affiancate, separate da `Row::Break`:
-    /// un menu lungo resta basso, e si legge come le due pagine di un libro.
-    pub(super) fn frame(&self, ctx: &Context) -> (Rect, Vec<(f32, f32)>) {
+    /// pixel; `None` per un separatore che resta in cima a una colonna, e non
+    /// si disegna. Le righe vanno in una colonna; se la finestra e' troppo
+    /// bassa, in colonne affiancate, divise fra una sezione e l'altra.
+    pub(super) fn frame(&self, ctx: &Context) -> (Rect, Vec<Option<(f32, f32)>>) {
         let s = ctx.scale;
         let (vw, vh) = ctx.view;
-        let rows = &self.rows;
-        let columns = rows.split(|r| matches!(r, Row::Break));
-        let tallest = columns.clone().map(|c| c.iter().map(Row::height).sum::<f32>()).fold(0.0, f32::max);
-        let w = self.width * columns.count() as f32;
+        let columns = columns(&self.rows, (vh / s - 32.0).max(120.0));
+        let tallest = columns.iter().map(|c| c.height).fold(0.0, f32::max);
+        let w = self.width * columns.len() as f32;
         let h = (tallest + 16.0) * s;
         let x = if self.x + w > vw - 8.0 * s { (self.x - w).max(8.0 * s) } else { self.x };
         let y = if self.y + h > vh - 8.0 * s { (vh - 8.0 * s - h).max(8.0 * s) } else { self.y };
-        let mut spots = Vec::with_capacity(rows.len());
-        let (mut left, mut at) = (x.round(), y + 8.0 * s);
-        for r in rows {
-            if let Row::Break = r {
-                (left, at) = ((left + self.width).round(), y + 8.0 * s);
+        let mut spots = vec![None; self.rows.len()];
+        for (n, column) in columns.iter().enumerate() {
+            let left = (x + n as f32 * self.width).round();
+            let mut at = y + 8.0 * s;
+            for i in column.rows.clone() {
+                let row = &self.rows[i];
+                if i == column.rows.start && matches!(row, Row::Sep) {
+                    continue;
+                }
+                spots[i] = Some((left, at));
+                at += row.height() * s;
             }
-            spots.push((left, at));
-            at += r.height() * s;
         }
         (Rect::new(x.round(), y.round(), w.round(), h.round(), BLACK), spots)
     }
@@ -69,8 +75,10 @@ impl Menu {
         if x < frame.x || x > frame.x + frame.w || y < frame.y || y > frame.y + frame.h {
             return None;
         }
-        spots.iter().zip(&self.rows).position(|(&(left, top), r)| {
-            x >= left && x < left + self.width && y >= top && y < top + r.height() * ctx.scale
+        spots.iter().zip(&self.rows).position(|(spot, r)| {
+            spot.is_some_and(|(left, top)| {
+                x >= left && x < left + self.width && y >= top && y < top + r.height() * ctx.scale
+            })
         })
     }
 
@@ -112,7 +120,8 @@ impl Menu {
             Rect::new(f.x + s, f.y + s, f.w - 2.0 * s, f.h - 2.0 * s, alpha(rgb(0x11, 0x10, 0x0E), 0.98))
                 .radius(11.0 * s),
         );
-        for (i, (row, &(x, top))) in self.rows.iter().zip(&spots).enumerate() {
+        for (i, (row, spot)) in self.rows.iter().zip(&spots).enumerate() {
+            let Some((x, top)) = *spot else { continue };
             let selected = self.selected == Some(i);
             if selected {
                 let (cw, h) = (self.width, row.height() * s);
@@ -121,12 +130,13 @@ impl Menu {
                         .radius(7.0 * s),
                 );
             }
-            if let Row::Break = row {
-                // fra le colonne un filo, come la piega fra due pagine
-                l.rects.push(Rect::new(x, f.y + 18.0 * s, s.round(), f.h - 36.0 * s, HAIR));
-            } else {
-                self.draw_row(&mut l, row, (x, top), selected, s, m);
-            }
+            self.draw_row(&mut l, row, (x, top), selected, s, m);
+        }
+        // fra le colonne un filo, come la piega fra due pagine
+        let mut fold = f.x + self.width;
+        while fold < f.x + f.w - 1.0 {
+            l.rects.push(Rect::new(fold.round(), f.y + 18.0 * s, s.round(), f.h - 36.0 * s, HAIR));
+            fold += self.width;
         }
         l
     }
@@ -162,7 +172,6 @@ impl Menu {
             }
             Row::Head(text) => l.texts.push(caps(text, 10.0 * s, MUTED).on_baseline(left, top + 21.0 * s)),
             Row::Sep => l.rects.push(Rect::new(x + 18.0 * s, (top + 6.0 * s).round(), cw - 36.0 * s, s.round(), HAIR)),
-            Row::Break => {}
         }
     }
 }
@@ -188,8 +197,6 @@ pub(crate) enum Row {
     },
     Head(&'static str),
     Sep,
-    /// Da qui una colonna nuova, accanto.
-    Break,
 }
 
 impl Row {
@@ -208,7 +215,6 @@ impl Row {
             Row::Item { .. } | Row::Recent { .. } | Row::Folder { .. } => 34.0,
             Row::Head(_) => 30.0,
             Row::Sep => 13.0,
-            Row::Break => 0.0,
         }
     }
 
@@ -225,46 +231,93 @@ fn item(ctx: &Context, label: &'static str, bind: Bind, on: bool, action: Action
     Row::Item { label, key: ctx.keys.label(bind), on, cmd: Command::Act(action) }
 }
 
-/// Il menu del tasto destro, fuori dalle copertine. Con un volume aperto, in
-/// due colonne: a sinistra i volumi e le pagine, a destra come si legge.
+/// Una colonna del menu: quali righe, e quanto e' alta in punti (senza il
+/// separatore con cui puo' cominciare).
+struct Column {
+    rows: Range<usize>,
+    height: f32,
+}
+
+/// Le righe in colonne alte al piu' `room` punti, andando a capo solo fra
+/// una sezione e l'altra (a un separatore, o a un titolo che non lo segue):
+/// una colonna sola, se ci stanno.
+fn columns(rows: &[Row], room: f32) -> Vec<Column> {
+    let starts = (0..rows.len()).filter(|&i| {
+        i == 0 || matches!(rows[i], Row::Sep) || matches!(rows[i], Row::Head(_)) && !matches!(rows[i - 1], Row::Sep)
+    });
+    let starts: Vec<usize> = starts.chain([rows.len()]).collect();
+    let mut out: Vec<Column> = Vec::new();
+    for w in starts.windows(2) {
+        let section = w[0]..w[1];
+        let all: f32 = rows[section.clone()].iter().map(Row::height).sum();
+        match out.last_mut() {
+            Some(c) if c.height + all <= room => {
+                c.rows.end = section.end;
+                c.height += all;
+            }
+            _ => {
+                let lead = if matches!(rows[section.start], Row::Sep) { Row::Sep.height() } else { 0.0 };
+                out.push(Column { rows: section, height: all - lead });
+            }
+        }
+    }
+    if out.is_empty() {
+        out.push(Column { rows: 0..0, height: 0.0 });
+    }
+    out
+}
+
+/// Il menu del tasto destro fuori dalle copertine: nel lettore le cose da
+/// fare con la pagina e con il volume (aprire, la libreria, lo schermo
+/// intero stanno nella barra); altrimenti aprire e i recenti.
 pub(super) fn main_rows(ctx: &Context) -> Vec<Row> {
+    match &ctx.book {
+        Some(b) if ctx.shelf.is_none() => reader_rows(ctx, b),
+        _ => general_rows(ctx),
+    }
+}
+
+/// Senza un volume davanti: aprire, la libreria, i recenti. Le cartelle e i
+/// server della libreria si aggiungono dal suo tasto delle cartelle.
+fn general_rows(ctx: &Context) -> Vec<Row> {
     let i = |label, bind, on, action| item(ctx, label, bind, on, action);
     let mut rows = vec![
         i(t("Apri\u{2026}", "Open\u{2026}"), Bind::Open, false, Action::Open),
         i(t("Apri cartella\u{2026}", "Open folder\u{2026}"), Bind::OpenFolder, false, Action::OpenFolder),
         i(t("Libreria", "Library"), Bind::Library, ctx.shelf.is_some(), Action::ToggleLibrary),
-        Row::plain(t("Aggiungi un server\u{2026}", "Add a server\u{2026}"), Command::AskServer),
     ];
-    let recent = if ctx.book.is_some() { 3 } else { 5 };
     if !ctx.recent.is_empty() {
         rows.push(Row::Sep);
         rows.push(Row::Head(t("Recenti", "Recent")));
-        for r in ctx.recent.iter().take(recent) {
-            rows.push(Row::Recent {
-                title: r.title.clone(),
-                place: r.place.clone(),
-                cmd: Command::Open(r.path.clone()),
-            });
-        }
+        rows.extend(ctx.recent.iter().take(RECENT).map(|r| Row::Recent {
+            title: r.title.clone(),
+            place: r.place.clone(),
+            cmd: Command::Open(r.path.clone()),
+        }));
     }
-    let Some(b) = &ctx.book else {
-        rows.push(Row::Sep);
-        rows.push(i(t("Impostazioni\u{2026}", "Settings\u{2026}"), Bind::Settings, false, Action::ToggleSettings));
-        return rows;
-    };
-    rows.extend([
-        Row::Sep,
+    rows.push(Row::Sep);
+    rows.push(i(t("Impostazioni\u{2026}", "Settings\u{2026}"), Bind::Settings, false, Action::ToggleSettings));
+    rows
+}
+
+/// Quanti volumi recenti, e quanti segnalibri (i piu' vicini alla pagina).
+const RECENT: usize = 5;
+const MARKS: usize = 4;
+
+/// Nel lettore: la pagina, i segnalibri, i volumi accanto; come si legge;
+/// cosa fare della pagina; e chiudere.
+fn reader_rows(ctx: &Context, b: &BookInfo) -> Vec<Row> {
+    let i = |label, bind, on, action| item(ctx, label, bind, on, action);
+    let mut rows = vec![
         i(t("Vai a pagina\u{2026}", "Go to page\u{2026}"), Bind::GoTo, false, Action::AskPage),
-        i(t("Miniature", "Thumbnails"), Bind::Thumbs, ctx.thumbs.is_some(), Action::ToggleThumbs),
         i(t("Segna la pagina", "Bookmark the page"), Bind::Bookmark, b.bookmarked, Action::ToggleBookmark),
         i(t("Tag del volume\u{2026}", "Volume tags\u{2026}"), Bind::Tags, false, Action::EditTags),
-    ]);
+    ];
     if !b.bookmarks.is_empty() {
         rows.push(Row::Head(t("Segnalibri", "Bookmarks")));
-        // i segni piu' vicini alla pagina che si legge
         let mut near: Vec<usize> = b.bookmarks.to_vec();
         near.sort_by_key(|p| p.abs_diff(b.here));
-        near.truncate(6);
+        near.truncate(MARKS);
         near.sort_unstable();
         for p in near {
             let title = if italian() { format!("Pagina {}", p + 1) } else { format!("Page {}", p + 1) };
@@ -272,22 +325,24 @@ pub(super) fn main_rows(ctx: &Context) -> Vec<Row> {
             rows.push(Row::Recent { title, place, cmd: Command::Act(Action::GoTo(p)) });
         }
     }
-    let neighbours =
-        [(b.prev, t("Volume precedente", "Previous volume")), (b.next, t("Volume successivo", "Next volume"))];
-    for (volume, head) in neighbours {
-        let Some((path, title)) = volume else { continue };
-        rows.push(Row::Head(head));
-        rows.push(Row::Recent { title: title.to_owned(), place: String::new(), cmd: Command::Open(path.to_owned()) });
+    let neighbours = [(b.prev, t("prima", "before")), (b.next, t("dopo", "after"))];
+    if neighbours.iter().any(|(v, _)| v.is_some()) {
+        rows.push(Row::Head(t("Nella serie", "In the series")));
+        for (volume, place) in neighbours {
+            let Some((path, title)) = volume else { continue };
+            let (title, place) = (title.to_owned(), place.to_owned());
+            rows.push(Row::Recent { title, place, cmd: Command::Open(path.to_owned()) });
+        }
+    }
+    rows.extend([Row::Sep, i(t("Doppia pagina", "Two pages"), Bind::Double, b.double, Action::ToggleDouble)]);
+    if b.double {
+        rows.push(i(t("Copertina da sola", "Cover alone"), Bind::Cover, b.cover_alone, Action::ToggleCover));
     }
     rows.extend([
-        Row::Break,
-        i(t("Doppia pagina", "Two pages"), Bind::Double, b.double, Action::ToggleDouble),
-        i(t("Copertina da sola", "Cover alone"), Bind::Cover, b.double && b.cover_alone, Action::ToggleCover),
         i(t("Nastro", "Strip"), Bind::Strip, b.strip, Action::ToggleStrip),
         i(t("Da destra a sinistra", "Right to left"), Bind::Manga, b.manga, Action::ToggleManga),
         Row::Sep,
-        i(t("Ruota a destra", "Rotate right"), Bind::RotateRight, false, Action::Rotate(true)),
-        i(t("Ruota a sinistra", "Rotate left"), Bind::RotateLeft, false, Action::Rotate(false)),
+        i(t("Ruota", "Rotate"), Bind::RotateRight, false, Action::Rotate(true)),
         i(t("Rifila i margini", "Trim margins"), Bind::Trim, b.trim, Action::ToggleTrim),
         i(t("Lente", "Magnifier"), Bind::Lens, ctx.lens.is_some(), Action::ToggleLens),
         i(t("Presentazione", "Slideshow"), Bind::Slideshow, b.slideshow, Action::ToggleSlideshow),
@@ -295,11 +350,8 @@ pub(super) fn main_rows(ctx: &Context) -> Vec<Row> {
         i(t("Salva la pagina\u{2026}", "Save the page\u{2026}"), Bind::Save, false, Action::SavePage),
         i(t("Copia la pagina", "Copy the page"), Bind::Copy, false, Action::CopyPage),
         Row::Sep,
-        i(t("Schermo intero", "Full screen"), Bind::Fullscreen, ctx.fullscreen, Action::ToggleFullscreen),
-        i(t("Barra in alto", "Top bar"), Bind::Hud, ctx.hud, Action::ToggleHud),
         i(t("Impostazioni\u{2026}", "Settings\u{2026}"), Bind::Settings, false, Action::ToggleSettings),
-        Row::Sep,
-        i(t("Chiudi", "Close"), Bind::Close, false, Action::Close),
+        i(t("Chiudi il volume", "Close the volume"), Bind::Close, false, Action::Close),
     ]);
     rows
 }

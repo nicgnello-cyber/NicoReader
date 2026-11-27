@@ -9,10 +9,8 @@ pub(crate) enum Icon {
     Close,
     Open,
     Gallery,
-    First,
     Prev,
     Next,
-    Last,
     Single,
     Double,
     Strip,
@@ -22,7 +20,6 @@ pub(crate) enum Icon {
     Plus,
     Full,
     FullExit,
-    Hide,
     Thumbs,
     Bookmark,
     Shelf,
@@ -30,6 +27,8 @@ pub(crate) enum Icon {
     Tree,
     /// Righe sempre piu' corte: l'ordine.
     Sort,
+    /// Una punta in giu': il tasto apre un menu.
+    Down,
 }
 
 /// Cosa mostra un tasto della barra, e quindi quale tasto e'.
@@ -40,9 +39,6 @@ pub(super) enum Look {
     Folio(String),
     /// Lo zoom: "72%".
     Zoom(String),
-    /// Il posto di un tasto che adesso non serve: vuoto, perche' gli altri
-    /// non si spostino.
-    Space,
 }
 
 /// Un tasto della barra: dove sta, cosa mostra, cosa fa.
@@ -62,7 +58,6 @@ impl Button {
             Look::Icon(i) => Hover::Icon(*i),
             Look::Folio(_) => Hover::Folio,
             Look::Zoom(_) => Hover::Zoom,
-            Look::Space => Hover::Space,
         }
     }
 }
@@ -72,7 +67,6 @@ pub(super) enum Hover {
     Icon(Icon),
     Folio,
     Zoom,
-    Space,
 }
 
 fn tip(what: &str, key: &str) -> String {
@@ -84,17 +78,16 @@ pub(super) fn hud_buttons(ctx: &Context, b: &BookInfo) -> Vec<Button> {
     let fit = Squeeze::for_width(ctx.view.0 / ctx.scale);
     let (right, right_start) = right_buttons(ctx, b, fit);
     let mut v = left_buttons(ctx);
-    v.extend(center_buttons(ctx, b, right_start, fit));
+    v.extend(center_buttons(ctx, b, right_start));
     v.extend(right);
     v
 }
 
 /// Quali gruppi di tasti stanno nella barra. In una finestra stretta se ne
-/// va prima l'inizio e la fine, poi lo zoom, poi i modi di lettura: restano
-/// i loro tasti sulla tastiera e le voci nel menu.
+/// va prima lo zoom, poi i modi di lettura: restano i loro tasti sulla
+/// tastiera e le voci nei menu.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Squeeze {
-    pub(super) ends: bool,
     pub(super) zoom: bool,
     pub(super) modes: bool,
 }
@@ -103,19 +96,19 @@ pub(super) struct Squeeze {
 /// lo spazio fra i gruppi.
 const LEFT_W: f32 = 10.0 + 3.0 * BTN + 2.0 * 2.0;
 const FOLIO_W: f32 = 150.0;
+const CENTER_W: f32 = 2.0 * BTN + FOLIO_W;
 const GROUP_GAP: f32 = 17.0;
-const ZOOM_W: f32 = 64.0;
-/// Bordo, nascondere, schermo intero, e il segno.
-const RIGHT_BASE_W: f32 = 10.0 + BTN + (BTN + 2.0) + GROUP_GAP + BTN;
-const ZOOM_GROUP_W: f32 = GROUP_GAP + 2.0 * BTN + ZOOM_W;
+const ZOOM_W: f32 = 78.0;
+/// Bordo, schermo intero, il segno.
+const RIGHT_BASE_W: f32 = 10.0 + BTN + (BTN + 2.0);
+const ZOOM_GROUP_W: f32 = GROUP_GAP + ZOOM_W;
 const MODES_GROUP_W: f32 = GROUP_GAP + 4.0 * BTN + 6.0;
 
 impl Squeeze {
-    const ALL: [Squeeze; 4] = [
-        Squeeze { ends: true, zoom: true, modes: true },
-        Squeeze { ends: false, zoom: true, modes: true },
-        Squeeze { ends: false, zoom: false, modes: true },
-        Squeeze { ends: false, zoom: false, modes: false },
+    const ALL: [Squeeze; 3] = [
+        Squeeze { zoom: true, modes: true },
+        Squeeze { zoom: false, modes: true },
+        Squeeze { zoom: false, modes: false },
     ];
 
     /// Il primo passo con cui tutto sta in `width` punti.
@@ -126,10 +119,9 @@ impl Squeeze {
 
     /// Quanto serve, in punti, con un po' d'aria fra sinistra, centro e destra.
     fn width(self) -> f32 {
-        let center = if self.ends { 4.0 } else { 2.0 } * BTN + FOLIO_W;
         let right =
             RIGHT_BASE_W + if self.zoom { ZOOM_GROUP_W } else { 0.0 } + if self.modes { MODES_GROUP_W } else { 0.0 };
-        LEFT_W + 24.0 + center + 24.0 + right
+        LEFT_W + 24.0 + CENTER_W + 24.0 + right
     }
 }
 
@@ -166,50 +158,32 @@ fn left_buttons(ctx: &Context) -> Vec<Button> {
 }
 
 /// Al centro: la pagina e come muoversi (nei manga al contrario: avanti e'
-/// a sinistra); in una finestra stretta, senza inizio e fine. Si scosta a
-/// sinistra se a destra non c'e' posto, ma non sopra i tasti di sinistra.
-fn center_buttons(ctx: &Context, b: &BookInfo, right_start: f32, fit: Squeeze) -> Vec<Button> {
+/// a sinistra). Si scosta a sinistra se a destra non c'e' posto, ma non
+/// sopra i tasti di sinistra.
+fn center_buttons(ctx: &Context, b: &BookInfo, right_start: f32) -> [Button; 3] {
     let s = ctx.scale;
-    let btn = BTN * s;
     let k = |b: Bind| ctx.keys.label(b);
     // in pixel interi: i tasti, arrotondati uno per uno, restano accostati
-    let (btn, folio_w) = (btn.round(), (FOLIO_W * s).round());
-    let ends = if fit.ends { 2.0 } else { 0.0 };
-    let center_w = (2.0 + ends) * btn + folio_w;
+    let (btn, folio_w) = ((BTN * s).round(), (FOLIO_W * s).round());
+    let center_w = 2.0 * btn + folio_w;
     let x0 = ((ctx.view.0 - center_w) / 2.0).min(right_start - 24.0 * s - center_w).max((LEFT_W + 24.0) * s).round();
-    let (back, forth, start, end) = if b.manga {
-        (Action::Next, Action::Prev, Action::Last, Action::First)
+    let (back, forth, back_key, forth_key) = if b.manga {
+        (Action::Next, Action::Prev, k(Bind::Right), k(Bind::Left))
     } else {
-        (Action::Prev, Action::Next, Action::First, Action::Last)
-    };
-    let (back_key, forth_key, start_key, end_key) = if b.manga {
-        (k(Bind::Right), k(Bind::Left), k(Bind::Last), k(Bind::First))
-    } else {
-        (k(Bind::Left), k(Bind::Right), k(Bind::First), k(Bind::Last))
+        (Action::Prev, Action::Next, k(Bind::Left), k(Bind::Right))
     };
     let folio = Look::Folio(format!("{}  /  {}", b.folio, b.pages));
-    let mut x = x0;
-    let mut place = |w: f32| {
-        x += w;
-        x - w
-    };
-    let mut v = Vec::new();
-    if fit.ends {
-        v.push(Button::icon(Icon::First, place(btn), btn, act(start), false, tip(t("Inizio", "Start"), &start_key)));
-    }
-    v.push(Button::icon(Icon::Prev, place(btn), btn, act(back), false, tip(t("Indietro", "Back"), &back_key)));
     let go = tip(t("Vai a pagina", "Go to page"), &k(Bind::GoTo));
-    v.push(Button::new(folio, place(folio_w), folio_w, act(Action::AskPage), false, go));
-    v.push(Button::icon(Icon::Next, place(btn), btn, act(forth), false, tip(t("Avanti", "Forward"), &forth_key)));
-    if fit.ends {
-        v.push(Button::icon(Icon::Last, place(btn), btn, act(end), false, tip(t("Fine", "End"), &end_key)));
-    }
-    v
+    [
+        Button::icon(Icon::Prev, x0, btn, act(back), false, tip(t("Indietro", "Back"), &back_key)),
+        Button::new(folio, x0 + btn, folio_w, act(Action::AskPage), false, go),
+        Button::icon(Icon::Next, x0 + btn + folio_w, btn, act(forth), false, tip(t("Avanti", "Forward"), &forth_key)),
+    ]
 }
 
-/// A destra, dal bordo verso il centro: nascondere la barra, lo schermo
-/// intero; lo zoom; il verso e i modi; il segno (zoom e modi solo se c'e'
-/// posto). I tasti (da sinistra), e dove comincia il gruppo.
+/// A destra, dal bordo verso il centro: lo schermo intero e il segno; lo
+/// zoom; i modi e il verso (zoom e modi solo se c'e' posto). I tasti (da
+/// sinistra), e dove comincia il gruppo.
 fn right_buttons(ctx: &Context, b: &BookInfo, fit: Squeeze) -> (Vec<Button>, f32) {
     let s = ctx.scale;
     let btn = BTN * s;
@@ -218,13 +192,11 @@ fn right_buttons(ctx: &Context, b: &BookInfo, fit: Squeeze) -> (Vec<Button>, f32
         r -= w;
         r
     };
-    let hide = left_of(btn);
-    let full = left_of(btn + 2.0 * s);
+    let full = left_of(btn);
+    let mark = left_of(btn + 2.0 * s);
     let zoom = fit.zoom.then(|| {
         left_of(GROUP_GAP * s); // fra i gruppi, un po' d'aria
-        let plus = left_of(btn);
-        let zoom = left_of(ZOOM_W * s);
-        [left_of(btn), zoom, plus]
+        left_of(ZOOM_W * s)
     });
     let modes = fit.modes.then(|| {
         left_of(GROUP_GAP * s);
@@ -233,27 +205,40 @@ fn right_buttons(ctx: &Context, b: &BookInfo, fit: Squeeze) -> (Vec<Button>, f32
         let double = left_of(btn);
         [left_of(btn), double, strip, dir]
     });
-    left_of(GROUP_GAP * s);
-    let mark = left_of(btn);
+    let start = modes.map(|m| m[0]).or(zoom).unwrap_or(mark);
 
+    let mut v = Vec::new();
+    if let Some(at) = modes {
+        v.extend(mode_buttons(ctx, b, at));
+    }
+    if let Some(at) = zoom {
+        v.push(zoom_button(ctx, b, at));
+    }
+    let k = |b: Bind| ctx.keys.label(b);
     let bookmark =
         if b.bookmarked { t("Pagina segnata", "Bookmarked") } else { t("Segna la pagina", "Bookmark the page") };
-    let mut v = vec![Button::icon(
+    v.push(Button::icon(
         Icon::Bookmark,
         mark,
         btn,
         act(Action::ToggleBookmark),
         b.bookmarked,
-        tip(bookmark, &ctx.keys.label(Bind::Bookmark)),
-    )];
-    if let Some(at) = modes {
-        v.extend(mode_buttons(ctx, b, at));
-    }
-    if let Some(at) = zoom {
-        v.extend(zoom_buttons(ctx, b, at));
-    }
-    v.extend(window_buttons(ctx, [full + 2.0 * s, hide]));
-    (v, mark)
+        tip(bookmark, &k(Bind::Bookmark)),
+    ));
+    let (full_icon, full_tip) = if ctx.fullscreen {
+        (Icon::FullExit, t("Esci dallo schermo intero", "Exit full screen"))
+    } else {
+        (Icon::Full, t("Schermo intero", "Full screen"))
+    };
+    v.push(Button::icon(
+        full_icon,
+        full,
+        btn,
+        act(Action::ToggleFullscreen),
+        false,
+        tip(full_tip, &k(Bind::Fullscreen)),
+    ));
+    (v, start)
 }
 
 /// Pagina singola, doppia, nastro, e il verso di lettura.
@@ -303,70 +288,18 @@ fn mode_buttons(ctx: &Context, b: &BookInfo, [single, double, strip, dir]: [f32;
     ]
 }
 
-/// Riduci, la percentuale (apre i livelli), ingrandisci. Dove lo zoom non
-/// si regola (la doppia pagina) resta solo "adatta", spento, al suo posto:
-/// gli altri tasti non si spostano.
-fn zoom_buttons(ctx: &Context, b: &BookInfo, [minus, zoom, plus]: [f32; 3]) -> [Button; 3] {
-    let s = ctx.scale;
-    let btn = BTN * s;
-    let k = |b: Bind| ctx.keys.label(b);
+/// La percentuale, che apre il menu dello zoom (i livelli, ingrandire e
+/// ridurre). Dove lo zoom non si regola (la doppia pagina) dice "adatta",
+/// spento, al suo posto: gli altri tasti non si spostano.
+fn zoom_button(ctx: &Context, b: &BookInfo, x: f32) -> Button {
+    let w = ZOOM_W * ctx.scale;
     let Some(percent) = b.zoom else {
-        let fit = Look::Zoom(t("adatta", "fit").to_owned());
-        return [
-            Button::new(Look::Space, minus, btn, None, false, String::new()),
-            Button::new(fit, zoom, ZOOM_W * s, None, false, String::new()),
-            Button::new(Look::Space, plus, btn, None, false, String::new()),
-        ];
+        return Button::new(Look::Zoom(t("adatta", "fit").to_owned()), x, w, None, false, String::new());
     };
-    let levels = format!("{} {} {}", k(Bind::ZoomPage), k(Bind::ZoomWidth), k(Bind::ZoomActual));
-    [
-        Button::icon(
-            Icon::Minus,
-            minus,
-            btn,
-            act(Action::ZoomOut),
-            false,
-            tip(t("Riduci", "Zoom out"), &k(Bind::ZoomOut)),
-        ),
-        Button::new(
-            Look::Zoom(format!("{percent}%")),
-            zoom,
-            ZOOM_W * s,
-            act(Action::ZoomTo(Zoom::Page)),
-            false,
-            tip(t("Livelli di zoom", "Zoom levels"), &levels),
-        ),
-        Button::icon(
-            Icon::Plus,
-            plus,
-            btn,
-            act(Action::ZoomIn),
-            false,
-            tip(t("Ingrandisci", "Zoom in"), &k(Bind::ZoomIn)),
-        ),
-    ]
-}
-
-/// Lo schermo intero e la barra da nascondere.
-fn window_buttons(ctx: &Context, [full, hide]: [f32; 2]) -> [Button; 2] {
-    let btn = BTN * ctx.scale;
     let k = |b: Bind| ctx.keys.label(b);
-    let (full_icon, full_tip) = if ctx.fullscreen {
-        (Icon::FullExit, t("Esci dallo schermo intero", "Exit full screen"))
-    } else {
-        (Icon::Full, t("Schermo intero", "Full screen"))
-    };
-    [
-        Button::icon(full_icon, full, btn, act(Action::ToggleFullscreen), false, tip(full_tip, &k(Bind::Fullscreen))),
-        Button::icon(
-            Icon::Hide,
-            hide,
-            btn,
-            act(Action::ToggleHud),
-            false,
-            tip(t("Nascondi la barra", "Hide the bar"), &k(Bind::Hud)),
-        ),
-    ]
+    let keys = [Bind::ZoomIn, Bind::ZoomOut, Bind::ZoomPage, Bind::ZoomWidth, Bind::ZoomActual].map(k).join(" ");
+    let cmd = act(Action::ZoomTo(Zoom::Page));
+    Button::new(Look::Zoom(format!("{percent}%")), x, w, cmd, false, tip(t("Zoom", "Zoom"), &keys))
 }
 
 /// Il tasto della barra sotto il punto (x, y), se c'e'.
@@ -440,14 +373,20 @@ pub(super) fn hud(ctx: &Context, b: &BookInfo, hover: Option<Hover>, m: &mut dyn
                     .boxed(btn.w, Align::Center)
                     .on_baseline(btn.x, cy + 6.5 * s),
             ),
-            Look::Zoom(label) => l.texts.push(
-                Text::new(label.as_str(), Face::Sans, 12.5 * s, to_u8(color))
-                    .weight(500)
-                    .tabular()
-                    .boxed(btn.w, Align::Center)
-                    .on_baseline(btn.x, cy + 4.5 * s),
-            ),
-            Look::Space => {}
+            Look::Zoom(label) => {
+                // acceso, con la punta in giu' del menu che apre
+                let arrow = if enabled { 14.0 * s } else { 0.0 };
+                l.texts.push(
+                    Text::new(label.as_str(), Face::Sans, 12.5 * s, to_u8(color))
+                        .weight(500)
+                        .tabular()
+                        .boxed(btn.w - arrow, Align::Center)
+                        .on_baseline(btn.x + arrow / 4.0, cy + 4.5 * s),
+                );
+                if enabled {
+                    draw_icon(&mut l, Icon::Down, (btn.x + btn.w - arrow).round(), cy.round(), s, color);
+                }
+            }
         }
         if btn.on {
             // la voce scelta: un punto rosso sotto
@@ -498,14 +437,6 @@ pub(crate) fn draw_icon(l: &mut Layer, icon: Icon, cx: f32, cy: f32, s: f32, col
         }
         Icon::Prev => line(&[(3.0, -6.0), (-3.0, 0.0), (3.0, 6.0)]),
         Icon::Next => line(&[(-3.0, -6.0), (3.0, 0.0), (-3.0, 6.0)]),
-        Icon::First => {
-            line(&[(-5.0, -6.0), (-5.0, 6.0)]);
-            line(&[(4.0, -6.0), (-2.0, 0.0), (4.0, 6.0)]);
-        }
-        Icon::Last => {
-            line(&[(5.0, -6.0), (5.0, 6.0)]);
-            line(&[(-4.0, -6.0), (2.0, 0.0), (-4.0, 6.0)]);
-        }
         Icon::Single => boxes.push((-5.0, -7.5, 10.0, 15.0)),
         Icon::Double => boxes.extend([(-8.5, -6.5, 8.0, 13.0), (0.5, -6.5, 8.0, 13.0)]),
         Icon::Strip => boxes.extend([(-5.0, -8.5, 10.0, 7.5), (-5.0, 1.0, 10.0, 7.5)]),
@@ -532,7 +463,7 @@ pub(crate) fn draw_icon(l: &mut Layer, icon: Icon, cx: f32, cy: f32, s: f32, col
                 line(&[(7.0 * sx, 3.0 * sy), (3.0 * sx, 3.0 * sy), (3.0 * sx, 7.0 * sy)]);
             }
         }
-        Icon::Hide => line(&[(-6.0, 3.0), (0.0, -3.0), (6.0, 3.0)]),
+        Icon::Down => line(&[(-3.5, -1.75), (0.0, 1.75), (3.5, -1.75)]),
         // tre pagine in fila, come un provino
         Icon::Thumbs => boxes.extend([(-8.5, -5.5, 4.5, 11.0), (-2.25, -5.5, 4.5, 11.0), (4.0, -5.5, 4.5, 11.0)]),
         // un nastrino con la coda a V

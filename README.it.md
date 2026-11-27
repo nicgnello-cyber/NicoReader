@@ -69,7 +69,10 @@ pacchetti.
 
 Si apre un volume dal menu (tasto destro), con Ctrl+O (Cmd+O sul Mac), dalla
 libreria o con doppio clic sul file. Senza volume riprende l'ultimo letto.
-Ctrl+, apre le impostazioni (anche i tasti). Su Windows gli ultimi volumi
+Ctrl+, apre le impostazioni (anche i tasti). **Esc** (o il tasto
+"indietro" del mouse) torna indietro: dalla lettura alla libreria, da una
+serie alla libreria; non chiude mai l'app, che si chiude con **Ctrl+Q**
+(Cmd+Q sul Mac). Su Windows gli ultimi volumi
 letti sono anche nella jump list: tasto destro sull'icona di NicoReader nella
 barra delle applicazioni.
 
@@ -79,7 +82,7 @@ indietro due volte si apre il precedente, dalla sua ultima pagina. Quale
 dipende da dove lo si è aperto: il seguente della serie (per numero), della
 lista di lettura o, nella vista per cartelle, il seguente su disco, passando
 alla cartella dopo quando una è finita. Ci sono anche nel menu del tasto
-destro, sotto Volume precedente e Volume successivo.
+destro, sotto Nella serie.
 
 Su uno schermo touch si tocca ai lati per girare pagina, o si striscia; si
 trascina per spostare una pagina ingrandita o per scorrere il nastro, la
@@ -97,7 +100,8 @@ ai dati del file", nello stesso menu, le toglie.
 L'icona ad albero nella barra della libreria mostra la libreria per
 cartelle, come su disco: prima le sottocartelle (con la copertina del primo
 volume che contengono), poi i volumi, in ordine naturale (2 prima di 10), e
-in alto il percorso per risalire (anche con Backspace o Esc). Le cartelle con
+in alto il percorso per risalire (anche con Backspace, Esc o il tasto
+"indietro" del mouse). Le cartelle con
 dentro serie diverse, come quelle di un autore, sono anche raccolte.
 NicoReader ricorda la vista e l'ultima cartella aperta.
 
@@ -116,7 +120,10 @@ volume…, o dal menu di una copertina) apre i tag del volume. Si sceglie la
 categoria con ← →, si scrive (i tag gia' usati in libreria si suggeriscono,
 con quanti volumi li hanno) e Invio lo aggiunge; la × lo toglie. I tag messi
 a mano stanno in `correzioni.json`, nella cartella dei dati: il file del
-volume non si tocca. Un clic su un tag porta in libreria fra gli altri volumi
+volume non si tocca. Se lo sposti o lo rinomini fuori da NicoReader (in
+un'altra cartella della libreria), alla scansione dopo lo si riconosce
+dalla sua impronta (misura, inizio e fine del file, in `impronte.json`):
+tag, correzioni, punto di lettura e segnalibri lo seguono. Un clic su un tag porta in libreria fra gli altri volumi
 che ce l'hanno ("questo personaggio c'e' anche in..."). L'icona degli
 scaffali nella barra della libreria mostra tutti i tag, per categoria; e la
 ricerca trova un volume anche dai suoi tag: mentre si scrive ("azio"), sotto
@@ -142,9 +149,13 @@ virgolette ci sono piu' parole insieme, e il nome di un tag dev'essere
 proprio quello; il meno davanti esclude. La tendina completa l'ultima
 condizione fra i volumi che rispondono alle altre.
 
-Per dare dei tag a piu' volumi insieme: **Ctrl+clic** (Cmd+clic su macOS)
-sulle copertine le sceglie (una pila sceglie tutta la serie); in basso una
-barra dice quanti sono, e *Tag…* apre il pannello per tutti. Nel pannello,
+Per dare dei tag a piu' volumi insieme, anche di serie diverse: si sceglie
+il primo con **Ctrl+clic** (Cmd+clic su macOS), con **Spazio** sulla
+copertina evidenziata dalle frecce, o con tasto destro → Seleziona; poi
+basta un clic sulle altre copertine. Un clic su una pila la apre, per
+scegliere fra i suoi volumi (con Ctrl+clic la si sceglie tutta); la scelta
+resta entrando e uscendo dalle serie. In basso una barra dice quanti sono,
+e *Tag…* apre il pannello per tutti; la crocetta lascia la scelta. Nel pannello,
 mentre scrivi, si suggeriscono anche i tag delle altre categorie, con la
 loro categoria accanto. Ogni cambio ai tag (aggiunto, tolto, rinominato,
 tolto da tutti) si annulla con **Ctrl+Z** (Cmd+Z), uno dopo l'altro.
@@ -160,8 +171,8 @@ i volumi; con un volume aperto, *Solo per questo volume* li tiene per lui,
 per le scansioni troppo chiare o troppo scure, e gli altri restano come
 sono.
 
-Per leggere da un server Komga o Kavita: tasto destro → Aggiungi un server…
-(o l'icona della cartella nella libreria). Per Komga l'indirizzo del server,
+Per leggere da un server Komga o Kavita: nella libreria, l'icona della
+cartella → Aggiungi un server…. Per Komga l'indirizzo del server,
 con nome e password; per Kavita il link OPDS che c'è nelle impostazioni
 dell'utente (dentro c'è la chiave, la password non serve). Il server entra
 nella libreria solo se risponde; serie e volumi compaiono accanto a quelli

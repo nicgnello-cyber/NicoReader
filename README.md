@@ -72,7 +72,10 @@ The code also builds for Linux ARM64, but there are no packages for it yet.
 
 Open a volume from the menu (right click), with Ctrl+O (Cmd+O on a Mac), from
 the library, or by double-clicking the file. With no volume, it resumes the
-last one you read. Ctrl+, opens the settings (keys included). On Windows the
+last one you read. Ctrl+, opens the settings (keys included). **Esc** (or
+the mouse's back button) goes back: from reading to the library, from a
+series to the library; it never closes the app, which closes with **Ctrl+Q**
+(Cmd+Q on a Mac). On Windows the
 volumes you read last are also in the jump list: right click the NicoReader
 icon on the taskbar.
 
@@ -81,8 +84,7 @@ next, and going forward again opens it; at the first page, going back twice
 opens the previous one, at its last page. Which one depends on where you
 opened it from: the next in the series (by number), in the reading list, or,
 in the folder view, the next on disk, moving on to the next folder when one
-is finished. Both are also in the right-click menu, under Previous volume and
-Next volume.
+is finished. Both are also in the right-click menu, under In the series.
 
 On a touch screen, tap the sides to turn pages or swipe; drag to move a
 zoomed page or to scroll the strip, the library and the thumbnails; pinch
@@ -99,7 +101,7 @@ in the same menu undoes them.
 The tree icon in the library bar shows the library by folder, as on disk:
 subfolders first (with the cover of the first volume inside), then the
 volumes, in natural order (2 before 10), with the path at the top to go back
-up (Backspace or Esc too). Folders full of different series, like an
+up (Backspace, Esc or the mouse's back button too). Folders full of different series, like an
 author's, are also collections. NicoReader remembers the view and the last
 folder you were in.
 
@@ -118,7 +120,10 @@ tags…, or from a cover's menu) opens the volume's tags. Pick the kind with
 ← →, type (the tags already in the library are suggested, with how many
 volumes have them) and Enter adds it; the × removes it. The tags you add are
 kept in `correzioni.json`, in the data folder: the volume's file is never
-touched. A click on a tag takes you to the library, among the other volumes
+touched. If you move or rename it outside NicoReader (to another library
+folder), the next scan recognizes it by its fingerprint (size, start and end
+of the file, in `impronte.json`): tags, corrections, reading position and
+bookmarks follow it. A click on a tag takes you to the library, among the other volumes
 that have it ("this character is also in..."). The shelves icon in the
 library bar shows all the tags, by kind; and the search finds a volume by its
 tags too: as you type ("acti"), a drop-down lists the matching tags
@@ -144,9 +149,13 @@ Quotes keep several words together, and a tag's name must be exactly that;
 a minus excludes. The drop-down completes the last condition among the
 volumes that match the others.
 
-To tag several volumes at once: **Ctrl+click** (Cmd+click on macOS) picks
-covers (a stack picks the whole series); a bar at the bottom says how many,
-and *Tags…* opens the panel for all of them. In the panel, as you type, tags
+To tag several volumes at once, even from different series: pick the first
+with **Ctrl+click** (Cmd+click on macOS), with **Space** on the cover the
+arrows highlight, or with right click → Select; then a plain click picks
+the others. A click on a stack opens it, to pick among its volumes
+(Ctrl+click picks it whole); the selection stays as you go in and out of
+series. A bar at the bottom says how many, and *Tags…* opens the panel for
+all of them; its cross drops the selection. In the panel, as you type, tags
 of the other kinds are suggested too, with their kind beside them. Every tag
 change (added, removed, renamed, removed from every volume) is undone with
 **Ctrl+Z** (Cmd+Z), one after the other.
@@ -161,8 +170,8 @@ Brightness, contrast and gamma (settings → Image) apply to every volume;
 with a volume open, *For this volume only* keeps them for that one, for the
 scans that are too light or too dark, and the others stay as they are.
 
-To read from a Komga or Kavita server: right click → Add a server… (or the
-folder icon in the library). For Komga, the server address with your user
+To read from a Komga or Kavita server: in the library, the folder icon → Add
+a server…. For Komga, the server address with your user
 name and password; for Kavita, the OPDS link from your user settings (it
 contains the key, so no password is needed). The server enters the library
 only if it answers; its series and volumes appear next to the local ones,

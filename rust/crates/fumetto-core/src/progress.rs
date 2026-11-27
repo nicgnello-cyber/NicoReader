@@ -137,6 +137,25 @@ impl Progress {
         self.dirty = true;
     }
 
+    /// I volumi di cui si ricorda la lettura, per chiave.
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.entries.keys()
+    }
+
+    /// Volumi spostati (vedi `moved`): la lettura e i segnalibri seguono, da
+    /// dove erano a dove sono adesso. Un volume gia' letto tiene la sua.
+    pub fn moved(&mut self, moves: &[(PathBuf, PathBuf)]) {
+        for (old, new) in moves {
+            let new = Self::key(new);
+            if !self.entries.contains_key(&new)
+                && let Some(saved) = self.entries.remove(&Self::key(old))
+            {
+                self.entries.insert(new, saved);
+                self.dirty = true;
+            }
+        }
+    }
+
     pub fn is_dirty(&self) -> bool {
         self.dirty
     }
@@ -227,5 +246,16 @@ mod tests {
         assert!(p.get(Path::new("x")).is_none());
         assert!(path.with_extension("illeggibile").exists(), "il file rovinato va conservato");
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn la_lettura_segue_un_volume_spostato() {
+        let (old, new) = (Path::new("/fumetti/a.cbz"), Path::new("/serie/a.cbz"));
+        let mut p = Progress::in_memory();
+        p.set(old, Saved { page: 7, pages: 20, bookmarks: vec![3], ..Saved::default() });
+        p.moved(&[(old.to_path_buf(), new.to_path_buf())]);
+        assert!(p.get(old).is_none());
+        assert_eq!(p.get(new).map(|s| (s.page, s.bookmarks.clone())), Some((7, vec![3])));
+        assert!(p.is_dirty());
     }
 }

@@ -48,6 +48,7 @@ impl App {
             Command::ForgetSearch(name) => self.forget_search(&name),
             // quelli interni li ha gia' fatti l'interfaccia
             Command::Series(_)
+            | Command::Pick(_)
             | Command::Group(..)
             | Command::Folder(_)
             | Command::SortMenu(..)

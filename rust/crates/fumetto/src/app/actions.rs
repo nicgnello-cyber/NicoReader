@@ -60,6 +60,7 @@ impl App {
             Action::Close => self.close_book(),
             Action::ToggleHud => self.toggle_hud(),
             Action::ToggleLibrary => self.toggle_library(),
+            Action::Back => self.back(),
             Action::AddLibraryFolder => self.ask_library_folder(),
             Action::AskPage => {
                 if let Some(r) = &self.reader {
@@ -140,6 +141,24 @@ impl App {
         self.changed();
     }
 
+    /// Esc nel lettore: si torna alla libreria. Senza libreria non c'e'
+    /// dove tornare: si resta, e si dice come uscire (Esc non chiude l'app).
+    fn back(&mut self) {
+        if self.book.is_some() && !self.shelf_shown() && self.has_library() {
+            return self.toggle_library();
+        }
+        let quit = self.keymap.label(Bind::Quit);
+        let note = if quit.is_empty() {
+            t("Esc non chiude NicoReader", "Esc doesn't close NicoReader").to_owned()
+        } else if fumetto_core::lingua::italian() {
+            format!("Per uscire: {quit}")
+        } else {
+            format!("To quit: {quit}")
+        };
+        self.ui.toast(note, Instant::now());
+        self.request_redraw();
+    }
+
     /// La libreria, o di nuovo il volume. Senza un volume aperto la libreria
     /// e' gia' li' (se ci sono cartelle; se no, si chiede quale aggiungere).
     fn toggle_library(&mut self) {
@@ -160,7 +179,7 @@ impl App {
     pub(super) fn key(&self, event: &winit::event::KeyEvent) -> Option<Action> {
         let bind = self.keymap.lookup(&combo_of(event, self.modifiers)?)?;
         // con la lente accesa, Esc la spegne
-        if bind == Bind::Quit && self.lens {
+        if bind == Bind::Back && self.lens {
             return Some(Action::ToggleLens);
         }
         let reader = self.reader.as_ref();

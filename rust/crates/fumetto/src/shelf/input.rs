@@ -23,7 +23,7 @@ impl Shelf {
                 let crumbs = self.crumbs.borrow();
                 return crumbs.iter().position(|c| x >= c.x0 && x < c.x1).map(Hit::Crumb);
             }
-            if x < g.pad + 200.0 * s {
+            if x < g.pad - 14.0 * s + BACK_W * s {
                 return Some(Hit::Back);
             }
         }
@@ -52,6 +52,11 @@ impl Shelf {
             Some(Hit::Tile(k)) => {
                 let g = Geo::new(view, s);
                 let Some(p) = self.layout(d, &g).placed.into_iter().nth(k) else { return Handled::Yes(None) };
+                // mentre si sceglie, un clic su un volume lo sceglie o lo lascia
+                if !self.picked.is_empty() && matches!(p.tile, Tile::Volume(_)) {
+                    self.pick_tile(d, &p.tile);
+                    return Handled::Yes(None);
+                }
                 Handled::Yes(self.choose(d, p.tile))
             }
             Some(Hit::Filter(f)) => {
@@ -188,13 +193,14 @@ impl Shelf {
                 return Handled::Yes(tile.and_then(|t| self.choose(d, t)));
             }
             Key::Escape => {
+                // dentro una serie si torna su e la scelta resta: si sceglie anche da un'altra
                 if !self.search.is_empty() {
                     self.search.clear();
                     self.reset_view();
-                } else if !self.picked.is_empty() {
-                    self.picked.clear();
                 } else if self.inside(d) {
                     self.back(d);
+                } else if !self.picked.is_empty() {
+                    self.picked.clear();
                 } else if d.reading {
                     return Handled::Yes(Some(Command::Act(Action::ToggleLibrary)));
                 } else {
@@ -206,6 +212,12 @@ impl Shelf {
                     self.reset_view();
                 } else if self.inside(d) {
                     self.back(d);
+                }
+            }
+            // Spazio, a ricerca vuota, sceglie la copertina evidenziata
+            Key::Char(' ') if self.search.is_empty() => {
+                if let Some(p) = self.selected.and_then(|k| lay.placed.into_iter().nth(k)) {
+                    self.pick_tile(d, &p.tile);
                 }
             }
             Key::Char(c) if !c.is_control() => {
